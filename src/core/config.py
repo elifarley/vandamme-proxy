@@ -1,5 +1,6 @@
 import os
 import sys
+import hashlib
 
 # Configuration
 class Config:
@@ -69,9 +70,20 @@ class Config:
         
         return custom_headers
 
+    @property
+    def openai_api_key_hash(self):
+        """Get the first few characters of SHA256 hash of the OpenAI API key.
+
+        This provides a secure way to identify the API key without exposing it.
+        Returns '<not-set>' if the API key is not configured.
+
+        Returns:
+            str: First few characters of SHA256 hash or '<not-set>'
+        """
+        return "<not-set>" if not self.openai_api_key else 'sha256:' + hashlib.sha256(self.openai_api_key.encode()).hexdigest()[:16] + '...'
+
 try:
     config = Config()
-    print(f" Configuration loaded: API_KEY={'*' * 20}..., BASE_URL='{config.openai_base_url}'")
 except Exception as e:
     print(f"=4 Configuration Error: {e}")
     sys.exit(1)
