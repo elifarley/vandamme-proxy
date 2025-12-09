@@ -6,7 +6,7 @@ import time
 from collections import defaultdict
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Generator, Optional
 
 from src.core.config import config
 
@@ -61,7 +61,7 @@ class SummaryMetrics:
     model_counts: Dict[str, int] = field(default_factory=lambda: defaultdict(int))
     error_counts: Dict[str, int] = field(default_factory=lambda: defaultdict(int))
 
-    def add_request(self, metrics: RequestMetrics):
+    def add_request(self, metrics: RequestMetrics) -> None:
         """Add request metrics to summary"""
         self.total_requests += 1
         self.total_input_tokens += metrics.input_tokens
@@ -84,14 +84,14 @@ class RequestTracker:
     _instance = None
     _lock = threading.Lock()
 
-    def __new__(cls):
+    def __new__(cls) -> "RequestTracker":
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
                     cls._instance = super().__new__(cls)
         return cls._instance
 
-    def __init__(self):
+    def __init__(self) -> None:
         if not hasattr(self, "initialized"):
             self.active_requests: Dict[str, RequestMetrics] = {}
             self.summary_metrics = SummaryMetrics()
@@ -112,7 +112,7 @@ class RequestTracker:
         self.active_requests[request_id] = metrics
         return metrics
 
-    def end_request(self, request_id: str, **kwargs):
+    def end_request(self, request_id: str, **kwargs: Any) -> None:
         """End request tracking and update summary"""
         if request_id not in self.active_requests:
             return
@@ -140,7 +140,7 @@ class RequestTracker:
         """Get active request metrics"""
         return self.active_requests.get(request_id)
 
-    def _emit_summary(self):
+    def _emit_summary(self) -> None:
         """Emit summary log"""
         logger.info(
             f"📊 SUMMARY (last {self.summary_interval} requests) | "
@@ -174,17 +174,17 @@ class ConversationLogger:
     """Logger with correlation ID support"""
 
     @staticmethod
-    def get_logger():
+    def get_logger() -> logging.Logger:
         """Get logger with correlation ID support"""
         return logging.getLogger("conversation")
 
     @staticmethod
     @contextmanager
-    def correlation_context(request_id: str):
+    def correlation_context(request_id: str) -> Generator[None, None, None]:
         """Context manager for correlation ID"""
         old_factory = logging.getLogRecordFactory()
 
-        def record_factory(*args, **kwargs):
+        def record_factory(*args: Any, **kwargs: Any) -> logging.LogRecord:
             record = old_factory(*args, **kwargs)
             record.correlation_id = request_id
             return record
@@ -198,7 +198,7 @@ class ConversationLogger:
 
 # Custom formatter with correlation ID
 class CorrelationFormatter(logging.Formatter):
-    def format(self, record):
+    def format(self, record: logging.LogRecord) -> str:
         # Add correlation ID if available
         if hasattr(record, "correlation_id"):
             record.msg = f"[{record.correlation_id[:8]}] {record.msg}"

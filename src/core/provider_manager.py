@@ -38,7 +38,7 @@ class ProviderManager:
             # Try to load from VDM_DEFAULT_PROVIDER_*
             provider_prefix = f"{self.default_provider.upper()}_"
             api_key = os.environ.get(f"{provider_prefix}API_KEY")
-            base_url = os.environ.get(f"{provider_prefix}BASE_URL")
+            base_url = os.environ.get(f"{provider_prefix}BASE_URL", "https://api.openai.com/v1")
             api_version = os.environ.get(f"{provider_prefix}API_VERSION")
 
         if not api_key:

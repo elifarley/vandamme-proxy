@@ -1,6 +1,10 @@
 import hashlib
 import os
 import sys
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from src.core.provider_manager import ProviderManager
 
 
 # Configuration
@@ -36,10 +40,10 @@ class Config:
         self.default_provider = os.environ.get("VDM_DEFAULT_PROVIDER", "openai")
 
         # Provider manager will be initialized lazily
-        self._provider_manager = None
+        self._provider_manager: Optional["ProviderManager"] = None
 
     @property
-    def provider_manager(self):
+    def provider_manager(self) -> ProviderManager:
         """Lazy initialization of provider manager to avoid circular imports"""
         if self._provider_manager is None:
             from src.core.provider_manager import ProviderManager

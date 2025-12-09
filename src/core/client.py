@@ -1,7 +1,7 @@
 import asyncio
 import json
 import time
-from typing import Any, AsyncGenerator, Dict, Optional
+from typing import Any, AsyncGenerator, Dict, Optional, Union, cast
 
 from fastapi import HTTPException
 from openai import AsyncAzureOpenAI, AsyncOpenAI
@@ -25,6 +25,7 @@ class OpenAIClient:
         self.api_key = api_key
         self.base_url = base_url
         self.custom_headers = custom_headers or {}
+        self.client: Union[AsyncOpenAI, AsyncAzureOpenAI]
 
         # Prepare default headers
         default_headers = {"Content-Type": "application/json", "User-Agent": "claude-proxy/1.0.0"}
@@ -107,7 +108,7 @@ class OpenAIClient:
                 conversation_logger.debug(f"📡 API RESPONSE | Duration: {api_duration_ms:.0f}ms")
 
             # Convert to dict format that matches the original interface
-            return completion.model_dump()
+            return cast(Dict[str, Any], completion.model_dump())
 
         except AuthenticationError as e:
             if LOG_REQUEST_METRICS and metrics:

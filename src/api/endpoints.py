@@ -2,7 +2,7 @@ import json
 import time
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Any, AsyncGenerator, Dict, Optional, Union
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -31,7 +31,7 @@ router = APIRouter()
 
 async def validate_api_key(
     x_api_key: Optional[str] = Header(None), authorization: Optional[str] = Header(None)
-):
+) -> None:
     """Validate the client's API key from either x-api-key header or Authorization header."""
     client_api_key = None
 
@@ -56,7 +56,7 @@ async def validate_api_key(
 @router.post("/v1/messages")
 async def create_message(
     request: ClaudeMessagesRequest, http_request: Request, _: None = Depends(validate_api_key)
-):
+) -> Union[JSONResponse, StreamingResponse]:
     # Generate unique request ID for tracking
     request_id = str(uuid.uuid4())
 
@@ -134,7 +134,7 @@ async def create_message(
                     )
 
                     # Wrap streaming to capture metrics
-                    async def streaming_with_metrics():
+                    async def streaming_with_metrics() -> AsyncGenerator[str, None]:
                         try:
                             async for chunk in convert_openai_streaming_to_claude_with_cancellation(
                                 openai_stream,
@@ -215,7 +215,7 @@ async def create_message(
                 if LOG_REQUEST_METRICS:
                     request_tracker.end_request(request_id)
 
-                return claude_response
+                return JSONResponse(status_code=200, content=claude_response)
 
         except HTTPException:
             # Re-raise HTTP exceptions as-is
@@ -254,7 +254,9 @@ async def create_message(
 
 
 @router.post("/v1/messages/count_tokens")
-async def count_tokens(request: ClaudeTokenCountRequest, _: None = Depends(validate_api_key)):
+async def count_tokens(
+    request: ClaudeTokenCountRequest, _: None = Depends(validate_api_key)
+) -> JSONResponse:
     try:
         # For token counting, we'll use a simple estimation
         # In a real implementation, you might want to use tiktoken or similar
@@ -277,14 +279,14 @@ async def count_tokens(request: ClaudeTokenCountRequest, _: None = Depends(valid
             elif isinstance(msg.content, str):
                 total_chars += len(msg.content)
             elif isinstance(msg.content, list):
-                for block in msg.content:
+                for block in msg.content:  # type: ignore[arg-type, assignment]
                     if hasattr(block, "text") and block.text is not None:
                         total_chars += len(block.text)
 
         # Rough estimation: 4 characters per token
         estimated_tokens = max(1, total_chars // 4)
 
-        return {"input_tokens": estimated_tokens}
+        return JSONResponse(status_code=200, content={"input_tokens": estimated_tokens})
 
     except Exception as e:
         logger.error(f"Error counting tokens: {e}")
@@ -292,7 +294,7 @@ async def count_tokens(request: ClaudeTokenCountRequest, _: None = Depends(valid
 
 
 @router.get("/health")
-async def health_check():
+async def health_check() -> Dict[str, Any]:
     """Health check endpoint"""
     return {
         "status": "healthy",
@@ -304,7 +306,7 @@ async def health_check():
 
 
 @router.get("/test-connection")
-async def test_connection():
+async def test_connection() -> JSONResponse:
     """Test API connectivity to the default provider"""
     try:
         # Get the default provider client
@@ -321,14 +323,17 @@ async def test_connection():
             }
         )
 
-        return {
-            "status": "success",
-            "message": f"Successfully connected to {config.provider_manager.default_provider} API",
-            "provider": config.provider_manager.default_provider,
-            "model_used": config.small_model,
-            "timestamp": datetime.now().isoformat(),
-            "response_id": test_response.get("id", "unknown"),
-        }
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status": "success",
+                "message": f"Successfully connected to {config.provider_manager.default_provider} API",
+                "provider": config.provider_manager.default_provider,
+                "model_used": config.small_model,
+                "timestamp": datetime.now().isoformat(),
+                "response_id": test_response.get("id", "unknown"),
+            },
+        )
 
     except Exception as e:
         logger.error(f"API connectivity test failed: {e}")
@@ -349,7 +354,7 @@ async def test_connection():
 
 
 @router.get("/")
-async def root():
+async def root() -> Dict[str, Any]:
     """Root endpoint"""
     return {
         "message": "VanDamme Proxy v1.0.0",

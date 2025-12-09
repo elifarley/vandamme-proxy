@@ -11,7 +11,7 @@ app = FastAPI(title="Vandamme Proxy", version="1.0.0")
 app.include_router(api_router)
 
 
-def main():
+def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "--help":
         print("Vandamme Proxy v1.0.0")
         print("")

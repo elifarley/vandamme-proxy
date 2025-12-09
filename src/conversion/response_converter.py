@@ -1,5 +1,6 @@
 import json
 import uuid
+from typing import Any, AsyncGenerator
 
 from fastapi import HTTPException, Request
 
@@ -80,8 +81,8 @@ def convert_openai_to_claude_response(
 
 
 async def convert_openai_streaming_to_claude(
-    openai_stream, original_request: ClaudeMessagesRequest, logger
-):
+    openai_stream: Any, original_request: ClaudeMessagesRequest, logger: Any
+) -> AsyncGenerator[str, None]:
     """Convert OpenAI streaming response to Claude streaming format."""
 
     message_id = f"msg_{uuid.uuid4().hex[:24]}"
@@ -155,7 +156,7 @@ async def convert_openai_streaming_to_claude(
                             if tool_call["id"] and tool_call["name"] and not tool_call["started"]:
                                 tool_block_counter += 1
                                 claude_index = text_block_index + tool_block_counter
-                                tool_call["claude_index"] = claude_index
+                                tool_call["claude_index"] = str(claude_index)
                                 tool_call["started"] = True
 
                                 yield f"event: {Constants.EVENT_CONTENT_BLOCK_START}\ndata: {json.dumps({'type': Constants.EVENT_CONTENT_BLOCK_START, 'index': claude_index, 'content_block': {'type': Constants.CONTENT_TOOL_USE, 'id': tool_call['id'], 'name': tool_call['name'], 'input': {}}}, ensure_ascii=False)}\n\n"
@@ -170,7 +171,7 @@ async def convert_openai_streaming_to_claude(
 
                                 # Try to parse complete JSON and send delta when we have valid JSON
                                 try:
-                                    json.loads(tool_call["args_buffer"])
+                                    json.loads(str(tool_call["args_buffer"]) or "")
                                     # If parsing succeeds and we haven't sent this JSON yet
                                     if not tool_call["json_sent"]:
                                         yield f"event: {Constants.EVENT_CONTENT_BLOCK_DELTA}\ndata: {json.dumps({'type': Constants.EVENT_CONTENT_BLOCK_DELTA, 'index': tool_call['claude_index'], 'delta': {'type': Constants.DELTA_INPUT_JSON, 'partial_json': tool_call['args_buffer']}}, ensure_ascii=False)}\n\n"
@@ -217,13 +218,13 @@ async def convert_openai_streaming_to_claude(
 
 
 async def convert_openai_streaming_to_claude_with_cancellation(
-    openai_stream,
+    openai_stream: Any,
     original_request: ClaudeMessagesRequest,
-    logger,
+    logger: Any,
     http_request: Request,
-    openai_client,
+    openai_client: Any,
     request_id: str,
-):
+) -> AsyncGenerator[str, None]:
     """Convert OpenAI streaming response to Claude streaming format with cancellation support."""
 
     message_id = f"msg_{uuid.uuid4().hex[:24]}"
@@ -347,7 +348,7 @@ async def convert_openai_streaming_to_claude_with_cancellation(
                             if tool_call["id"] and tool_call["name"] and not tool_call["started"]:
                                 tool_block_counter += 1
                                 claude_index = text_block_index + tool_block_counter
-                                tool_call["claude_index"] = claude_index
+                                tool_call["claude_index"] = str(claude_index)
                                 tool_call["started"] = True
 
                                 yield f"event: {Constants.EVENT_CONTENT_BLOCK_START}\ndata: {json.dumps({'type': Constants.EVENT_CONTENT_BLOCK_START, 'index': claude_index, 'content_block': {'type': Constants.CONTENT_TOOL_USE, 'id': tool_call['id'], 'name': tool_call['name'], 'input': {}}}, ensure_ascii=False)}\n\n"
@@ -362,7 +363,7 @@ async def convert_openai_streaming_to_claude_with_cancellation(
 
                                 # Try to parse complete JSON and send delta when we have valid JSON
                                 try:
-                                    json.loads(tool_call["args_buffer"])
+                                    json.loads(str(tool_call["args_buffer"]) or "")
                                     # If parsing succeeds and we haven't sent this JSON yet
                                     if not tool_call["json_sent"]:
                                         yield f"event: {Constants.EVENT_CONTENT_BLOCK_DELTA}\ndata: {json.dumps({'type': Constants.EVENT_CONTENT_BLOCK_DELTA, 'index': tool_call['claude_index'], 'delta': {'type': Constants.DELTA_INPUT_JSON, 'partial_json': tool_call['args_buffer']}}, ensure_ascii=False)}\n\n"

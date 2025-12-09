@@ -1,18 +1,26 @@
 import json
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, cast
 from venv import logger
 
 from src.core.config import config
 from src.core.constants import Constants
 from src.core.logging import LOG_REQUEST_METRICS, conversation_logger
-from src.models.claude import ClaudeMessage, ClaudeMessagesRequest
+from src.models.claude import (
+    ClaudeContentBlockImage,
+    ClaudeContentBlockText,
+    ClaudeContentBlockToolResult,
+    ClaudeContentBlockToolUse,
+    ClaudeMessage,
+    ClaudeMessagesRequest,
+    ClaudeSystemContent,
+)
 
 logger = logging.getLogger(__name__)
 
 
 def convert_claude_to_openai(
-    claude_request: ClaudeMessagesRequest, model_manager
+    claude_request: ClaudeMessagesRequest, model_manager: Any
 ) -> Dict[str, Any]:
     """Convert Claude API request format to OpenAI format."""
 
@@ -45,7 +53,7 @@ def convert_claude_to_openai(
             if isinstance(claude_request.system, str):
                 total_chars += len(claude_request.system)
             elif isinstance(claude_request.system, list):
-                for block in claude_request.system:
+                for block in claude_request.system:  # type: ignore[arg-type, assignment]
                     if hasattr(block, "text"):
                         total_chars += len(block.text)
                     elif isinstance(block, dict) and block.get("text"):
@@ -58,7 +66,7 @@ def convert_claude_to_openai(
             elif isinstance(msg.content, str):
                 total_chars += len(msg.content)
             elif isinstance(msg.content, list):
-                for block in msg.content:
+                for block in msg.content:  # type: ignore[arg-type, assignment]
                     if hasattr(block, "text") and block.text is not None:
                         total_chars += len(block.text)
                     elif isinstance(block, dict) and block.get("text"):
@@ -196,23 +204,25 @@ def convert_claude_user_message(msg: ClaudeMessage) -> Dict[str, Any]:
         return {"role": Constants.ROLE_USER, "content": msg.content}
 
     # Handle multimodal content
-    openai_content = []
-    for block in msg.content:
+    openai_content: List[Dict[str, Any]] = []
+    for block in msg.content:  # type: ignore[arg-type, assignment]
         if block.type == Constants.CONTENT_TEXT:
-            openai_content.append({"type": "text", "text": block.text})
+            text_block = cast(ClaudeContentBlockText, block)
+            openai_content.append({"type": "text", "text": text_block.text})
         elif block.type == Constants.CONTENT_IMAGE:
             # Convert Claude image format to OpenAI format
+            image_block = cast(ClaudeContentBlockImage, block)
             if (
-                isinstance(block.source, dict)
-                and block.source.get("type") == "base64"
-                and "media_type" in block.source
-                and "data" in block.source
+                isinstance(image_block.source, dict)
+                and image_block.source.get("type") == "base64"
+                and "media_type" in image_block.source
+                and "data" in image_block.source
             ):
                 openai_content.append(
                     {
                         "type": "image_url",
                         "image_url": {
-                            "url": f"data:{block.source['media_type']};base64,{block.source['data']}"
+                            "url": f"data:{image_block.source['media_type']};base64,{image_block.source['data']}"
                         },
                     }
                 )
@@ -234,28 +244,30 @@ def convert_claude_assistant_message(msg: ClaudeMessage) -> Dict[str, Any]:
     if isinstance(msg.content, str):
         return {"role": Constants.ROLE_ASSISTANT, "content": msg.content}
 
-    for block in msg.content:
+    for block in msg.content:  # type: ignore[arg-type, assignment]
         if block.type == Constants.CONTENT_TEXT:
-            text_parts.append(block.text)
+            text_block = cast(ClaudeContentBlockText, block)
+            text_parts.append(text_block.text)
         elif block.type == Constants.CONTENT_TOOL_USE:
+            tool_block = cast(ClaudeContentBlockToolUse, block)
             tool_calls.append(
                 {
-                    "id": block.id,
+                    "id": tool_block.id,
                     "type": Constants.TOOL_FUNCTION,
                     Constants.TOOL_FUNCTION: {
-                        "name": block.name,
-                        "arguments": json.dumps(block.input, ensure_ascii=False),
+                        "name": tool_block.name,
+                        "arguments": json.dumps(tool_block.input, ensure_ascii=False),
                     },
                 }
             )
 
-    openai_message = {"role": Constants.ROLE_ASSISTANT}
+    openai_message: Dict[str, Any] = {"role": Constants.ROLE_ASSISTANT}
 
     # Set content
     if text_parts:
         openai_message["content"] = "".join(text_parts)
     else:
-        openai_message["content"] = None
+        openai_message["content"] = ""
 
     # Set tool calls
     if tool_calls:
@@ -269,13 +281,14 @@ def convert_claude_tool_results(msg: ClaudeMessage) -> List[Dict[str, Any]]:
     tool_messages = []
 
     if isinstance(msg.content, list):
-        for block in msg.content:
+        for block in msg.content:  # type: ignore[arg-type, assignment]
             if block.type == Constants.CONTENT_TOOL_RESULT:
-                content = parse_tool_result_content(block.content)
+                tool_result_block = cast(ClaudeContentBlockToolResult, block)
+                content = parse_tool_result_content(tool_result_block.content)
                 tool_messages.append(
                     {
                         "role": Constants.ROLE_TOOL,
-                        "tool_call_id": block.tool_use_id,
+                        "tool_call_id": tool_result_block.tool_use_id,
                         "content": content,
                     }
                 )
@@ -283,7 +296,7 @@ def convert_claude_tool_results(msg: ClaudeMessage) -> List[Dict[str, Any]]:
     return tool_messages
 
 
-def parse_tool_result_content(content):
+def parse_tool_result_content(content: Any) -> str:
     """Parse and normalize tool result content into a string format."""
     if content is None:
         return "No content provided"
@@ -304,19 +317,19 @@ def parse_tool_result_content(content):
                 else:
                     try:
                         result_parts.append(json.dumps(item, ensure_ascii=False))
-                    except:
+                    except (TypeError, ValueError):
                         result_parts.append(str(item))
         return "\n".join(result_parts).strip()
 
     if isinstance(content, dict):
         if content.get("type") == Constants.CONTENT_TEXT:
-            return content.get("text", "")
+            return cast(str, content.get("text", ""))
         try:
             return json.dumps(content, ensure_ascii=False)
-        except:
+        except (TypeError, ValueError):
             return str(content)
 
     try:
         return str(content)
-    except:
+    except Exception:
         return "Unparseable content"
