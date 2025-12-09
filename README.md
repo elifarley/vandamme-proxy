@@ -1,8 +1,8 @@
-# Claude Code Proxy
+# Vandamme Proxy
 
-A proxy server that enables **Claude Code** to work with OpenAI-compatible API providers. Convert Claude API requests to OpenAI API calls, allowing you to use various LLM providers through the Claude Code CLI.
+A proxy server that converts Claude API requests to OpenAI-compatible API calls. Enables **Claude Code** to work with various LLM providers including OpenAI, Azure OpenAI, and any OpenAI-compatible API.
 
-![Claude Code Proxy](demo.png)
+![Vandamme Proxy](demo.png)
 
 ## Features
 
@@ -25,11 +25,18 @@ uv sync
 
 # Or using pip
 pip install -r requirements.txt
+
+# Install CLI dependencies
+uv sync --extra cli
 ```
 
 ### 2. Configure
 
 ```bash
+# Interactive configuration setup
+vdm config setup
+
+# Or manually create .env file
 cp .env.example .env
 # Edit .env and add your API configuration
 # Note: Environment variables are automatically loaded from .env file
@@ -38,17 +45,33 @@ cp .env.example .env
 ### 3. Start Server
 
 ```bash
-# Direct run
-python start_proxy.py
+# Using the vdm CLI (recommended)
+vdm start
 
-# Or with UV
-uv run claude-code-proxy
+# Or with development mode
+vdm start --reload
+
+# Or direct run
+python start_proxy.py
 
 # Or with docker compose
 docker compose up -d
 ```
 
-### 4. Use with Claude Code
+### 4. Check Configuration
+
+```bash
+# Show current configuration
+vdm config show
+
+# Validate configuration
+vdm config validate
+
+# Check API connectivity
+vdm health upstream
+```
+
+### 5. Use with Claude Code
 
 ```bash
 # If ANTHROPIC_API_KEY is not set in the proxy:
@@ -237,11 +260,54 @@ claude
 
 ## Testing
 
-Test proxy functionality:
+Test proxy functionality and configuration:
 
 ```bash
 # Run comprehensive tests
 python src/test_claude_to_openai.py
+
+# Test configuration
+vdm test connection
+
+# Test model mappings
+vdm test models
+
+# Check API connectivity
+vdm health upstream
+
+# Validate configuration
+vdm config validate
+```
+
+## VDM CLI Reference
+
+The `vdm` command-line tool provides elegant management of the proxy server:
+
+```bash
+# Get help
+vdm --help
+
+# Start the server
+vdm start
+vdm start --host 0.0.0.0 --port 8082
+vdm start --reload  # Development mode
+
+# Configuration management
+vdm config show      # Show current configuration
+vdm config validate  # Validate configuration
+vdm config env       # Show environment variables
+vdm config setup     # Interactive setup
+
+# Health checks
+vdm health server    # Check proxy server
+vdm health upstream  # Check upstream API
+
+# Testing
+vdm test connection  # Test API connectivity
+vdm test models      # Test model mappings
+
+# Version info
+vdm version
 ```
 
 ## Development
@@ -250,10 +316,13 @@ python src/test_claude_to_openai.py
 
 ```bash
 # Install dependencies
-uv sync
+uv sync --extra cli  # Include CLI dependencies
 
-# Run server
-uv run claude-code-proxy
+# Run server using CLI
+vdm start
+
+# Or run directly
+uv run python start_proxy.py
 
 # Format code
 uv run black src/

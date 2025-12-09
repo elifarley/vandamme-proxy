@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Claude Code Proxy is a FastAPI-based proxy server that converts Claude API requests to OpenAI-compatible API calls. It enables Claude Code CLI to work with various LLM providers (OpenAI, Azure OpenAI, Ollama, and any OpenAI-compatible API).
+Vandamme Proxy is a FastAPI-based proxy server that converts Claude API requests to OpenAI-compatible API calls. It enables Claude Code CLI to work with various LLM providers (OpenAI, Azure OpenAI, Ollama, and any OpenAI-compatible API).
 
 ## Development Commands
 
@@ -12,7 +12,7 @@ Claude Code Proxy is a FastAPI-based proxy server that converts Claude API reque
 
 ```bash
 # Using UV (recommended)
-uv sync
+uv sync --extra cli
 
 # Or using pip
 pip install -r requirements.txt
@@ -21,11 +21,11 @@ pip install -r requirements.txt
 ### Running the Server
 
 ```bash
+# Using the vdm CLI (recommended)
+vdm start
+
 # Direct execution
 python start_proxy.py
-
-# Or with UV
-uv run claude-code-proxy
 
 # Or with Docker
 docker compose up -d
@@ -36,6 +36,12 @@ docker compose up -d
 ```bash
 # Run comprehensive integration tests
 python src/test_claude_to_openai.py
+
+# Test configuration and connectivity
+vdm test connection
+vdm test models
+vdm health upstream
+vdm config validate
 
 # Run unit tests (if available)
 pytest tests/
@@ -103,8 +109,10 @@ Environment variables prefixed with `CUSTOM_HEADER_` are automatically converted
 
 ## Key Files
 
-- `start_proxy.py` - Entry point script
-- `src/main.py` - FastAPI app initialization and CLI help
+- `start_proxy.py` - Entry point script (legacy, use vdm CLI instead)
+- `src/main.py` - FastAPI app initialization
+- `src/cli/main.py` - Main CLI entry point for vdm command
+- `src/cli/commands/` - CLI command implementations
 - `src/api/endpoints.py` - Main API endpoints
 - `src/core/config.py` - Configuration management (83 lines)
 - `src/conversion/request_converter.py` - Claude→OpenAI request conversion

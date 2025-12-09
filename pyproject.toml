@@ -3,12 +3,12 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "claude-code-proxy"
+name = "vandamme-proxy"
 version = "1.0.0"
-description = "Proxy server enabling Claude Code to work with OpenAI-compatible API providers"
+description = "A proxy server that converts Claude API requests to OpenAI-compatible API calls"
 readme = "README.md"
 authors = [
-    {name = "Claude Code Proxy", email = "noreply@example.com"}
+    {name = "Vandamme Proxy", email = "noreply@example.com"}
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -36,14 +36,19 @@ dev = [
     "pytest-asyncio>=0.21.0",
     "httpx>=0.25.0",
 ]
+cli = [
+    "typer[all]>=0.9.0",
+    "rich>=13.0.0",
+    "pyyaml>=6.0",
+]
 
 [project.urls]
-Homepage = "https://github.com/holegots/claude-code-proxy"
-Repository = "https://github.com/holegots/claude-code-proxy.git"
-Issues = "https://github.com/holegots/claude-code-proxy/issues"
+Homepage = "https://github.com/elifarley/vandamme-proxy"
+Repository = "https://github.com/elifarley/vandamme-proxy.git"
+Issues = "https://github.com/elifarley/vandamme-proxy/issues"
 
 [project.scripts]
-claude-code-proxy = "src.main:main"
+vdm = "src.cli.main:app"
 
 [tool.uv]
 dev-dependencies = [

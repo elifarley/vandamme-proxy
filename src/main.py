@@ -4,22 +4,23 @@ import uvicorn
 import sys
 from src.core.config import config
 
-app = FastAPI(title="Claude-to-OpenAI API Proxy", version="1.0.0")
+app = FastAPI(title="Vandamme Proxy", version="1.0.0")
 
 app.include_router(api_router)
 
 
 def main():
     if len(sys.argv) > 1 and sys.argv[1] == "--help":
-        print("Claude-to-OpenAI API Proxy v1.0.0")
+        print("Vandamme Proxy v1.0.0")
         print("")
         print("Usage: python src/main.py")
+        print("       or: vdm start")
         print("")
         print("Required environment variables:")
         print("  OPENAI_API_KEY - Your OpenAI API key")
         print("")
         print("Optional environment variables:")
-        print("  ANTHROPIC_API_KEY - Expected Anthropic API key for client validation")
+        print("  ANTHROPIC_API_KEY - Expected API key for client validation")
         print("                      If set, clients must provide this exact API key")
         print(
             f"  OPENAI_BASE_URL - OpenAI API base URL (default: https://api.openai.com/v1)"
@@ -37,10 +38,15 @@ def main():
         print("Model mapping:")
         print(f"  Claude haiku models -> {config.small_model}")
         print(f"  Claude sonnet/opus models -> {config.big_model}")
+        print("")
+        print("For more options, use the vdm CLI:")
+        print("  vdm config show  - Show current configuration")
+        print("  vdm config setup - Interactive configuration setup")
+        print("  vdm health check - Check API connectivity")
         sys.exit(0)
 
     # Configuration summary
-    print("🚀 Claude-to-OpenAI API Proxy v1.0.0")
+    print("🚀 Vandamme Proxy v1.0.0")
     print(f"✅ Configuration loaded successfully")
     print(f"   OpenAI API Key : {config.openai_api_key_hash}")
     print(f"   OpenAI Base URL: {config.openai_base_url}")
