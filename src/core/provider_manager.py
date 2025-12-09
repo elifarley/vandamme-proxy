@@ -257,7 +257,24 @@ class ProviderManager:
         if not self._loaded:
             self.load_provider_configs()
 
-        if not self._load_results:
+        # Always show the default provider, whether in _load_results or not
+        all_results = self._load_results.copy()
+
+        # Check if default provider is already in results
+        default_in_results = any(r.name == self.default_provider for r in all_results)
+
+        # If not, add it from _configs
+        if not default_in_results and self.default_provider in self._configs:
+            default_config = self._configs[self.default_provider]
+            default_result = ProviderLoadResult(
+                name=self.default_provider,
+                status="success",
+                api_key_hash=self.get_api_key_hash(default_config.api_key),
+                base_url=default_config.base_url
+            )
+            all_results.insert(0, default_result)  # Insert at beginning
+
+        if not all_results:
             return
 
         print("\n📊 Active Providers:")
@@ -266,14 +283,25 @@ class ProviderManager:
 
         success_count = 0
 
-        for result in self._load_results:
+        for result in all_results:
+            # Check if this is the default provider
+            is_default = result.name == self.default_provider
+            default_indicator = "  * " if is_default else "    "
+
             if result.status == "success":
-                print(f"   ✅ {result.api_key_hash:<10} ({result.name:<12}) {result.base_url}")
+                if is_default:
+                    print(f"   ✅ {result.api_key_hash:<10}{default_indicator}\033[92m{result.name:<12}\033[0m {result.base_url}")
+                else:
+                    print(f"   ✅ {result.api_key_hash:<10}{default_indicator}{result.name:<12} {result.base_url}")
                 success_count += 1
             else:  # partial
-                print(f"   ⚠️ {result.api_key_hash:<10} ({result.name:<12}) {result.message}")
+                if is_default:
+                    print(f"   ⚠️ {result.api_key_hash:<10}{default_indicator}\033[92m{result.name:<12}\033[0m {result.message}")
+                else:
+                    print(f"   ⚠️ {result.api_key_hash:<10}{default_indicator}{result.name:<12} {result.message}")
 
         print(f"\n{success_count} provider{'s' if success_count != 1 else ''} ready for requests")
+        print(f"  * = default provider")
 
     def get_load_results(self) -> List[ProviderLoadResult]:
         """Get the load results for all providers"""
