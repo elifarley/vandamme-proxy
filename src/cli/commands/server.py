@@ -1,4 +1,4 @@
-"""Start command for the vdm CLI."""
+"""Server management commands for the vdm CLI."""
 
 import os
 import signal
@@ -10,7 +10,7 @@ import uvicorn
 from src.main import app as fastapi_app
 from src.core.config import config
 
-app = typer.Typer(help="Start the proxy server")
+app = typer.Typer(help="Server management")
 
 
 @app.command()
@@ -48,6 +48,30 @@ def start(
         _start_daemon(server_host, server_port, pid_file)
     else:
         _start_server(server_host, server_port, reload)
+
+
+@app.command()
+def stop() -> None:
+    """Stop the proxy server."""
+    console = Console()
+    console.print("[yellow]Stop command not yet implemented[/yellow]")
+    # TODO: Implement server stop functionality
+
+
+@app.command()
+def restart() -> None:
+    """Restart the proxy server."""
+    console = Console()
+    console.print("[yellow]Restart command not yet implemented[/yellow]")
+    # TODO: Implement server restart functionality
+
+
+@app.command()
+def status() -> None:
+    """Check proxy server status."""
+    console = Console()
+    console.print("[yellow]Status command not yet implemented[/yellow]")
+    # TODO: Implement server status checking
 
 
 def _start_daemon(host: str, port: int, pid_file: str) -> None:

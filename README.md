@@ -46,10 +46,10 @@ cp .env.example .env
 
 ```bash
 # Using the vdm CLI (recommended)
-vdm start
+vdm server start
 
 # Or with development mode
-vdm start --reload
+vdm server start --reload
 
 # Or direct run
 python start_proxy.py
@@ -294,9 +294,9 @@ The `vdm` command-line tool provides elegant management of the proxy server:
 vdm --help
 
 # Start the server
-vdm start
-vdm start --host 0.0.0.0 --port 8082
-vdm start --reload  # Development mode
+vdm server start
+vdm server start --host 0.0.0.0 --port 8082
+vdm server start --reload  # Development mode
 
 # Configuration management
 vdm config show      # Show current configuration
@@ -325,7 +325,7 @@ vdm version
 make init-dev
 
 # Run server using CLI
-vdm start
+vdm server start
 
 # Run development server with hot reload
 make dev
@@ -350,7 +350,7 @@ make test
 uv sync --extra cli  # Include CLI dependencies
 
 # Run server using CLI
-vdm start
+vdm server start
 
 # Or run directly
 uv run python start_proxy.py

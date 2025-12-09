@@ -4,7 +4,7 @@ import typer
 from rich.console import Console
 
 # Import command modules
-from src.cli.commands import start, config, health, test
+from src.cli.commands import server, config, health, test
 
 app = typer.Typer(
     name="vdm",
@@ -14,7 +14,7 @@ app = typer.Typer(
 )
 
 # Add subcommands
-app.add_typer(start.app, name="start", help="Start the proxy server")
+app.add_typer(server.app, name="server", help="Server management")
 app.add_typer(config.app, name="config", help="Configuration management")
 app.add_typer(health.app, name="health", help="Health checks")
 app.add_typer(test.app, name="test", help="Test commands")
@@ -47,34 +47,6 @@ def main(
         pass
 
 
-@app.command()
-def start(
-    host: str = typer.Option(None, "--host", help="Override host"),
-    port: int = typer.Option(None, "--port", help="Override port"),
-    reload: bool = typer.Option(False, "--reload", help="Enable auto-reload for development"),
-) -> None:
-    """Start the proxy server."""
-    import uvicorn
-    from src.main import app as fastapi_app
-    from src.core.config import config
-
-    console = Console()
-
-    # Override config if provided
-    server_host = host or config.host
-    server_port = port or config.port
-
-    console.print(f"[bold green]Starting Vandamme Proxy server...[/bold green]")
-    console.print(f"Host: {server_host}")
-    console.print(f"Port: {server_port}")
-
-    uvicorn.run(
-        "src.main:app",
-        host=server_host,
-        port=server_port,
-        reload=reload,
-        log_level=config.log_level.lower(),
-    )
 
 
 if __name__ == "__main__":

@@ -30,7 +30,7 @@ pip install -r requirements.txt
 
 ```bash
 # Using the vdm CLI (recommended)
-vdm start
+vdm server start
 
 # Direct execution
 python start_proxy.py
