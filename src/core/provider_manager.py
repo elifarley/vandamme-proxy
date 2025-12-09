@@ -128,6 +128,11 @@ class ProviderManager:
                 self._load_results.append(result)
                 return
 
+        # Load API format (default to "openai")
+        api_format = os.environ.get(f"{provider_upper}_API_FORMAT", "openai")
+        if api_format not in ["openai", "anthropic"]:
+            api_format = "openai"  # Default to openai if invalid
+
         # Create result for successful configuration
         result = ProviderLoadResult(
             name=provider_name,
@@ -146,6 +151,7 @@ class ProviderManager:
             timeout=int(os.environ.get("REQUEST_TIMEOUT", "90")),
             max_retries=int(os.environ.get("MAX_RETRIES", "2")),
             custom_headers=self._get_provider_custom_headers(provider_upper),
+            api_format=api_format,
         )
 
         self._configs[provider_name] = config
@@ -169,6 +175,11 @@ class ProviderManager:
                     f"Base URL not found for provider '{provider_name}'. Please set {provider_upper}_BASE_URL environment variable."
                 )
 
+        # Load API format (default to "openai")
+        api_format = os.environ.get(f"{provider_upper}_API_FORMAT", "openai")
+        if api_format not in ["openai", "anthropic"]:
+            api_format = "openai"  # Default to openai if invalid
+
         config = ProviderConfig(
             name=provider_name,
             api_key=api_key,
@@ -177,6 +188,7 @@ class ProviderManager:
             timeout=int(os.environ.get("REQUEST_TIMEOUT", "90")),
             max_retries=int(os.environ.get("MAX_RETRIES", "2")),
             custom_headers=self._get_provider_custom_headers(provider_upper),
+            api_format=api_format,
         )
 
         self._configs[provider_name] = config
@@ -215,7 +227,7 @@ class ProviderManager:
             return provider.lower(), actual_model
         return self.default_provider, model
 
-    def get_client(self, provider_name: str) -> OpenAIClient:
+    def get_client(self, provider_name: str):
         """Get or create a client for the specified provider"""
         if not self._loaded:
             self.load_provider_configs()
@@ -230,13 +242,25 @@ class ProviderManager:
         # Return cached client or create new one
         if provider_name not in self._clients:
             config = self._configs[provider_name]
-            self._clients[provider_name] = OpenAIClient(
-                api_key=config.api_key,
-                base_url=config.base_url,
-                timeout=config.timeout,
-                api_version=config.api_version,
-                custom_headers=config.custom_headers,
-            )
+
+            # Create appropriate client based on API format
+            if config.is_anthropic_format:
+                # Import here to avoid circular imports
+                from src.core.anthropic_client import AnthropicClient
+                self._clients[provider_name] = AnthropicClient(
+                    api_key=config.api_key,
+                    base_url=config.base_url,
+                    timeout=config.timeout,
+                    custom_headers=config.custom_headers,
+                )
+            else:
+                self._clients[provider_name] = OpenAIClient(
+                    api_key=config.api_key,
+                    base_url=config.base_url,
+                    timeout=config.timeout,
+                    api_version=config.api_version,
+                    custom_headers=config.custom_headers,
+                )
 
         return self._clients[provider_name]
 

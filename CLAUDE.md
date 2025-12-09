@@ -128,23 +128,41 @@ make env-template
 ### Core Components
 
 1. **Request/Response Flow**:
-   - `src/api/endpoints.py` - FastAPI endpoints (`/v1/messages`, `/v1/messages/count_tokens`, `/health`, `/test-connection`)
+   - `src/api/endpoints.py` - FastAPI endpoints (`/v1/messages`, `/v1/messages/count_tokens`, `/v1/models`, `/health`, `/test-connection`)
    - `src/conversion/request_converter.py` - Converts Claude API format to OpenAI format
    - `src/conversion/response_converter.py` - Converts OpenAI responses back to Claude format
    - `src/core/client.py` - OpenAI API client with retry logic and connection pooling
+   - `src/core/anthropic_client.py` - Anthropic-compatible API client for direct passthrough
+   - `src/core/provider_manager.py` - Multi-provider management with format selection
    - `src/core/model_manager.py` - Model name resolution (passes through Claude model names unchanged)
 
-2. **Authentication & Security**:
-   - Optional client API key validation via `ANTHROPIC_API_KEY` environment variable
-   - If `ANTHROPIC_API_KEY` is set in the proxy, clients must provide matching key
-   - If not set, any client API key is accepted
+2. **Dual-Mode Operation**:
+   - **OpenAI Mode**: Converts Claude requests to OpenAI format, processes, converts back
+   - **Anthropic Mode**: Direct passthrough for Anthropic-compatible APIs without conversion
+   - Mode is automatically selected based on provider's `api_format` configuration
 
-3. **Configuration**:
+3. **Provider Management**:
+   - Support for multiple LLM providers (OpenAI, Anthropic, Azure, custom endpoints)
+   - Each provider can be configured as `api_format=openai` or `api_format=anthropic`
+   - Provider selection via model prefix: `provider:model_name` (e.g., `anthropic:claude-3-sonnet`)
+   - Falls back to default provider if no prefix specified
+
+4. **Authentication & Security**:
+   - **Proxy Authentication**: Optional client API key validation via `ANTHROPIC_API_KEY` environment variable
+     - This controls access TO the proxy itself, not to external providers
+     - If `ANTHROPIC_API_KEY` is set, clients must provide this exact key to use the proxy
+     - If not set, the proxy accepts all requests (open access)
+   - **Provider Authentication**: Each provider has its own API key (e.g., `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` for provider)
+     - These are separate from proxy authentication
+     - Used to authenticate with the actual LLM providers
+
+5. **Configuration**:
    - `src/core/config.py` - Central configuration management
+   - `src/core/provider_config.py` - Per-provider configuration management
    - Environment variables loaded from `.env` file via `python-dotenv`
    - Custom headers support via `CUSTOM_HEADER_*` environment variables
 
-4. **Data Models**:
+6. **Data Models**:
    - `src/models/claude.py` - Pydantic models for Claude API format
    - `src/models/openai.py` - Pydantic models for OpenAI API format
 
@@ -185,11 +203,43 @@ Environment variables prefixed with `CUSTOM_HEADER_` are automatically converted
 
 ## Environment Variables
 
-Required:
-- `OPENAI_API_KEY` - API key for target provider
+Required (at least one provider):
+- `OPENAI_API_KEY` - API key for OpenAI provider
+- `{PROVIDER}_API_KEY` - API key for any configured provider (e.g., `ANTHROPIC_API_KEY`, `AZURE_API_KEY`)
 
-Security:
-- `ANTHROPIC_API_KEY` - If set, clients must provide this exact key
+Provider Configuration:
+- `{PROVIDER}_API_FORMAT` - API format: "openai" (default) or "anthropic"
+- `{PROVIDER}_BASE_URL` - Base URL for the provider
+- `DEFAULT_PROVIDER` - Default provider to use (defaults to "openai")
+
+Examples:
+```bash
+# OpenAI provider (default format)
+OPENAI_API_KEY=sk-...
+
+# Anthropic provider (direct passthrough)
+ANTHROPIC_API_KEY=sk-ant-...
+ANTHROPIC_BASE_URL=https://api.anthropic.com
+ANTHROPIC_API_FORMAT=anthropic
+
+# AWS Bedrock (Anthropic-compatible)
+BEDROCK_API_KEY=...
+BEDROCK_BASE_URL=https://bedrock-runtime.us-east-1.amazonaws.com
+BEDROCK_API_FORMAT=anthropic
+
+# Azure OpenAI
+AZURE_API_KEY=...
+AZURE_BASE_URL=https://your-resource.openai.azure.com
+AZURE_API_FORMAT=openai
+AZURE_API_VERSION=2024-02-15-preview
+```
+
+Security (Proxy Authentication):
+- `ANTHROPIC_API_KEY` - Optional proxy authentication key
+  - If set, clients must provide this exact key to access the proxy
+  - This is NOT related to any external provider's API key
+  - This controls access TO the proxy, not access to provider APIs
+  - Example: Set this to require a specific API key from Claude Code CLI users
 
 
 API Configuration:
@@ -221,6 +271,62 @@ ANTHROPIC_BASE_URL=http://localhost:8082 ANTHROPIC_API_KEY="any-value" claude
 # Use Claude Code with proxy (if ANTHROPIC_API_KEY is set in proxy)
 ANTHROPIC_BASE_URL=http://localhost:8082 ANTHROPIC_API_KEY="exact-matching-key" claude
 ```
+
+### Using Anthropic-Compatible Providers
+
+#### Direct Anthropic API
+```bash
+# Configure for direct Anthropic API access
+ANTHROPIC_API_KEY=sk-ant-...
+ANTHROPIC_BASE_URL=https://api.anthropic.com
+ANTHROPIC_API_FORMAT=anthropic
+DEFAULT_PROVIDER=anthropic
+```
+
+#### AWS Bedrock
+```bash
+# Configure for AWS Bedrock with Claude models
+BEDROCK_API_KEY=your-aws-key
+BEDROCK_BASE_URL=https://bedrock-runtime.us-east-1.amazonaws.com
+BEDROCK_API_FORMAT=anthropic
+DEFAULT_PROVIDER=bedrock
+
+# Use with specific model
+ANTHROPIC_BASE_URL=http://localhost:8082 claude --model bedrock:anthropic.claude-3-sonnet-20240229-v1:0
+```
+
+#### Google Vertex AI
+```bash
+# Configure for Google Vertex AI (Anthropic models)
+VERTEX_API_KEY=your-vertex-key
+VERTEX_BASE_URL=https://generativelanguage.googleapis.com/v1beta
+VERTEX_API_FORMAT=anthropic
+DEFAULT_PROVIDER=vertex
+```
+
+#### Provider Selection in Requests
+
+You can specify which provider to use per request:
+
+1. **Default Provider**: Uses the configured `DEFAULT_PROVIDER`
+   ```bash
+   # Uses default provider
+   claude --model claude-3-5-sonnet-20241022
+   ```
+
+2. **Provider Prefix**: Specify provider in model name
+   ```bash
+   # Use specific provider
+   claude --model anthropic:claude-3-5-sonnet-20241022
+   claude --model openai:gpt-4o
+   claude --model bedrock:anthropic.claude-3-sonnet-20240229-v1:0
+   ```
+
+3. **Environment Override**: Override default provider temporarily
+   ```bash
+   # Temporarily use different provider
+   DEFAULT_PROVIDER=anthropic claude
+   ```
 
 ### Testing Endpoints
 

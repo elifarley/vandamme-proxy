@@ -131,100 +131,189 @@ async def create_message(  # type: ignore[no-untyped-def]
 
             if request.stream:
                 # Streaming response
-                try:
-                    openai_stream = openai_client.create_chat_completion_stream(
+                # Check if provider uses Anthropic format
+                provider_config = config.provider_manager.get_provider_config(provider_name)
+
+                if provider_config and provider_config.is_anthropic_format:
+                    # Passthrough streaming for Anthropic-compatible APIs
+                    # Convert request to dict directly (no format conversion)
+                    claude_request_dict = request.model_dump(exclude_none=True)
+
+                    # Add provider tracking
+                    claude_request_dict["_provider"] = provider_name
+
+                    try:
+                        # Direct streaming with passthrough
+                        anthropic_stream = openai_client.create_chat_completion_stream(
+                            claude_request_dict, request_id
+                        )
+
+                        # Wrap streaming to capture metrics
+                        async def streaming_with_metrics() -> AsyncGenerator[str, None]:
+                            try:
+                                # Pass through SSE events directly
+                                async for chunk in anthropic_stream:
+                                    yield chunk
+                            finally:
+                                # End request tracking after streaming
+                                if LOG_REQUEST_METRICS:
+                                    request_tracker.end_request(request_id)
+
+                        return StreamingResponse(
+                            streaming_with_metrics(),
+                            media_type="text/event-stream",
+                            headers={
+                                "Cache-Control": "no-cache",
+                                "Connection": "keep-alive",
+                                "Access-Control-Allow-Origin": "*",
+                                "Access-Control-Allow-Headers": "*",
+                            },
+                        )
+                    except HTTPException as e:
+                        # Convert to proper error response for streaming
+                        if LOG_REQUEST_METRICS and metrics:
+                            metrics.error = e.detail
+                            metrics.error_type = "api_error"
+                            metrics.end_time = time.time()
+                            request_tracker.end_request(request_id)
+
+                        logger.error(f"Streaming error: {e.detail}")
+                        import traceback
+
+                        logger.error(traceback.format_exc())
+
+                        error_message = openai_client.classify_openai_error(e.detail)
+                        error_response = {
+                            "type": "error",
+                            "error": {"type": "api_error", "message": error_message},
+                        }
+                        return JSONResponse(status_code=e.status_code, content=error_response)
+                else:
+                    # OpenAI format streaming (existing logic)
+                    try:
+                        openai_stream = openai_client.create_chat_completion_stream(
+                            openai_request, request_id
+                        )
+
+                        # Wrap streaming to capture metrics
+                        async def streaming_with_metrics() -> AsyncGenerator[str, None]:
+                            try:
+                                async for chunk in convert_openai_streaming_to_claude_with_cancellation(
+                                    openai_stream,
+                                    request,
+                                    logger,
+                                    http_request,
+                                    openai_client,
+                                    request_id,
+                                ):
+                                    yield chunk
+                            finally:
+                                # End request tracking after streaming
+                                if LOG_REQUEST_METRICS:
+                                    request_tracker.end_request(request_id)
+
+                        return StreamingResponse(
+                            streaming_with_metrics(),
+                            media_type="text/event-stream",
+                            headers={
+                                "Cache-Control": "no-cache",
+                                "Connection": "keep-alive",
+                                "Access-Control-Allow-Origin": "*",
+                                "Access-Control-Allow-Headers": "*",
+                            },
+                        )
+                    except HTTPException as e:
+                        # Convert to proper error response for streaming
+                        if LOG_REQUEST_METRICS and metrics:
+                            metrics.error = e.detail
+                            metrics.error_type = "api_error"
+                            metrics.end_time = time.time()
+                            request_tracker.end_request(request_id)
+
+                        logger.error(f"Streaming error: {e.detail}")
+                        import traceback
+
+                        logger.error(traceback.format_exc())
+
+                        error_message = openai_client.classify_openai_error(e.detail)
+                        error_response = {
+                            "type": "error",
+                            "error": {"type": "api_error", "message": error_message},
+                        }
+                        return JSONResponse(status_code=e.status_code, content=error_response)
+            else:
+                # Non-streaming response
+                # Check if provider uses Anthropic format
+                provider_config = config.provider_manager.get_provider_config(provider_name)
+
+                if provider_config and provider_config.is_anthropic_format:
+                    # Passthrough mode for Anthropic-compatible APIs
+                    # Convert request to dict directly (no format conversion)
+                    claude_request_dict = request.model_dump(exclude_none=True)
+
+                    # Add provider tracking
+                    claude_request_dict["_provider"] = provider_name
+
+                    # Make API call
+                    anthropic_response = await openai_client.create_chat_completion(
+                        claude_request_dict, request_id
+                    )
+
+                    # Update metrics
+                    if LOG_REQUEST_METRICS and metrics:
+                        response_json = json.dumps(anthropic_response)
+                        metrics.response_size = len(response_json)
+
+                        # Extract usage from response (if available)
+                        usage = anthropic_response.get("usage", {})
+                        metrics.input_tokens = usage.get("input_tokens", 0)
+                        metrics.output_tokens = usage.get("output_tokens", 0)
+
+                    # Direct passthrough - no conversion needed
+                    return JSONResponse(status_code=200, content=anthropic_response)
+                else:
+                    # OpenAI format path (existing logic)
+                    openai_response = await openai_client.create_chat_completion(
                         openai_request, request_id
                     )
 
-                    # Wrap streaming to capture metrics
-                    async def streaming_with_metrics() -> AsyncGenerator[str, None]:
-                        try:
-                            async for chunk in convert_openai_streaming_to_claude_with_cancellation(
-                                openai_stream,
-                                request,
-                                logger,
-                                http_request,
-                                openai_client,
-                                request_id,
-                            ):
-                                yield chunk
-                        finally:
-                            # End request tracking after streaming
-                            if LOG_REQUEST_METRICS:
-                                request_tracker.end_request(request_id)
+                    # Add defensive check
+                    if openai_response is None:
+                        logger.error(f"Received None response from provider {provider_name}")
+                        logger.error(f"Request was: {openai_request}")
+                        raise HTTPException(
+                            status_code=500,
+                            detail=f"Provider {provider_name} returned None response"
+                        )
 
-                    return StreamingResponse(
-                        streaming_with_metrics(),
-                        media_type="text/event-stream",
-                        headers={
-                            "Cache-Control": "no-cache",
-                            "Connection": "keep-alive",
-                            "Access-Control-Allow-Origin": "*",
-                            "Access-Control-Allow-Headers": "*",
-                        },
-                    )
-                except HTTPException as e:
-                    # Convert to proper error response for streaming
+                    # Calculate response size
+                    response_json = json.dumps(openai_response)
+                    response_size = len(response_json)
+
+                    # Extract token usage
+                    usage = openai_response.get("usage")
+                    if usage is None:
+                        # Handle missing usage field
+                        input_tokens = 0
+                        output_tokens = 0
+                        if LOG_REQUEST_METRICS:
+                            conversation_logger.warning("No usage information in response")
+                    else:
+                        input_tokens = usage.get("prompt_tokens", 0)
+                        output_tokens = usage.get("completion_tokens", 0)
+
+                    # Update metrics
                     if LOG_REQUEST_METRICS and metrics:
-                        metrics.error = e.detail
-                        metrics.error_type = "api_error"
-                        metrics.end_time = time.time()
-                        request_tracker.end_request(request_id)
+                        metrics.response_size = response_size
+                        metrics.input_tokens = input_tokens
+                        metrics.output_tokens = output_tokens
 
-                    logger.error(f"Streaming error: {e.detail}")
-                    import traceback
-
-                    logger.error(traceback.format_exc())
-
-                    error_message = openai_client.classify_openai_error(e.detail)
-                    error_response = {
-                        "type": "error",
-                        "error": {"type": "api_error", "message": error_message},
-                    }
-                    return JSONResponse(status_code=e.status_code, content=error_response)
-            else:
-                # Non-streaming response
-                openai_response = await openai_client.create_chat_completion(
-                    openai_request, request_id
-                )
-
-                # Add defensive check
-                if openai_response is None:
-                    logger.error(f"Received None response from provider {provider_name}")
-                    logger.error(f"Request was: {openai_request}")
-                    raise HTTPException(
-                        status_code=500,
-                        detail=f"Provider {provider_name} returned None response"
-                    )
-
-                # Calculate response size
-                response_json = json.dumps(openai_response)
-                response_size = len(response_json)
-
-                # Extract token usage
-                usage = openai_response.get("usage")
-                if usage is None:
-                    # Handle missing usage field
-                    input_tokens = 0
-                    output_tokens = 0
+                    # Debug: Log the response structure
                     if LOG_REQUEST_METRICS:
-                        conversation_logger.warning("No usage information in response")
-                else:
-                    input_tokens = usage.get("prompt_tokens", 0)
-                    output_tokens = usage.get("completion_tokens", 0)
+                        conversation_logger.debug(f"📡 RESPONSE STRUCTURE: {list(openai_response.keys())}")
+                        conversation_logger.debug(f"📡 FULL RESPONSE: {openai_response}")
 
-                # Update metrics
-                if LOG_REQUEST_METRICS and metrics:
-                    metrics.response_size = response_size
-                    metrics.input_tokens = input_tokens
-                    metrics.output_tokens = output_tokens
-
-                # Debug: Log the response structure
-                if LOG_REQUEST_METRICS:
-                    conversation_logger.debug(f"📡 RESPONSE STRUCTURE: {list(openai_response.keys())}")
-                    conversation_logger.debug(f"📡 FULL RESPONSE: {openai_response}")
-
-                claude_response = convert_openai_to_claude_response(openai_response, request)
+                    claude_response = convert_openai_to_claude_response(openai_response, request)
 
                 # Log successful completion
                 duration_ms = (time.time() - start_time) * 1000
@@ -291,9 +380,63 @@ async def count_tokens(
     request: ClaudeTokenCountRequest, _: None = Depends(validate_api_key)
 ) -> JSONResponse:
     try:
-        # For token counting, we'll use a simple estimation
-        # In a real implementation, you might want to use tiktoken or similar
+        # Get provider and model
+        from src.core.model_manager import model_manager
+        provider_name, _ = model_manager.resolve_model(request.model)
+        provider_config = config.provider_manager.get_provider_config(provider_name)
 
+        if provider_config and provider_config.is_anthropic_format:
+            # For Anthropic-compatible APIs, use their token counting if available
+            # Create request for token counting
+            count_request = {
+                "model": request.model,
+                "messages": [],
+            }
+
+            # Add system message
+            if request.system:
+                count_request["messages"].append({
+                    "role": "user",
+                    "content": request.system if isinstance(request.system, str) else ""
+                })
+
+            # Add messages (excluding content for counting)
+            for msg in request.messages:
+                msg_dict = {"role": msg.role}
+                if isinstance(msg.content, str):
+                    msg_dict["content"] = msg.content
+                elif isinstance(msg.content, list):
+                    # For counting, we can combine text blocks
+                    text_parts = []
+                    for block in msg.content:
+                        if hasattr(block, "text") and block.text is not None:
+                            text_parts.append(block.text)
+                    msg_dict["content"] = "".join(text_parts)
+
+                count_request["messages"].append(msg_dict)
+
+            # Try to get token count from provider
+            try:
+                client = config.provider_manager.get_client(provider_name)
+                count_response = await client.create_chat_completion(
+                    {
+                        **count_request,
+                        "max_tokens": 1  # We just want token count
+                    },
+                    "count_tokens"
+                )
+
+                # Extract usage if available
+                usage = count_response.get("usage", {})
+                input_tokens = usage.get("input_tokens", max(1, len(str(count_request)) // 4))
+
+                return JSONResponse(status_code=200, content={"input_tokens": input_tokens})
+
+            except Exception:
+                # Fallback to estimation if provider doesn't support counting
+                pass
+
+        # Fallback to character-based estimation
         total_chars = 0
 
         # Count system message characters
@@ -328,13 +471,28 @@ async def count_tokens(
 
 @router.get("/health")
 async def health_check() -> Dict[str, Any]:
-    """Health check endpoint"""
+    """Health check endpoint with provider status"""
+    # Gather provider information
+    providers = {}
+    for provider_name in config.provider_manager.provider_configs.keys():
+        provider_config = config.provider_manager.get_provider_config(provider_name)
+        providers[provider_name] = {
+            "name": provider_name,
+            "api_format": provider_config.api_format if provider_config else "unknown",
+            "base_url": provider_config.base_url if provider_config else None,
+            "api_key_configured": bool(provider_config.api_key) if provider_config else False,
+            "is_anthropic_format": provider_config.is_anthropic_format if provider_config else False,
+            "is_default": provider_name == config.provider_manager.default_provider,
+        }
+
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
         "openai_api_configured": bool(config.openai_api_key),
         "api_key_valid": config.validate_api_key(),
         "client_api_key_validation": bool(config.anthropic_api_key),
+        "default_provider": config.provider_manager.default_provider,
+        "providers": providers,
     }
 
 
@@ -398,6 +556,125 @@ async def test_connection() -> JSONResponse:
         )
 
 
+@router.get("/v1/models")
+async def list_models(_: None = Depends(validate_api_key)) -> JSONResponse:
+    """List available models from the default provider or specified provider"""
+    try:
+        # Get the default provider client
+        default_provider = config.provider_manager.default_provider
+        default_client = config.provider_manager.get_client(default_provider)
+        provider_config = config.provider_manager.get_provider_config(default_provider)
+
+        if provider_config and provider_config.is_anthropic_format:
+            # For Anthropic-compatible APIs, models list is typically static
+            # Return common Claude models that Anthropic-compatible APIs support
+            models = {
+                "object": "list",
+                "data": [
+                    {
+                        "id": "claude-3-5-sonnet-20241022",
+                        "object": "model",
+                        "created": 1699905200,
+                        "display_name": "Claude 3.5 Sonnet (October 2024)",
+                    },
+                    {
+                        "id": "claude-3-5-haiku-20241022",
+                        "object": "model",
+                        "created": 1699905200,
+                        "display_name": "Claude 3.5 Haiku (October 2024)",
+                    },
+                    {
+                        "id": "claude-3-opus-20240229",
+                        "object": "model",
+                        "created": 1699905200,
+                        "display_name": "Claude 3 Opulus",
+                    },
+                    {
+                        "id": "claude-3-sonnet-20240229",
+                        "object": "model",
+                        "created": 1699905200,
+                        "display_name": "Claude 3 Sonnet",
+                    },
+                    {
+                        "id": "claude-3-haiku-20240307",
+                        "object": "model",
+                        "created": 1699905200,
+                        "display_name": "Claude 3 Haiku",
+                    },
+                ]
+            }
+        else:
+            # For OpenAI format, try to get models from the provider
+            try:
+                # Use the client's underlying HTTP client to fetch models
+                response = await default_client.client.get(f"{default_client.base_url}/models")
+                response.raise_for_status()
+                openai_models = response.json()
+
+                # Transform OpenAI models format to Claude format
+                models = {
+                    "object": "list",
+                    "data": []
+                }
+
+                for model in openai_models.get("data", []):
+                    # Create a Claude-compatible model entry
+                    claude_model = {
+                        "id": model.get("id", ""),
+                        "object": "model",
+                        "created": model.get("created", 0),
+                        "display_name": model.get("id", "").replace("-", " ").title(),
+                    }
+                    models["data"].append(claude_model)
+
+            except Exception:
+                # Fallback to common models if provider doesn't support /models
+                models = {
+                    "object": "list",
+                    "data": [
+                        {
+                            "id": "gpt-4o",
+                            "object": "model",
+                            "created": 1699905200,
+                            "display_name": "GPT-4o",
+                        },
+                        {
+                            "id": "gpt-4o-mini",
+                            "object": "model",
+                            "created": 1699905200,
+                            "display_name": "GPT-4o Mini",
+                        },
+                        {
+                            "id": "gpt-4-turbo",
+                            "object": "model",
+                            "created": 1699905200,
+                            "display_name": "GPT-4 Turbo",
+                        },
+                        {
+                            "id": "gpt-3.5-turbo",
+                            "object": "model",
+                            "created": 1699905200,
+                            "display_name": "GPT-3.5 Turbo",
+                        },
+                    ]
+                }
+
+        return JSONResponse(status_code=200, content=models)
+
+    except Exception as e:
+        logger.error(f"Error listing models: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "type": "error",
+                "error": {
+                    "type": "api_error",
+                    "message": f"Failed to list models: {str(e)}",
+                },
+            },
+        )
+
+
 @router.get("/")
 async def root() -> Dict[str, Any]:
     """Root endpoint"""
@@ -413,6 +690,7 @@ async def root() -> Dict[str, Any]:
         "endpoints": {
             "messages": "/v1/messages",
             "count_tokens": "/v1/messages/count_tokens",
+            "models": "/v1/models",
             "health": "/health",
             "test_connection": "/test-connection",
         },
