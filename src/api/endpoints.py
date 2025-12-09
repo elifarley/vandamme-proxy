@@ -102,6 +102,9 @@ async def create_message(  # type: ignore[no-untyped-def]
 
         start_time = time.time()
 
+        # Initialize client variable to avoid UnboundLocalError
+        openai_client = None
+
         try:
             # Convert Claude request to OpenAI format
             openai_request = convert_claude_to_openai(request, model_manager)
@@ -229,7 +232,11 @@ async def create_message(  # type: ignore[no-untyped-def]
             import traceback
 
             duration_ms = (time.time() - start_time) * 1000
-            error_message = openai_client.classify_openai_error(str(e))
+            # Use openai_client if available, otherwise use a generic error message
+            if openai_client is not None:
+                error_message = openai_client.classify_openai_error(str(e))
+            else:
+                error_message = str(e)
 
             # Update metrics with error
             if LOG_REQUEST_METRICS and metrics:

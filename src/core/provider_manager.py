@@ -70,7 +70,16 @@ class ProviderManager:
                     continue
 
                 # Load provider configuration
-                self._load_provider_config(provider_name)
+                try:
+                    self._load_provider_config(provider_name)
+                except ValueError as e:
+                    # Log warning but continue loading other providers
+                    import sys
+
+                    print(
+                        f"Warning: Failed to load provider '{provider_name}': {e}", file=sys.stderr
+                    )
+                    continue
 
     def _load_provider_config(self, provider_name: str) -> None:
         """Load configuration for a specific provider"""
@@ -78,11 +87,15 @@ class ProviderManager:
 
         api_key = os.environ.get(f"{provider_upper}_API_KEY")
         if not api_key:
-            raise ValueError(f"API key not found for provider '{provider_name}'")
+            raise ValueError(
+                f"API key not found for provider '{provider_name}'. Please set {provider_upper}_API_KEY environment variable."
+            )
 
         base_url = os.environ.get(f"{provider_upper}_BASE_URL")
         if not base_url:
-            raise ValueError(f"Base URL not found for provider '{provider_name}'")
+            raise ValueError(
+                f"Base URL not found for provider '{provider_name}'. Please set {provider_upper}_BASE_URL environment variable."
+            )
 
         config = ProviderConfig(
             name=provider_name,
