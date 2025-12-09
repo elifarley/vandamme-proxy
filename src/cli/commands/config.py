@@ -2,12 +2,14 @@
 
 import os
 import sys
-import typer
 from pathlib import Path
+
+import typer
 from rich.console import Console
-from rich.table import Table
 from rich.panel import Panel
-from rich.prompt import Prompt, Confirm
+from rich.prompt import Confirm, Prompt
+from rich.table import Table
+
 from src.core.config import config
 
 app = typer.Typer(help="Configuration management")
@@ -60,7 +62,9 @@ def validate() -> None:
         console.print(Panel("\n".join(errors), title="Validation Errors", style="red"))
         sys.exit(1)
     else:
-        console.print(Panel("✅ All configuration is valid!", title="Validation Success", style="green"))
+        console.print(
+            Panel("✅ All configuration is valid!", title="Validation Success", style="green")
+        )
 
 
 @app.command()

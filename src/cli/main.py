@@ -4,7 +4,7 @@ import typer
 from rich.console import Console
 
 # Import command modules
-from src.cli.commands import server, config, health, test
+from src.cli.commands import config, health, server, test
 
 app = typer.Typer(
     name="vdm",
@@ -26,9 +26,7 @@ def version() -> None:
     from src import __version__
 
     console = Console()
-    console.print(
-        f"[bold cyan]vdm[/bold cyan] version [green]{__version__}[/green]"
-    )
+    console.print(f"[bold cyan]vdm[/bold cyan] version [green]{__version__}[/green]")
 
 
 @app.callback()
@@ -40,13 +38,12 @@ def main(
     if verbose:
         # Configure verbose logging
         import logging
+
         logging.basicConfig(level=logging.DEBUG)
     if config_file:
         # Load custom config file
         # TODO: Implement config file loading
         pass
-
-
 
 
 if __name__ == "__main__":

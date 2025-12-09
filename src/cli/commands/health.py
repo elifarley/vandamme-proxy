@@ -2,11 +2,13 @@
 
 import json
 import sys
-import typer
+
 import httpx
+import typer
 from rich.console import Console
 from rich.status import Status
 from rich.table import Table
+
 from src.core.config import config
 
 app = typer.Typer(help="Health checks")

@@ -2,13 +2,15 @@
 
 import os
 import signal
-import typer
 from pathlib import Path
+
+import typer
+import uvicorn
 from rich.console import Console
 from rich.table import Table
-import uvicorn
-from src.main import app as fastapi_app
+
 from src.core.config import config
+from src.main import app as fastapi_app
 
 app = typer.Typer(help="Server management")
 
@@ -19,9 +21,7 @@ def start(
     port: int = typer.Option(None, "--port", help="Override port"),
     reload: bool = typer.Option(False, "--reload", help="Enable auto-reload for development"),
     daemon: bool = typer.Option(False, "--daemon", help="Run in background"),
-    pid_file: str = typer.Option(
-        str(Path.home() / ".vdm.pid"), "--pid-file", help="PID file path"
-    ),
+    pid_file: str = typer.Option(str(Path.home() / ".vdm.pid"), "--pid-file", help="PID file path"),
 ) -> None:
     """Start the proxy server."""
     console = Console()
