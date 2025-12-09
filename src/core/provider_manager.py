@@ -261,14 +261,14 @@ class ProviderManager:
             return
 
         print("\n📊 Active Providers:")
-        print(f"   {'SHA256':<10} {'Name':<12} Base URL")
-        print(f"   {'-'*10} {'-'*12} {'-'*50}")
+        print(f"   {'Status':<2} {'SHA256':<10} {'Name':<12} Base URL")
+        print(f"   {'-'*2} {'-'*10} {'-'*12} {'-'*50}")
 
         success_count = 0
 
         for result in self._load_results:
             if result.status == "success":
-                print(f"   {result.api_key_hash:<10} ({result.name:<12}) {result.base_url}")
+                print(f"   ✅ {result.api_key_hash:<10} ({result.name:<12}) {result.base_url}")
                 success_count += 1
             else:  # partial
                 print(f"   ⚠️ {result.api_key_hash:<10} ({result.name:<12}) {result.message}")
