@@ -28,7 +28,18 @@ class Config:
         if not self.anthropic_api_key:
             print("Warning: ANTHROPIC_API_KEY not set. Client API key validation will be disabled.")
 
-        self.openai_base_url = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
+        # Get base URL for the default provider
+        provider_upper = self.default_provider.upper()
+        base_url_env_var = f"{provider_upper}_BASE_URL"
+        # Use provider-specific default if not set
+        if provider_upper == "OPENAI":
+            default_base_url = "https://api.openai.com/v1"
+        elif provider_upper == "POE":
+            default_base_url = "https://api.poe.com/v1"
+        else:
+            default_base_url = "https://api.openai.com/v1"  # Fallback
+
+        self.openai_base_url = os.environ.get(base_url_env_var, default_base_url)
         self.azure_api_version = os.environ.get("AZURE_API_VERSION")  # For Azure OpenAI
         self.host = os.environ.get("HOST", "0.0.0.0")
         self.port = int(os.environ.get("PORT", "8082"))
@@ -116,6 +127,11 @@ class Config:
     def openai_api_key_hash(self) -> str:
         """Deprecated: Use api_key_hash instead. Kept for backward compatibility."""
         return self.api_key_hash
+
+    @property
+    def base_url(self) -> str:
+        """Get the base URL for the default provider."""
+        return self.openai_base_url
 
 
 try:
