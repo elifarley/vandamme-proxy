@@ -121,7 +121,7 @@ class ProviderManager:
                 result = ProviderLoadResult(
                     name=provider_name,
                     status="partial",
-                    message=f"Missing BASE_URL (configure {provider_upper}_BASE_URL)",
+                    message=f"Missing {provider_upper}_BASE_URL",
                     api_key_hash=self.get_api_key_hash(api_key),
                     base_url=None,
                 )
@@ -261,14 +261,17 @@ class ProviderManager:
             return
 
         print("\n📊 Active Providers:")
+        print(f"   {'SHA256':<10} {'Name':<12} Base URL")
+        print(f"   {'-'*10} {'-'*12} {'-'*50}")
+
         success_count = 0
 
         for result in self._load_results:
             if result.status == "success":
-                print(f"   {result.name} ({result.api_key_hash}) - {result.base_url}")
+                print(f"   {result.api_key_hash:<10} ({result.name:<12}) {result.base_url}")
                 success_count += 1
             else:  # partial
-                print(f"   ⚠️ {result.name} ({result.api_key_hash}) - {result.message}")
+                print(f"   ⚠️ {result.api_key_hash:<10} ({result.name:<12}) {result.message}")
 
         print(f"\n{success_count} provider{'s' if success_count != 1 else ''} ready for requests")
 
