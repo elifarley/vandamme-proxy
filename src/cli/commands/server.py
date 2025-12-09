@@ -44,6 +44,9 @@ def start(
 
     console.print(table)
 
+    # Show provider summary
+    config.provider_manager.print_provider_summary()
+
     if daemon:
         _start_daemon(server_host, server_port, pid_file)
     else:
