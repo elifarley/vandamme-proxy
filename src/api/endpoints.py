@@ -137,10 +137,13 @@ async def create_message(  # type: ignore[no-untyped-def]
                 if provider_config and provider_config.is_anthropic_format:
                     # Passthrough streaming for Anthropic-compatible APIs
                     # Convert request to dict directly (no format conversion)
+                    # Get the actual model name without provider prefix
+                    _, actual_model = model_manager.resolve_model(request.model)
                     claude_request_dict = request.model_dump(exclude_none=True)
 
                     # Add provider tracking
                     claude_request_dict["_provider"] = provider_name
+                    claude_request_dict["model"] = actual_model  # Use stripped model name
 
                     try:
                         # Direct streaming with passthrough
@@ -249,10 +252,13 @@ async def create_message(  # type: ignore[no-untyped-def]
                 if provider_config and provider_config.is_anthropic_format:
                     # Passthrough mode for Anthropic-compatible APIs
                     # Convert request to dict directly (no format conversion)
+                    # Get the actual model name without provider prefix
+                    _, actual_model = model_manager.resolve_model(request.model)
                     claude_request_dict = request.model_dump(exclude_none=True)
 
                     # Add provider tracking
                     claude_request_dict["_provider"] = provider_name
+                    claude_request_dict["model"] = actual_model  # Use stripped model name
 
                     # Make API call
                     anthropic_response = await openai_client.create_chat_completion(
@@ -382,14 +388,14 @@ async def count_tokens(
     try:
         # Get provider and model
         from src.core.model_manager import model_manager
-        provider_name, _ = model_manager.resolve_model(request.model)
+        provider_name, actual_model = model_manager.resolve_model(request.model)
         provider_config = config.provider_manager.get_provider_config(provider_name)
 
         if provider_config and provider_config.is_anthropic_format:
             # For Anthropic-compatible APIs, use their token counting if available
             # Create request for token counting
             count_request = {
-                "model": request.model,
+                "model": actual_model,
                 "messages": [],
             }
 
