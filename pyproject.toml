@@ -50,8 +50,8 @@ Issues = "https://github.com/elifarley/vandamme-proxy/issues"
 [project.scripts]
 vdm = "src.cli.main:app"
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
     "black>=23.0.0",
