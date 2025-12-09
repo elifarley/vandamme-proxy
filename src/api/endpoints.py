@@ -367,7 +367,7 @@ async def root() -> Dict[str, Any]:
         "message": "VanDamme Proxy v1.0.0",
         "status": "running",
         "config": {
-            "openai_base_url": config.openai_base_url,
+            "base_url": config.base_url,
             "max_tokens_limit": config.max_tokens_limit,
             "api_key_configured": bool(config.openai_api_key),
             "client_api_key_validation": bool(config.anthropic_api_key),

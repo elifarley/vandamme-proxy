@@ -26,16 +26,15 @@ def show() -> None:
     table.add_column("Source", style="yellow")
 
     # Add rows with masked secrets
-    table.add_row("OPENAI_API_KEY", config.openai_api_key_hash, "Environment")
+    table.add_row(f"{config.default_provider.upper()}_API_KEY", config.api_key_hash, "Environment")
     table.add_row(
         "ANTHROPIC_API_KEY",
         "***" if config.anthropic_api_key else "<not set>",
         "Environment",
     )
-    table.add_row("OPENAI_BASE_URL", config.openai_base_url, "Environment/Default")
-    table.add_row("BIG_MODEL", config.big_model, "Environment/Default")
-    table.add_row("MIDDLE_MODEL", config.middle_model, "Environment/Default")
-    table.add_row("SMALL_MODEL", config.small_model, "Environment/Default")
+    table.add_row(
+        f"{config.default_provider.upper()}_BASE_URL", config.base_url, "Environment/Default"
+    )
     table.add_row("HOST", config.host, "Environment/Default")
     table.add_row("PORT", str(config.port), "Environment/Default")
     table.add_row("LOG_LEVEL", config.log_level, "Environment/Default")
@@ -82,9 +81,6 @@ def env() -> None:
   ANTHROPIC_API_KEY    - Expected API key for client validation
   OPENAI_BASE_URL      - OpenAI API base URL (default: https://api.openai.com/v1)
   AZURE_API_VERSION    - API version for Azure OpenAI
-  BIG_MODEL           - Model for opus requests (default: gpt-4o)
-  MIDDLE_MODEL        - Model for sonnet requests (default: same as BIG_MODEL)
-  SMALL_MODEL         - Model for haiku requests (default: gpt-4o-mini)
   HOST                - Server host (default: 0.0.0.0)
   PORT                - Server port (default: 8082)
   LOG_LEVEL           - Logging level: DEBUG/INFO/WARNING/ERROR (default: INFO)
@@ -125,8 +121,6 @@ def setup() -> None:
     # Get optional values
     anthropic_key = Prompt.ask("Anthropic API Key (optional)", default="", password=True)
     base_url = Prompt.ask("OpenAI Base URL", default="https://api.openai.com/v1")
-    big_model = Prompt.ask("Big Model (for opus)", default="gpt-4o")
-    small_model = Prompt.ask("Small Model (for haiku)", default="gpt-4o-mini")
     host = Prompt.ask("Server Host", default="0.0.0.0")
     port = Prompt.ask("Server Port", default="8082")
 
@@ -138,10 +132,6 @@ def setup() -> None:
             f.write(f"ANTHROPIC_API_KEY={anthropic_key}\n")
         if base_url != "https://api.openai.com/v1":
             f.write(f"OPENAI_BASE_URL={base_url}\n")
-        if big_model != "gpt-4o":
-            f.write(f"BIG_MODEL={big_model}\n")
-        if small_model != "gpt-4o-mini":
-            f.write(f"SMALL_MODEL={small_model}\n")
         if host != "0.0.0.0":
             f.write(f"HOST={host}\n")
         if port != "8082":

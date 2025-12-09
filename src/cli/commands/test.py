@@ -23,12 +23,13 @@ def connection() -> None:
     # Test configuration
     try:
         if not config.openai_api_key:
-            console.print("[red]❌ OPENAI_API_KEY not configured[/red]")
+            provider_upper = config.default_provider.upper()
+            console.print(f"[red]❌ {provider_upper}_API_KEY not configured[/red]")
             sys.exit(1)
 
-        console.print(f"✅ API Key configured: {config.openai_api_key_hash}")
+        console.print(f"✅ API Key configured: {config.api_key_hash}")
         console.print(f"✅ Default Provider: {config.default_provider}")
-        console.print(f"✅ Base URL: {config.openai_base_url}")
+        console.print(f"✅ Base URL: {config.base_url}")
         console.print(f"✅ Big Model: {config.big_model}")
         console.print(f"✅ Middle Model: {config.middle_model}")
         console.print(f"✅ Small Model: {config.small_model}")

@@ -39,7 +39,7 @@ class Config:
         else:
             default_base_url = "https://api.openai.com/v1"  # Fallback
 
-        self.openai_base_url = os.environ.get(base_url_env_var, default_base_url)
+        self.base_url = os.environ.get(base_url_env_var, default_base_url)
         self.azure_api_version = os.environ.get("AZURE_API_VERSION")  # For Azure OpenAI
         self.host = os.environ.get("HOST", "0.0.0.0")
         self.port = int(os.environ.get("PORT", "8082"))
@@ -122,16 +122,6 @@ class Config:
             if not self.openai_api_key
             else "sha256:" + hashlib.sha256(self.openai_api_key.encode()).hexdigest()[:16] + "..."
         )
-
-    @property
-    def openai_api_key_hash(self) -> str:
-        """Deprecated: Use api_key_hash instead. Kept for backward compatibility."""
-        return self.api_key_hash
-
-    @property
-    def base_url(self) -> str:
-        """Get the base URL for the default provider."""
-        return self.openai_base_url
 
 
 try:

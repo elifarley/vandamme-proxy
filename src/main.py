@@ -45,8 +45,8 @@ def main() -> None:
     # Configuration summary
     print("🚀 Vandamme Proxy v1.0.0")
     print(f"✅ Configuration loaded successfully")
-    print(f"   OpenAI API Key : {config.openai_api_key_hash}")
-    print(f"   OpenAI Base URL: {config.openai_base_url}")
+    print(f"   API Key : {config.api_key_hash}")
+    print(f"   Base URL: {config.base_url}")
     print(f"   Max Tokens Limit: {config.max_tokens_limit}")
     print(f"   Request Timeout : {config.request_timeout}s")
     print(f"   Server: {config.host}:{config.port}")

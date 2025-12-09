@@ -74,7 +74,7 @@ def upstream(
         try:
             # Use existing client to test connectivity
             client = httpx.Client(
-                base_url=config.openai_base_url,
+                base_url=config.base_url,
                 headers={"Authorization": f"Bearer {config.openai_api_key}"},
                 timeout=10.0,
             )
@@ -88,8 +88,8 @@ def upstream(
                     json.dumps(
                         {
                             "status": "healthy",
-                            "base_url": config.openai_base_url,
-                            "api_key": config.openai_api_key_hash,
+                            "base_url": config.base_url,
+                            "api_key": config.api_key_hash,
                         },
                         indent=2,
                     )
@@ -100,8 +100,8 @@ def upstream(
                 table.add_column("Value", style="green")
 
                 table.add_row("Status", "✅ Connected")
-                table.add_row("Base URL", config.openai_base_url)
-                table.add_row("API Key", config.openai_api_key_hash)
+                table.add_row("Base URL", config.base_url)
+                table.add_row("API Key", config.api_key_hash)
                 table.add_row("Response Time", f"{response.elapsed.total_seconds():.3f}s")
 
                 console.print(table)
@@ -114,7 +114,7 @@ def upstream(
                         {
                             "status": "error",
                             "message": msg,
-                            "base_url": config.openai_base_url,
+                            "base_url": config.base_url,
                         },
                         indent=2,
                     )
