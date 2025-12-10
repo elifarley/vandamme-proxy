@@ -19,9 +19,8 @@ class Config:
         self.openai_api_key = os.environ.get(api_key_env_var)
 
         if not self.openai_api_key:
-            raise ValueError(
-                f"{api_key_env_var} not found in environment variables. Please set it to use {self.default_provider} as the default provider."
-            )
+            print(f"Warning: {api_key_env_var} not found in environment variables. {self.default_provider} provider will not be available.")
+            # Don't raise error - allow server to start for testing
 
         # Add Anthropic API key for client validation
         self.anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY")

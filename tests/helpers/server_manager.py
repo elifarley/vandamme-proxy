@@ -13,7 +13,7 @@ import os
 class TestServerManager:
     """Manages a test server instance for integration tests."""
 
-    def __init__(self, port: int = 18082):
+    def __init__(self, port: int = 8082):
         self.port = port
         self.process: Optional[subprocess.Popen] = None
         self.base_url = f"http://localhost:{port}"
@@ -108,7 +108,7 @@ class TestServerManager:
 
 
 @asynccontextmanager
-async def test_server(port: int = 18082) -> AsyncGenerator[str, None]:
+async def test_server(port: int = 8082) -> AsyncGenerator[str, None]:
     """
     Context manager that starts a test server and yields its base URL.
 
@@ -132,7 +132,7 @@ async def test_server(port: int = 18082) -> AsyncGenerator[str, None]:
 _server_manager: Optional[TestServerManager] = None
 
 
-async def start_global_server(port: int = 18082) -> str:
+async def start_global_server(port: int = 8082) -> str:
     """Start a global test server for use across multiple tests."""
     global _server_manager
     if _server_manager is None:

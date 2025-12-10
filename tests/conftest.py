@@ -4,6 +4,10 @@ import pytest
 import os
 from unittest.mock import MagicMock, AsyncMock
 from typing import Generator, AsyncGenerator
+from dotenv import load_dotenv
+
+# Load test environment variables
+load_dotenv('.env.test')
 
 
 @pytest.fixture
@@ -53,8 +57,8 @@ def mock_provider_config():
 
 @pytest.fixture(scope="session")
 def integration_test_port():
-    """Port for integration tests to avoid conflicts with dev server."""
-    return int(os.environ.get("VDM_TEST_PORT", "18082"))
+    """Port for integration tests (matching development server)."""
+    return int(os.environ.get("VDM_TEST_PORT", "8082"))
 
 
 @pytest.fixture

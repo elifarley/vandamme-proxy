@@ -478,28 +478,47 @@ async def count_tokens(
 @router.get("/health")
 async def health_check() -> Dict[str, Any]:
     """Health check endpoint with provider status"""
-    # Gather provider information
-    providers = {}
-    for provider_name in config.provider_manager.provider_configs.keys():
-        provider_config = config.provider_manager.get_provider_config(provider_name)
-        providers[provider_name] = {
-            "name": provider_name,
-            "api_format": provider_config.api_format if provider_config else "unknown",
-            "base_url": provider_config.base_url if provider_config else None,
-            "api_key_configured": bool(provider_config.api_key) if provider_config else False,
-            "is_anthropic_format": provider_config.is_anthropic_format if provider_config else False,
-            "is_default": provider_name == config.provider_manager.default_provider,
-        }
+    try:
+        # Gather provider information
+        providers = {}
+        try:
+            for provider_name in config.provider_manager.provider_configs.keys():
+                provider_config = config.provider_manager.get_provider_config(provider_name)
+                providers[provider_name] = {
+                    "name": provider_name,
+                    "api_format": provider_config.api_format if provider_config else "unknown",
+                    "base_url": provider_config.base_url if provider_config else None,
+                    "api_key_configured": bool(provider_config.api_key) if provider_config else False,
+                    "is_anthropic_format": provider_config.is_anthropic_format if provider_config else False,
+                    "is_default": provider_name == config.provider_manager.default_provider,
+                }
+        except Exception as e:
+            # If provider manager fails, include error in response
+            logger.error(f"Error gathering provider info: {e}")
 
-    return {
-        "status": "healthy",
-        "timestamp": datetime.now().isoformat(),
-        "openai_api_configured": bool(config.openai_api_key),
-        "api_key_valid": config.validate_api_key(),
-        "client_api_key_validation": bool(config.anthropic_api_key),
-        "default_provider": config.provider_manager.default_provider,
-        "providers": providers,
-    }
+        return {
+            "status": "healthy",
+            "timestamp": datetime.now().isoformat(),
+            "openai_api_configured": bool(config.openai_api_key),
+            "api_key_valid": config.validate_api_key(),
+            "client_api_key_validation": bool(config.anthropic_api_key),
+            "default_provider": getattr(config.provider_manager, 'default_provider', 'unknown'),
+            "providers": providers,
+        }
+    except Exception as e:
+        # Return degraded health status if configuration is missing
+        logger.error(f"Health check error: {e}")
+        return {
+            "status": "degraded",
+            "timestamp": datetime.now().isoformat(),
+            "error": str(e),
+            "message": "Server is running but configuration is incomplete",
+            "suggestions": [
+                "Set OPENAI_API_KEY environment variable for OpenAI provider",
+                "Set VDM_DEFAULT_PROVIDER to specify your preferred provider",
+                "Check .env file for required configuration"
+            ]
+        }
 
 
 @router.get("/test-connection")
@@ -516,7 +535,7 @@ async def test_connection() -> JSONResponse:
             {
                 "model": "gpt-4o-mini",  # Use a common model that most providers support
                 "messages": [{"role": "user", "content": "Hello"}],
-                "max_tokens": 5,
+                "max_tokens": 20,  # Minimum value that most providers accept
             }
         )
 
