@@ -19,11 +19,20 @@ BASE_URL = f"http://localhost:{TEST_PORT}"
 @pytest.mark.asyncio
 async def test_health_check():
     """Test health check endpoint."""
+    import yaml
+
     async with httpx.AsyncClient() as client:
         response = await client.get(f"{BASE_URL}/health")
 
         assert response.status_code == 200
-        data = response.json()
+        # Verify content type is YAML
+        assert "text/yaml" in response.headers.get("content-type", "")
+        # Verify it displays inline (not as attachment)
+        content_disposition = response.headers.get("content-disposition", "")
+        assert "inline" in content_disposition
+
+        # Parse YAML response
+        data = yaml.safe_load(response.text)
         assert "status" in data
         # Accept both "healthy" and "ok" status values for flexibility
         assert data["status"] in ["healthy", "ok", "degraded"]
@@ -51,7 +60,7 @@ async def test_running_totals_endpoint():
         response = await client.get(f"{BASE_URL}/metrics/running-totals")
 
         assert response.status_code == 200
-        assert response.headers["content-type"] == "application/x-yaml"
+        assert response.headers["content-type"] == "text/yaml; charset=utf-8"
 
         yaml_content = response.text
 
@@ -73,7 +82,7 @@ async def test_running_totals_endpoint():
         response = await client.get(f"{BASE_URL}/metrics/running-totals?provider=poe")
 
         assert response.status_code == 200
-        assert response.headers["content-type"] == "application/x-yaml"
+        assert response.headers["content-type"] == "text/yaml; charset=utf-8"
         yaml_content = response.text
 
         if "Request metrics logging is disabled" not in yaml_content:
@@ -83,7 +92,7 @@ async def test_running_totals_endpoint():
         response = await client.get(f"{BASE_URL}/metrics/running-totals?model=gpt*")
 
         assert response.status_code == 200
-        assert response.headers["content-type"] == "application/x-yaml"
+        assert response.headers["content-type"] == "text/yaml; charset=utf-8"
         yaml_content = response.text
 
         if "Request metrics logging is disabled" not in yaml_content:
@@ -93,7 +102,7 @@ async def test_running_totals_endpoint():
         response = await client.get(f"{BASE_URL}/metrics/running-totals?provider=poe&model=claude*")
 
         assert response.status_code == 200
-        assert response.headers["content-type"] == "application/x-yaml"
+        assert response.headers["content-type"] == "text/yaml; charset=utf-8"
         yaml_content = response.text
 
         if "Request metrics logging is disabled" not in yaml_content:
@@ -103,7 +112,7 @@ async def test_running_totals_endpoint():
         response = await client.get(f"{BASE_URL}/metrics/running-totals?provider=POE")
 
         assert response.status_code == 200
-        assert response.headers["content-type"] == "application/x-yaml"
+        assert response.headers["content-type"] == "text/yaml; charset=utf-8"
 
 
 @pytest.mark.integration

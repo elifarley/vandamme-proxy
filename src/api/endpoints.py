@@ -6,8 +6,9 @@ from typing import Any, AsyncGenerator, Dict, Optional, Union
 
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 
+from src.api.utils.yaml_formatter import format_health_yaml
 from src.conversion.request_converter import convert_claude_to_openai
 from src.conversion.response_converter import (
     convert_openai_streaming_to_claude_with_cancellation,
@@ -589,7 +590,7 @@ async def count_tokens(
 
 
 @router.get("/health")
-async def health_check() -> Dict[str, Any]:
+async def health_check() -> PlainTextResponse:
     """Health check endpoint with provider status"""
     try:
         # Gather provider information
@@ -613,7 +614,7 @@ async def health_check() -> Dict[str, Any]:
             # If provider manager fails, include error in response
             logger.error(f"Error gathering provider info: {e}")
 
-        return {
+        health_data = {
             "status": "healthy",
             "timestamp": datetime.now().isoformat(),
             "openai_api_configured": bool(config.openai_api_key),
@@ -622,10 +623,22 @@ async def health_check() -> Dict[str, Any]:
             "default_provider": getattr(config.provider_manager, "default_provider", "unknown"),
             "providers": providers,
         }
+
+        # Format as YAML
+        yaml_output = format_health_yaml(health_data)
+
+        return PlainTextResponse(
+            content=yaml_output,
+            media_type="text/yaml; charset=utf-8",
+            headers={
+                "Cache-Control": "no-cache",
+                "Content-Disposition": f"inline; filename=health-{datetime.now().strftime('%Y%m%d-%H%M%S')}.yaml",
+            },
+        )
     except Exception as e:
         # Return degraded health status if configuration is missing
         logger.error(f"Health check error: {e}")
-        return {
+        degraded_data = {
             "status": "degraded",
             "timestamp": datetime.now().isoformat(),
             "error": str(e),
@@ -636,6 +649,18 @@ async def health_check() -> Dict[str, Any]:
                 "Check .env file for required configuration",
             ],
         }
+
+        # Format as YAML
+        yaml_output = format_health_yaml(degraded_data)
+
+        return PlainTextResponse(
+            content=yaml_output,
+            media_type="text/yaml; charset=utf-8",
+            headers={
+                "Cache-Control": "no-cache",
+                "Content-Disposition": f"inline; filename=health-{datetime.now().strftime('%Y%m%d-%H%M%S')}.yaml",
+            },
+        )
 
 
 @router.get("/test-connection")

@@ -43,7 +43,7 @@ async def get_running_totals(
                     "# Suggestion": "Set LOG_REQUEST_METRICS=true to enable tracking",
                 }
             )
-            return PlainTextResponse(content=yaml_data, media_type="application/x-yaml")
+            return PlainTextResponse(content=yaml_data, media_type="text/yaml; charset=utf-8")
 
         # Get hierarchical data with filtering
         data = request_tracker.get_running_totals_hierarchical(
@@ -66,7 +66,7 @@ async def get_running_totals(
 
         return PlainTextResponse(
             content=yaml_output,
-            media_type="application/x-yaml",
+            media_type="text/yaml; charset=utf-8",
             headers={
                 "Cache-Control": "no-cache",
                 "Content-Disposition": f"inline; filename=running-totals-{datetime.now().strftime('%Y%m%d-%H%M%S')}.yaml",
@@ -80,5 +80,5 @@ async def get_running_totals(
             {"# Error": None, "error": str(e), "status": "failed"}
         )
         return PlainTextResponse(
-            content=error_yaml, media_type="application/x-yaml", status_code=500
+            content=error_yaml, media_type="text/yaml; charset=utf-8", status_code=500
         )

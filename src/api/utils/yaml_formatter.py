@@ -73,6 +73,9 @@ def format_running_totals_yaml(
             line = line.replace("'#", "#")
             if line.endswith(": null"):
                 line = line[:-6]
+            # Remove trailing single quote if present
+            if line.endswith("'"):
+                line = line[:-1]
         lines.append(line)
 
     return "\n".join(lines)
@@ -142,7 +145,7 @@ def create_hierarchical_structure(
             if provider_info.get("total_tool_calls", 0) > 0:
                 provider_stats["total_tool_calls"] = provider_info["total_tool_calls"]
 
-            structure["providers"][provider_name] = provider_stats
+            providers_dict[provider_name] = provider_stats
 
             # Add models if present
             if "models" in provider_info and provider_info["models"]:
@@ -167,3 +170,71 @@ def create_hierarchical_structure(
         structure["providers"] = providers_dict
 
     return structure
+
+
+def format_health_yaml(data: Dict[str, Any]) -> str:
+    """Format health check data as pretty YAML with comments.
+
+    Args:
+        data: Health check response data
+
+    Returns:
+        Formatted YAML string
+    """
+    # Create the YAML structure with metadata
+    yaml_data = {
+        "# Health Check Report": None,
+        f"# Generated: {datetime.now().isoformat()}Z": None,
+    }
+
+    # Add status-specific comment
+    status = data.get("status", "unknown")
+    if status == "healthy":
+        yaml_data["# Status: All systems operational"] = None
+    elif status == "degraded":
+        yaml_data["# Status: System running with configuration issues"] = None
+
+    # Add empty line for separation
+    yaml_data["#"] = None
+
+    # Add the actual data
+    yaml_data.update(data)
+
+    # Configure YAML for pretty output
+    class PrettyYamlDumper(yaml.SafeDumper):
+        """Custom YAML dumper for pretty formatting."""
+
+        def write_line_break(self, data: Any = None) -> None:
+            # Ensure blank lines between top-level sections
+            super().write_line_break(data)
+            if len(self.indents) == 1:
+                super().write_line_break()
+
+    # Format with 2-space indentation and pretty flow
+    yaml_str = yaml.dump(
+        yaml_data,
+        Dumper=PrettyYamlDumper,
+        default_flow_style=False,
+        indent=2,
+        sort_keys=False,
+        allow_unicode=True,
+        width=100,
+    )
+
+    # Clean up the output - remove null values for comments
+    lines = []
+    for line in yaml_str.split("\n"):
+        # Skip lines that are just "null:" (from our comment structure)
+        if line.strip() == "null:":
+            continue
+        # Clean up comment lines
+        if line.strip().startswith("'#"):
+            line = line.replace("'#", "#")
+            if line.endswith(": null"):
+                line = line[:-6]
+            # Remove trailing single quote if present
+            if line.endswith("'"):
+                line = line[:-1]
+        lines.append(line)
+
+    return "\n".join(lines)

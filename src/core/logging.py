@@ -8,7 +8,7 @@ from collections import defaultdict
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, Generator, Optional
+from typing import Any, Dict, Generator, Optional, cast
 
 from src.core.config import config
 
@@ -527,24 +527,25 @@ class RequestTracker:
         # Calculate average durations
         total_requests = summary_stats["total_requests"]
         summary_stats["average_duration_ms"] = (
-            sum(p["total_duration_ms"] for p in provider_data.values()) / max(1, total_requests)  # type: ignore[arg-type, return-value]
+            sum(p["total_duration_ms"] for p in provider_data.values()) / max(1, total_requests)  # type: ignore[arg-type, misc]
             if total_requests > 0
             else 0
         )
 
         for provider_name, provider_stats in provider_data.items():
-            provider_requests = provider_stats["total_requests"]  # type: ignore[assignment]
-            provider_stats["average_duration_ms"] = (
-                provider_stats["total_duration_ms"] / max(1, provider_requests)  # type: ignore[arg-type, return-value]
-                if provider_requests > 0  # type: ignore[operator]
+            provider_stats_dict = cast(Dict[str, Any], provider_stats)
+            provider_requests = provider_stats_dict["total_requests"]
+            provider_stats_dict["average_duration_ms"] = (
+                provider_stats_dict["total_duration_ms"] / max(1, provider_requests)
+                if provider_requests > 0
                 else 0
             )
 
             # Calculate model averages
-            for model_name, model_stats in provider_stats["models"].items():  # type: ignore[assignment]
+            for model_name, model_stats in provider_stats_dict.get("models", {}).items():
                 model_requests = model_stats["total_requests"]  # type: ignore[assignment]
                 model_stats["average_duration_ms"] = (
-                    model_stats["total_duration_ms"] / max(1, model_requests)  # type: ignore[arg-type, return-value]
+                    model_stats["total_duration_ms"] / max(1, model_requests)  # type: ignore[arg-type]
                     if model_requests > 0  # type: ignore[operator]
                     else 0
                 )
