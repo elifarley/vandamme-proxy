@@ -96,6 +96,7 @@ def create_hierarchical_structure(
     structure = {
         "# Summary Statistics": None,
         "summary": {
+            "last_accessed": summary_data.get("last_accessed"),
             "total_requests": summary_data.get("total_requests", 0),
             "total_errors": summary_data.get("total_errors", 0),
             "total_input_tokens": summary_data.get("total_input_tokens", 0),
@@ -122,6 +123,7 @@ def create_hierarchical_structure(
 
             # Provider stats
             provider_stats = {
+                "last_accessed": provider_info.get("last_accessed"),
                 "total_requests": provider_info.get("total_requests", 0),
                 "total_errors": provider_info.get("total_errors", 0),
                 "total_input_tokens": provider_info.get("total_input_tokens", 0),
@@ -155,6 +157,7 @@ def create_hierarchical_structure(
 
                 for model_name, model_info in sorted(provider_info["models"].items()):
                     model_stats = {
+                        "last_accessed": model_info.get("last_accessed"),
                         "total_requests": model_info.get("total_requests", 0),
                         "average_duration_ms": model_info.get("average_duration_ms", 0),
                     }

@@ -168,6 +168,13 @@ async def create_message(  # type: ignore[no-untyped-def]
                 metrics.openai_model = openai_model
                 metrics.provider = provider_name  # type: ignore[assignment]
 
+                # Update last_accessed timestamp
+                request_tracker.update_last_accessed(
+                    provider=provider_name,
+                    model=openai_model,
+                    timestamp=metrics.start_time_iso
+                )
+
             # Check if client disconnected before processing
             if await http_request.is_disconnected():
                 if LOG_REQUEST_METRICS and metrics:

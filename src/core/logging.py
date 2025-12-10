@@ -70,6 +70,11 @@ class RequestMetrics:
             return (self.end_time - self.start_time) * 1000
         return 0
 
+    @property
+    def start_time_iso(self) -> str:
+        """Get start time as ISO format with second precision"""
+        return datetime.fromtimestamp(self.start_time).strftime('%Y-%m-%dT%H:%M:%S')
+
 
 @dataclass
 class ProviderModelMetrics:
@@ -171,6 +176,11 @@ class RequestTracker:
             self.summary_interval = int(os.environ.get("LOG_SUMMARY_INTERVAL", "100"))
             self.request_count = 0
             self.total_completed_requests = 0
+            self.last_accessed_timestamps = {
+                "models": {},      # provider:model -> timestamp
+                "providers": {},   # provider -> timestamp
+                "top": None        # overall -> timestamp
+            }
             self.initialized = True
 
     def start_request(
@@ -214,6 +224,30 @@ class RequestTracker:
     def get_request(self, request_id: str) -> Optional[RequestMetrics]:
         """Get active request metrics"""
         return self.active_requests.get(request_id)
+
+    def update_last_accessed(self, provider: str, model: str, timestamp: str) -> None:
+        """Update last_accessed timestamps for provider, model, and top level."""
+        # Update model timestamp
+        model_key = f"{provider}:{model}"
+        self.last_accessed_timestamps["models"][model_key] = timestamp
+
+        # Update provider timestamp (take max if exists)
+        if provider in self.last_accessed_timestamps["providers"]:
+            self.last_accessed_timestamps["providers"][provider] = max(
+                self.last_accessed_timestamps["providers"][provider],
+                timestamp
+            )
+        else:
+            self.last_accessed_timestamps["providers"][provider] = timestamp
+
+        # Update top timestamp (take max if exists)
+        if self.last_accessed_timestamps["top"]:
+            self.last_accessed_timestamps["top"] = max(
+                self.last_accessed_timestamps["top"],
+                timestamp
+            )
+        else:
+            self.last_accessed_timestamps["top"] = timestamp
 
     def get_running_totals(self) -> Dict[str, Any]:
         """Get running totals across all requests"""
@@ -388,6 +422,7 @@ class RequestTracker:
 
         # Build summary statistics
         summary_stats = {
+            "last_accessed": self.last_accessed_timestamps.get("top"),
             "total_requests": 0,
             "total_errors": 0,
             "total_input_tokens": 0,
@@ -421,6 +456,7 @@ class RequestTracker:
             # Initialize provider if not exists
             if provider not in provider_data:
                 provider_data[provider] = {
+                    "last_accessed": self.last_accessed_timestamps["providers"].get(provider),
                     "total_requests": 0,
                     "total_errors": 0,
                     "total_input_tokens": 0,
@@ -450,7 +486,9 @@ class RequestTracker:
             # Update model stats if model exists
             if model:
                 if model not in provider_stats["models"]:  # type: ignore[operator]
+                    model_key = f"{provider}:{model}"
                     provider_stats["models"][model] = {  # type: ignore[index]
+                        "last_accessed": self.last_accessed_timestamps["models"].get(model_key),
                         "total_requests": 0,
                         "total_errors": 0,
                         "total_duration_ms": 0,
@@ -500,6 +538,7 @@ class RequestTracker:
             # Initialize provider if not exists
             if provider not in provider_data:
                 provider_data[provider] = {
+                    "last_accessed": self.last_accessed_timestamps["providers"].get(provider),
                     "total_requests": 0,
                     "total_errors": 0,
                     "total_input_tokens": 0,
@@ -523,7 +562,9 @@ class RequestTracker:
             # Update model stats if model exists
             if model != "unknown":
                 if model not in active_provider_stats["models"]:  # type: ignore[operator]
+                    model_key = f"{provider}:{model}"
                     active_provider_stats["models"][model] = {  # type: ignore[index]
+                        "last_accessed": self.last_accessed_timestamps["models"].get(model_key),
                         "total_requests": 0,
                         "total_errors": 0,
                         "total_duration_ms": 0,
