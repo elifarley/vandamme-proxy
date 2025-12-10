@@ -74,18 +74,11 @@ class ProviderManager:
         if self._middleware_initialized:
             return
 
-        # Register thought signature middleware for Gemini/Vertex providers
-        # Check if any provider needs thought signature support
-        has_gemini_provider = any(
-            provider.lower() in ["vertex", "google", "gemini"]
-            or (config and "gemini" in (config.base_url or "").lower())
-            for provider, config in self._configs.items()
-        )
-
-        # Check if thought signatures are enabled in configuration
+        # Register thought signature middleware if enabled
+        # The middleware will decide which requests to handle based on model names
         from src.core.config import config as app_config
 
-        if has_gemini_provider and app_config.gemini_thought_signatures_enabled:
+        if app_config.gemini_thought_signatures_enabled:
             # Create store with configuration options
             from src.middleware.thought_signature import ThoughtSignatureStore
 

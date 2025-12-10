@@ -369,20 +369,21 @@ class ThoughtSignatureMiddleware(Middleware):
         """
         Determine if this middleware should handle the request.
 
-        Handles:
-        - Google Vertex AI provider ("vertex")
-        - Any provider with "gemini" in the name
-        - Models with "gemini" in the name
+        The middleware handles any request for a model with "gemini" in the name,
+        regardless of which provider is serving it.
+
+        This elegant approach allows any provider (Poe, Vertex AI, etc.) to serve
+        Gemini models while automatically getting thought signature support.
         """
-        provider_lower = provider.lower()
         model_lower = model.lower()
 
-        return (
-            "vertex" in provider_lower
-            or "google" in provider_lower
-            or "gemini" in provider_lower
-            or "gemini" in model_lower
-        )
+        # Handle any model with "gemini" in the name
+        # This covers gemini-1.5-pro, gemini-3-pro, claude-3-gemini, etc.
+        handles = "gemini" in model_lower
+
+        self.logger.debug(f"should_handle: provider={provider}, model={model}, handles={handles}")
+
+        return handles
 
     async def before_request(self, context: RequestContext) -> RequestContext:
         """
@@ -397,6 +398,10 @@ class ThoughtSignatureMiddleware(Middleware):
         Returns:
             Context with thought signatures injected
         """
+        self.logger.debug(
+            f"before_request: conversation_id={context.conversation_id}, provider={context.provider}, model={context.model}, messages={len(context.messages)}"
+        )
+
         messages = context.messages
         if not messages:
             return context
@@ -452,6 +457,10 @@ class ThoughtSignatureMiddleware(Middleware):
         Returns:
             Unmodified response context
         """
+        self.logger.debug(
+            f"after_response: conversation_id={context.request_context.conversation_id}, is_streaming={context.is_streaming}, response_keys={list(context.response.keys()) if context.response else []}"
+        )
+
         if context.is_streaming:
             return context
 
@@ -536,20 +545,30 @@ class ThoughtSignatureMiddleware(Middleware):
             response: The response to process
             request_context: The original request context
         """
+        self.logger.debug(
+            f"_extract_and_store: response_keys={list(response.keys())}, conversation_id={request_context.conversation_id}"
+        )
+
         # Handle OpenAI response format
         message = None
         if "choices" in response and response["choices"]:
             message = response["choices"][0].get("message", {})
+            self.logger.debug(f"_extract_and_store: Found OpenAI format with choices")
         elif "message" in response:
             # Direct message format
             message = response["message"]
+            self.logger.debug(f"_extract_and_store: Found direct message format")
         else:
             # Flat response format
             message = response
+            self.logger.debug(f"_extract_and_store: Using flat response format")
 
         # Extract reasoning details
         reasoning_details = message.get("reasoning_details", [])
+        self.logger.debug(f"_extract_and_store: reasoning_details found={len(reasoning_details)}")
+
         if not reasoning_details:
+            self.logger.debug("_extract_and_store: No reasoning_details found in response")
             return
 
         # Extract tool calls

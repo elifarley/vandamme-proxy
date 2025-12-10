@@ -22,6 +22,9 @@ def convert_openai_to_claude_response(
     choice = choices[0]
     message = choice.get("message", {})
 
+    # Extract reasoning_details for thought signatures if present
+    reasoning_details = message.get("reasoning_details", [])
+
     # Build Claude content blocks
     content_blocks = []
 
@@ -76,6 +79,10 @@ def convert_openai_to_claude_response(
             "output_tokens": openai_response.get("usage", {}).get("completion_tokens", 0),
         },
     }
+
+    # Pass through reasoning_details for middleware to process
+    if reasoning_details:
+        claude_response["reasoning_details"] = reasoning_details
 
     return claude_response
 
