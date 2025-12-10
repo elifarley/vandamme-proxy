@@ -19,6 +19,23 @@ if log_level not in valid_levels:
     log_level = "INFO"
 
 
+NOISY_HTTP_LOGGERS = (
+    "openai",
+    "httpx",
+    "httpcore",
+    "httpcore.http11",
+    "httpcore.connection",
+)
+
+
+def set_noisy_http_logger_levels(current_log_level: str) -> None:
+    """Ensure HTTP client noise only surfaces at DEBUG level."""
+
+    noisy_level = logging.DEBUG if current_log_level == "DEBUG" else logging.WARNING
+    for logger_name in NOISY_HTTP_LOGGERS:
+        logging.getLogger(logger_name).setLevel(noisy_level)
+
+
 # Enhanced Logging Infrastructure
 @dataclass
 class RequestMetrics:
@@ -208,7 +225,26 @@ class CorrelationFormatter(logging.Formatter):
 # Configure root logger
 formatter = CorrelationFormatter("%(asctime)s - %(levelname)s - %(message)s", datefmt="%H:%M:%S")
 
+
+class HttpRequestLogDowngradeFilter(logging.Filter):
+    """Downgrade noisy third-party HTTP logs to DEBUG."""
+
+    def __init__(self, *prefixes: str) -> None:
+        super().__init__()
+        self.prefixes = prefixes
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.levelno == logging.INFO:
+            for prefix in self.prefixes:
+                if record.name.startswith(prefix):
+                    record.levelno = logging.DEBUG
+                    record.levelname = logging.getLevelName(logging.DEBUG)
+                    break
+        return True
+
+
 handler = logging.StreamHandler()
+handler.addFilter(HttpRequestLogDowngradeFilter(*NOISY_HTTP_LOGGERS))
 handler.setFormatter(formatter)
 
 root_logger = logging.getLogger()
@@ -219,6 +255,8 @@ root_logger.setLevel(getattr(logging, log_level))
 # Configure uvicorn to be quieter
 for uvicorn_logger in ["uvicorn", "uvicorn.access", "uvicorn.error"]:
     logging.getLogger(uvicorn_logger).setLevel(logging.WARNING)
+
+set_noisy_http_logger_levels(log_level)
 
 # Global instances
 logger = logging.getLogger(__name__)

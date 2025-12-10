@@ -60,12 +60,15 @@ def main() -> None:
     if log_level not in valid_levels:
         log_level = "info"
 
+    access_log = log_level == "debug"
+
     # Start server
     uvicorn.run(
         "src.main:app",
         host=config.host,
         port=config.port,
         log_level=log_level,
+        access_log=access_log,
         reload=False,
     )
 

@@ -355,6 +355,7 @@ curl -X POST http://localhost:8082/v1/messages \
 ### Debugging
 
 - Set `LOG_LEVEL=DEBUG` to see detailed request/response conversions and middleware operations
+- HTTP client noise (OpenAI/httpx/httpcore request traces) is intentionally downgraded to DEBUG; raise the global log level to DEBUG if you need to inspect raw HTTP calls
 - Check `src/core/logging.py` for logging configuration
 - Request/response conversion is logged in `request_converter.py`
 - Middleware chain execution logged in `src/middleware/base.py`

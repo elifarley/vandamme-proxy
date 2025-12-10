@@ -83,10 +83,14 @@ def _start_daemon(host: str, port: int, pid_file: str) -> None:
 
 def _start_server(host: str, port: int, reload: bool) -> None:
     """Start the uvicorn server."""
+    log_level = config.log_level.split()[0].lower()
+    access_log = log_level == "debug"
+
     uvicorn.run(
         "src.main:app",
         host=host,
         port=port,
         reload=reload,
-        log_level=config.log_level.lower(),
+        log_level=log_level,
+        access_log=access_log,
     )
