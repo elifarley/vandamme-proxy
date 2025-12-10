@@ -24,11 +24,31 @@ from src.core.logging import (
 )
 from src.core.model_manager import model_manager
 from src.middleware import RequestContext, ResponseContext
-from src.models.claude import ClaudeMessagesRequest, ClaudeTokenCountRequest
+from src.models.claude import (
+    ClaudeMessagesRequest,
+    ClaudeTokenCountRequest,
+)
 
 router = APIRouter()
 
 # Custom headers are now handled per provider
+
+
+def count_tool_calls(request: ClaudeMessagesRequest) -> tuple[int, int]:
+    """Count tool_use and tool_result blocks in a Claude request"""
+    tool_use_count = 0
+    tool_result_count = 0
+
+    for message in request.messages:
+        if isinstance(message.content, list):
+            for block in message.content:
+                if hasattr(block, "type"):
+                    if block.type == "tool_use":
+                        tool_use_count += 1
+                    elif block.type == "tool_result":
+                        tool_result_count += 1
+
+    return tool_use_count, tool_result_count
 
 
 async def validate_api_key(
@@ -80,10 +100,16 @@ async def create_message(  # type: ignore[no-untyped-def]
             elif isinstance(request.system, list):
                 message_count += len(request.system)
         metrics.message_count = message_count
+
+        # Count tool uses and tool results
+        tool_use_count, tool_result_count = count_tool_calls(request)
+        metrics.tool_use_count = tool_use_count
+        metrics.tool_result_count = tool_result_count
     else:
         metrics = None
         request_size = 0
         message_count = len(request.messages) + (1 if request.system else 0)
+        tool_use_count, tool_result_count = count_tool_calls(request)
 
     # Use correlation context for all logs within this request
     with ConversationLogger.correlation_context(request_id):
@@ -95,7 +121,9 @@ async def create_message(  # type: ignore[no-untyped-def]
                 f"Messages: {message_count} | "
                 f"Max Tokens: {request.max_tokens} | "
                 f"Size: {request_size:,} bytes | "
-                f"Tools: {len(request.tools) if request.tools else 0}"
+                f"Tools: {len(request.tools) if request.tools else 0} | "
+                f"Tool Uses: {tool_use_count} | "
+                f"Tool Results: {tool_result_count}"
             )
         else:
             logger.debug(
@@ -317,6 +345,8 @@ async def create_message(  # type: ignore[no-untyped-def]
                         usage = anthropic_response.get("usage", {})
                         metrics.input_tokens = usage.get("input_tokens", 0)
                         metrics.output_tokens = usage.get("output_tokens", 0)
+                        metrics.cache_read_tokens = usage.get("cache_read_tokens", 0)
+                        metrics.cache_creation_tokens = usage.get("cache_creation_tokens", 0)
 
                     # Direct passthrough - no conversion needed
                     return JSONResponse(status_code=200, content=anthropic_response)
@@ -370,11 +400,20 @@ async def create_message(  # type: ignore[no-untyped-def]
                         input_tokens = usage.get("prompt_tokens", 0)
                         output_tokens = usage.get("completion_tokens", 0)
 
+                    # Count tool calls in response (OpenAI function calls)
+                    response_message = openai_response.get("choices", [{}])[0].get("message", {})
+                    tool_calls = response_message.get("tool_calls", [])
+                    tool_call_count = len(tool_calls)
+
                     # Update metrics
                     if LOG_REQUEST_METRICS and metrics:
                         metrics.response_size = response_size
                         metrics.input_tokens = input_tokens
                         metrics.output_tokens = output_tokens
+                        metrics.cache_creation_tokens = (
+                            usage.get("cache_creation_tokens", 0) if usage else 0
+                        )
+                        metrics.tool_call_count = tool_call_count
 
                     # Debug: Log the response structure
                     if LOG_REQUEST_METRICS:
@@ -388,10 +427,20 @@ async def create_message(  # type: ignore[no-untyped-def]
                 # Log successful completion
                 duration_ms = (time.time() - start_time) * 1000
                 if LOG_REQUEST_METRICS:
+                    # Get tool call count if available
+                    tool_call_display = ""
+                    if metrics and metrics.tool_call_count > 0:
+                        tool_call_display = f" | Tool Calls: {metrics.tool_call_count}"
+                    elif tool_use_count > 0 or tool_result_count > 0:
+                        tool_call_display = (
+                            f" | Tool Uses: {tool_use_count} | Tool Results: {tool_result_count}"
+                        )
+
                     conversation_logger.info(
                         f"✅ SUCCESS | Duration: {duration_ms:.0f}ms | "
                         f"Tokens: {input_tokens:,}→{output_tokens:,} | "
                         f"Size: {request_size:,}→{response_size:,} bytes"
+                        f"{tool_call_display}"
                     )
 
                 # End request tracking
@@ -821,6 +870,7 @@ async def root() -> Dict[str, Any]:
         "endpoints": {
             "messages": "/v1/messages",
             "count_tokens": "/v1/messages/count_tokens",
+            "running_totals": "/metrics/running-totals",
             "models": "/v1/models",
             "health": "/health",
             "test_connection": "/test-connection",

@@ -44,6 +44,70 @@ async def test_models_endpoint():
 
 @pytest.mark.integration
 @pytest.mark.asyncio
+async def test_running_totals_endpoint():
+    """Test GET /metrics/running-totals endpoint."""
+    async with httpx.AsyncClient() as client:
+        # Test without filters
+        response = await client.get(f"{BASE_URL}/metrics/running-totals")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "application/x-yaml"
+
+        yaml_content = response.text
+
+        # If metrics are disabled, we get a different response
+        if "Request metrics logging is disabled" in yaml_content:
+            assert "Set LOG_REQUEST_METRICS=true to enable tracking" in yaml_content
+        else:
+            # Check for YAML structure elements
+            assert "# Running Totals Report" in yaml_content
+            assert "summary:" in yaml_content
+            assert "total_requests:" in yaml_content
+            assert "total_errors:" in yaml_content
+            assert "total_input_tokens:" in yaml_content
+            assert "total_output_tokens:" in yaml_content
+            assert "active_requests:" in yaml_content
+            assert "average_duration_ms:" in yaml_content
+
+        # Test with provider filter
+        response = await client.get(f"{BASE_URL}/metrics/running-totals?provider=poe")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "application/x-yaml"
+        yaml_content = response.text
+
+        if "Request metrics logging is disabled" not in yaml_content:
+            assert "# Filter: provider=poe" in yaml_content
+
+        # Test with model filter using wildcard
+        response = await client.get(f"{BASE_URL}/metrics/running-totals?model=gpt*")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "application/x-yaml"
+        yaml_content = response.text
+
+        if "Request metrics logging is disabled" not in yaml_content:
+            assert "# Filter: model=gpt*" in yaml_content
+
+        # Test with both provider and model filter
+        response = await client.get(f"{BASE_URL}/metrics/running-totals?provider=poe&model=claude*")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "application/x-yaml"
+        yaml_content = response.text
+
+        if "Request metrics logging is disabled" not in yaml_content:
+            assert "# Filter: provider=poe & model=claude*" in yaml_content
+
+        # Test case-insensitive matching
+        response = await client.get(f"{BASE_URL}/metrics/running-totals?provider=POE")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "application/x-yaml"
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
 async def test_connection_test():
     """Test connection test endpoint."""
     async with httpx.AsyncClient() as client:

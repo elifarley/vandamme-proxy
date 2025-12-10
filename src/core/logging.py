@@ -1,3 +1,4 @@
+import fnmatch
 import json
 import logging
 import os
@@ -6,6 +7,7 @@ import time
 from collections import defaultdict
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Dict, Generator, Optional
 
 from src.core.config import config
@@ -50,12 +52,16 @@ class RequestMetrics:
     input_tokens: int = 0
     output_tokens: int = 0
     cache_read_tokens: int = 0
+    cache_creation_tokens: int = 0
     message_count: int = 0
     request_size: int = 0  # bytes
     response_size: int = 0  # bytes
     is_streaming: bool = False
     error: Optional[str] = None
     error_type: Optional[str] = None
+    tool_use_count: int = 0  # Number of tool_use blocks in the request
+    tool_result_count: int = 0  # Number of tool_result blocks in the request
+    tool_call_count: int = 0  # Number of tool calls made (OpenAI function calls)
 
     @property
     def duration_ms(self) -> float:
@@ -63,6 +69,22 @@ class RequestMetrics:
         if self.end_time:
             return (self.end_time - self.start_time) * 1000
         return 0
+
+
+@dataclass
+class ProviderModelMetrics:
+    """Metrics for a specific provider/model combination"""
+
+    total_requests: int = 0
+    total_errors: int = 0
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
+    total_cache_read_tokens: int = 0
+    total_cache_creation_tokens: int = 0
+    total_duration_ms: float = 0
+    total_tool_uses: int = 0
+    total_tool_results: int = 0
+    total_tool_calls: int = 0
 
 
 @dataclass
@@ -74,9 +96,16 @@ class SummaryMetrics:
     total_input_tokens: int = 0
     total_output_tokens: int = 0
     total_cache_read_tokens: int = 0
+    total_cache_creation_tokens: int = 0
     total_duration_ms: float = 0
+    total_tool_uses: int = 0
+    total_tool_results: int = 0
+    total_tool_calls: int = 0
     model_counts: Dict[str, int] = field(default_factory=lambda: defaultdict(int))
     error_counts: Dict[str, int] = field(default_factory=lambda: defaultdict(int))
+    provider_model_metrics: Dict[str, ProviderModelMetrics] = field(
+        default_factory=lambda: defaultdict(ProviderModelMetrics)
+    )
 
     def add_request(self, metrics: RequestMetrics) -> None:
         """Add request metrics to summary"""
@@ -84,7 +113,11 @@ class SummaryMetrics:
         self.total_input_tokens += metrics.input_tokens
         self.total_output_tokens += metrics.output_tokens
         self.total_cache_read_tokens += metrics.cache_read_tokens
+        self.total_cache_creation_tokens += metrics.cache_creation_tokens
         self.total_duration_ms += metrics.duration_ms
+        self.total_tool_uses += metrics.tool_use_count
+        self.total_tool_results += metrics.tool_result_count
+        self.total_tool_calls += metrics.tool_call_count
 
         if metrics.openai_model:
             self.model_counts[metrics.openai_model] += 1
@@ -93,6 +126,26 @@ class SummaryMetrics:
             self.total_errors += 1
             error_key = metrics.error_type or "unknown"
             self.error_counts[error_key] += 1
+
+        # Track metrics by provider/model combination
+        provider_key = (
+            f"{metrics.provider}:{metrics.openai_model}"
+            if metrics.provider and metrics.openai_model
+            else metrics.provider or metrics.openai_model or "unknown"
+        )
+        pm_metrics = self.provider_model_metrics[provider_key]
+        pm_metrics.total_requests += 1
+        pm_metrics.total_input_tokens += metrics.input_tokens
+        pm_metrics.total_output_tokens += metrics.output_tokens
+        pm_metrics.total_cache_read_tokens += metrics.cache_read_tokens
+        pm_metrics.total_cache_creation_tokens += metrics.cache_creation_tokens
+        pm_metrics.total_duration_ms += metrics.duration_ms
+        pm_metrics.total_tool_uses += metrics.tool_use_count
+        pm_metrics.total_tool_results += metrics.tool_result_count
+        pm_metrics.total_tool_calls += metrics.tool_call_count
+
+        if metrics.error:
+            pm_metrics.total_errors += 1
 
 
 class RequestTracker:
@@ -114,6 +167,7 @@ class RequestTracker:
             self.summary_metrics = SummaryMetrics()
             self.summary_interval = int(os.environ.get("LOG_SUMMARY_INTERVAL", "100"))
             self.request_count = 0
+            self.total_completed_requests = 0
             self.initialized = True
 
     def start_request(
@@ -145,6 +199,7 @@ class RequestTracker:
         # Add to summary
         self.summary_metrics.add_request(metrics)
         self.request_count += 1
+        self.total_completed_requests += 1
 
         # Check if we should emit summary
         if self.request_count % self.summary_interval == 0:
@@ -157,6 +212,371 @@ class RequestTracker:
         """Get active request metrics"""
         return self.active_requests.get(request_id)
 
+    def get_running_totals(self) -> Dict[str, Any]:
+        """Get running totals across all requests"""
+        # Include both completed and active requests
+        all_completed_metrics = self.summary_metrics
+
+        # Add metrics from currently active requests
+        active_input_tokens = sum(m.input_tokens for m in self.active_requests.values())
+        active_output_tokens = sum(m.output_tokens for m in self.active_requests.values())
+        active_cache_read = sum(m.cache_read_tokens for m in self.active_requests.values())
+        active_cache_creation = sum(m.cache_creation_tokens for m in self.active_requests.values())
+        active_tool_uses = sum(m.tool_use_count for m in self.active_requests.values())
+        active_tool_results = sum(m.tool_result_count for m in self.active_requests.values())
+        active_tool_calls = sum(m.tool_call_count for m in self.active_requests.values())
+
+        return {
+            "total_requests": self.total_completed_requests + len(self.active_requests),
+            "total_errors": all_completed_metrics.total_errors,
+            "total_input_tokens": all_completed_metrics.total_input_tokens + active_input_tokens,
+            "total_output_tokens": all_completed_metrics.total_output_tokens + active_output_tokens,
+            "total_cache_read_tokens": all_completed_metrics.total_cache_read_tokens
+            + active_cache_read,
+            "total_cache_creation_tokens": all_completed_metrics.total_cache_creation_tokens
+            + active_cache_creation,
+            "total_tool_uses": all_completed_metrics.total_tool_uses + active_tool_uses,
+            "total_tool_results": all_completed_metrics.total_tool_results + active_tool_results,
+            "total_tool_calls": all_completed_metrics.total_tool_calls + active_tool_calls,
+            "active_requests": len(self.active_requests),
+            "model_distribution": dict(all_completed_metrics.model_counts),
+            "error_distribution": dict(all_completed_metrics.error_counts),
+            "average_duration_ms": (
+                all_completed_metrics.total_duration_ms
+                / max(1, all_completed_metrics.total_requests)
+                if all_completed_metrics.total_requests > 0
+                else 0
+            ),
+        }
+
+    def get_filtered_running_totals(
+        self, provider_filter: Optional[str] = None, model_filter: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Get running totals filtered by provider and/or model"""
+        # Include both completed and active requests
+        all_completed_metrics = self.summary_metrics
+
+        # Filter completed requests by provider/model
+        filtered_metrics = ProviderModelMetrics()
+
+        # Process completed requests
+        for provider_model_key, pm_metrics in all_completed_metrics.provider_model_metrics.items():
+            provider, model = (
+                provider_model_key.split(":", 1)
+                if ":" in provider_model_key
+                else (provider_model_key, None)
+            )
+
+            # Apply filters
+            if provider_filter and provider != provider_filter:
+                continue
+            if model_filter and model != model_filter:
+                continue
+
+            # Accumulate metrics
+            filtered_metrics.total_requests += pm_metrics.total_requests
+            filtered_metrics.total_errors += pm_metrics.total_errors
+            filtered_metrics.total_input_tokens += pm_metrics.total_input_tokens
+            filtered_metrics.total_output_tokens += pm_metrics.total_output_tokens
+            filtered_metrics.total_cache_read_tokens += pm_metrics.total_cache_read_tokens
+            filtered_metrics.total_cache_creation_tokens += pm_metrics.total_cache_creation_tokens
+            filtered_metrics.total_duration_ms += pm_metrics.total_duration_ms
+            filtered_metrics.total_tool_uses += pm_metrics.total_tool_uses
+            filtered_metrics.total_tool_results += pm_metrics.total_tool_results
+            filtered_metrics.total_tool_calls += pm_metrics.total_tool_calls
+
+        # Process active requests if requested
+        active_requests_count = 0
+        active_input_tokens = 0
+        active_output_tokens = 0
+        active_cache_read = 0
+        active_cache_creation = 0
+        active_tool_uses = 0
+        active_tool_results = 0
+        active_tool_calls = 0
+
+        for metrics in self.active_requests.values():
+            if provider_filter and metrics.provider != provider_filter:
+                continue
+            if model_filter and metrics.openai_model != model_filter:
+                continue
+
+            active_requests_count += 1
+            active_input_tokens += metrics.input_tokens
+            active_output_tokens += metrics.output_tokens
+            active_cache_read += metrics.cache_read_tokens
+            active_cache_creation += metrics.cache_creation_tokens
+            active_tool_uses += metrics.tool_use_count
+            active_tool_results += metrics.tool_result_count
+            active_tool_calls += metrics.tool_call_count
+
+        # Build provider/model distribution
+        provider_model_distribution = []
+        for provider_model_key, pm_metrics in all_completed_metrics.provider_model_metrics.items():
+            provider, model = (
+                provider_model_key.split(":", 1)
+                if ":" in provider_model_key
+                else (provider_model_key, None)
+            )
+
+            # Apply filters for distribution
+            if provider_filter and provider != provider_filter:
+                continue
+            if model_filter and model != model_filter:
+                continue
+
+            avg_duration = (
+                pm_metrics.total_duration_ms / max(1, pm_metrics.total_requests)
+                if pm_metrics.total_requests > 0
+                else 0
+            )
+
+            provider_model_distribution.append(
+                {
+                    "provider_model": provider_model_key,
+                    "total_requests": pm_metrics.total_requests,
+                    "total_errors": pm_metrics.total_errors,
+                    "total_input_tokens": pm_metrics.total_input_tokens,
+                    "total_output_tokens": pm_metrics.total_output_tokens,
+                    "total_cache_read_tokens": pm_metrics.total_cache_read_tokens,
+                    "total_cache_creation_tokens": pm_metrics.total_cache_creation_tokens,
+                    "total_tool_uses": pm_metrics.total_tool_uses,
+                    "total_tool_results": pm_metrics.total_tool_results,
+                    "total_tool_calls": pm_metrics.total_tool_calls,
+                    "average_duration_ms": avg_duration,
+                }
+            )
+
+        # Calculate average duration
+        total_requests = filtered_metrics.total_requests
+        avg_duration_ms = (
+            filtered_metrics.total_duration_ms / max(1, total_requests) if total_requests > 0 else 0
+        )
+
+        return {
+            "total_requests": filtered_metrics.total_requests + active_requests_count,
+            "total_errors": filtered_metrics.total_errors,
+            "total_input_tokens": filtered_metrics.total_input_tokens + active_input_tokens,
+            "total_output_tokens": filtered_metrics.total_output_tokens + active_output_tokens,
+            "total_cache_read_tokens": filtered_metrics.total_cache_read_tokens + active_cache_read,
+            "total_cache_creation_tokens": filtered_metrics.total_cache_creation_tokens
+            + active_cache_creation,
+            "total_tool_uses": filtered_metrics.total_tool_uses + active_tool_uses,
+            "total_tool_results": filtered_metrics.total_tool_results + active_tool_results,
+            "total_tool_calls": filtered_metrics.total_tool_calls + active_tool_calls,
+            "provider_model_distribution": provider_model_distribution,
+            "average_duration_ms": avg_duration_ms,
+        }
+
+    def get_running_totals_hierarchical(
+        self, provider_filter: Optional[str] = None, model_filter: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Get running totals with hierarchical provider->model structure.
+
+        Args:
+            provider_filter: Case-insensitive provider filter with wildcard support
+            model_filter: Case-insensitive model filter with wildcard support
+
+        Returns:
+            Hierarchical data structure suitable for YAML formatting
+        """
+        # Get all data
+        all_completed_metrics = self.summary_metrics
+
+        # Build summary statistics
+        summary_stats = {
+            "total_requests": 0,
+            "total_errors": 0,
+            "total_input_tokens": 0,
+            "total_output_tokens": 0,
+            "total_cache_read_tokens": 0,
+            "total_cache_creation_tokens": 0,
+            "total_tool_uses": 0,
+            "total_tool_results": 0,
+            "total_tool_calls": 0,
+            "active_requests": len(self.active_requests),
+            "average_duration_ms": 0.0,
+        }
+
+        # Group data by provider and model
+        provider_data = {}
+
+        # Process completed requests
+        for provider_model_key, pm_metrics in all_completed_metrics.provider_model_metrics.items():
+            provider, model = (
+                provider_model_key.split(":", 1)
+                if ":" in provider_model_key
+                else (provider_model_key, None)
+            )
+
+            # Apply filters
+            if provider_filter and not self._matches_pattern(provider, provider_filter):
+                continue
+            if model_filter and model and not self._matches_pattern(model, model_filter):
+                continue
+
+            # Initialize provider if not exists
+            if provider not in provider_data:
+                provider_data[provider] = {
+                    "total_requests": 0,
+                    "total_errors": 0,
+                    "total_input_tokens": 0,
+                    "total_output_tokens": 0,
+                    "total_cache_read_tokens": 0,
+                    "total_cache_creation_tokens": 0,
+                    "total_tool_uses": 0,
+                    "total_tool_results": 0,
+                    "total_tool_calls": 0,
+                    "total_duration_ms": 0,
+                    "models": {},
+                }
+
+            # Update provider stats
+            provider_stats: Dict[str, Any] = provider_data[provider]
+            provider_stats["total_requests"] += pm_metrics.total_requests  # type: ignore[arg-type]
+            provider_stats["total_errors"] += pm_metrics.total_errors  # type: ignore[arg-type]
+            provider_stats["total_input_tokens"] += pm_metrics.total_input_tokens  # type: ignore[arg-type]
+            provider_stats["total_output_tokens"] += pm_metrics.total_output_tokens  # type: ignore[arg-type]
+            provider_stats["total_cache_read_tokens"] += pm_metrics.total_cache_read_tokens  # type: ignore[arg-type]
+            provider_stats["total_cache_creation_tokens"] += pm_metrics.total_cache_creation_tokens  # type: ignore[arg-type]
+            provider_stats["total_tool_uses"] += pm_metrics.total_tool_uses  # type: ignore[arg-type]
+            provider_stats["total_tool_results"] += pm_metrics.total_tool_results  # type: ignore[arg-type]
+            provider_stats["total_tool_calls"] += pm_metrics.total_tool_calls  # type: ignore[arg-type]
+            provider_stats["total_duration_ms"] += pm_metrics.total_duration_ms  # type: ignore[arg-type]
+
+            # Update model stats if model exists
+            if model:
+                if model not in provider_stats["models"]:  # type: ignore[operator]
+                    provider_stats["models"][model] = {  # type: ignore[index]
+                        "total_requests": 0,
+                        "total_errors": 0,
+                        "total_duration_ms": 0,
+                    }
+
+                model_stats = provider_stats["models"][model]  # type: ignore[index]
+                model_stats["total_requests"] += pm_metrics.total_requests  # type: ignore[arg-type]
+                model_stats["total_errors"] += pm_metrics.total_errors  # type: ignore[arg-type]
+                model_stats["total_duration_ms"] += pm_metrics.total_duration_ms  # type: ignore[arg-type]
+
+            # Update summary stats
+            summary_stats["total_requests"] += pm_metrics.total_requests
+            summary_stats["total_errors"] += pm_metrics.total_errors
+            summary_stats["total_input_tokens"] += pm_metrics.total_input_tokens
+            summary_stats["total_output_tokens"] += pm_metrics.total_output_tokens
+            summary_stats["total_cache_read_tokens"] += pm_metrics.total_cache_read_tokens
+            summary_stats["total_cache_creation_tokens"] += pm_metrics.total_cache_creation_tokens
+            summary_stats["total_tool_uses"] += pm_metrics.total_tool_uses
+            summary_stats["total_tool_results"] += pm_metrics.total_tool_results
+            summary_stats["total_tool_calls"] += pm_metrics.total_tool_calls
+
+        # Process active requests
+        for request_id, metrics in self.active_requests.items():
+            provider = metrics.provider or "unknown"
+            model = metrics.claude_model or "unknown"
+
+            # Apply filters to active requests
+            if provider_filter and not self._matches_pattern(provider, provider_filter):
+                continue
+            if (
+                model_filter
+                and model != "unknown"
+                and not self._matches_pattern(model, model_filter)
+            ):
+                continue
+
+            # Update summary for active requests
+            summary_stats["total_requests"] += 1
+            summary_stats["total_input_tokens"] += metrics.input_tokens or 0
+            summary_stats["total_tool_uses"] += metrics.tool_use_count or 0
+            summary_stats["total_tool_results"] += metrics.tool_result_count or 0
+
+            # Initialize provider if not exists
+            if provider not in provider_data:
+                provider_data[provider] = {
+                    "total_requests": 0,
+                    "total_errors": 0,
+                    "total_input_tokens": 0,
+                    "total_output_tokens": 0,
+                    "total_cache_read_tokens": 0,
+                    "total_cache_creation_tokens": 0,
+                    "total_tool_uses": 0,
+                    "total_tool_results": 0,
+                    "total_tool_calls": 0,
+                    "total_duration_ms": 0,
+                    "models": {},
+                }
+
+            # Update provider stats for active request
+            active_provider_stats: Dict[str, Any] = provider_data[provider]
+            active_provider_stats["total_requests"] += 1  # type: ignore[arg-type]
+            active_provider_stats["total_input_tokens"] += metrics.input_tokens or 0  # type: ignore[arg-type]
+            active_provider_stats["total_tool_uses"] += metrics.tool_use_count or 0  # type: ignore[arg-type]
+            active_provider_stats["total_tool_results"] += metrics.tool_result_count or 0  # type: ignore[arg-type]
+
+            # Update model stats if model exists
+            if model != "unknown":
+                if model not in active_provider_stats["models"]:  # type: ignore[operator]
+                    active_provider_stats["models"][model] = {  # type: ignore[index]
+                        "total_requests": 0,
+                        "total_errors": 0,
+                        "total_duration_ms": 0,
+                    }
+
+                active_provider_stats["models"][model]["total_requests"] += 1  # type: ignore[index, arg-type]
+
+        # Calculate average durations
+        total_requests = summary_stats["total_requests"]
+        summary_stats["average_duration_ms"] = (
+            sum(p["total_duration_ms"] for p in provider_data.values()) / max(1, total_requests)  # type: ignore[arg-type, return-value]
+            if total_requests > 0
+            else 0
+        )
+
+        for provider_name, provider_stats in provider_data.items():
+            provider_requests = provider_stats["total_requests"]  # type: ignore[assignment]
+            provider_stats["average_duration_ms"] = (
+                provider_stats["total_duration_ms"] / max(1, provider_requests)  # type: ignore[arg-type, return-value]
+                if provider_requests > 0  # type: ignore[operator]
+                else 0
+            )
+
+            # Calculate model averages
+            for model_name, model_stats in provider_stats["models"].items():  # type: ignore[assignment]
+                model_requests = model_stats["total_requests"]  # type: ignore[assignment]
+                model_stats["average_duration_ms"] = (
+                    model_stats["total_duration_ms"] / max(1, model_requests)  # type: ignore[arg-type, return-value]
+                    if model_requests > 0  # type: ignore[operator]
+                    else 0
+                )
+                # Remove duration from model stats (not needed in output)
+                del model_stats["total_duration_ms"]
+
+            # Remove duration from provider stats (not needed in output)
+            del provider_stats["total_duration_ms"]
+
+        return {"summary": summary_stats, "providers": provider_data}
+
+    @staticmethod
+    def _matches_pattern(text: str, pattern: str) -> bool:
+        """Check if text matches pattern (case-insensitive, supports wildcards).
+
+        Args:
+            text: Text to match
+            pattern: Pattern with optional * and ? wildcards
+
+        Returns:
+            True if text matches pattern
+        """
+        if not pattern or not text:
+            return False
+
+        # Case-insensitive matching
+        text_lower = text.lower()
+        pattern_lower = pattern.lower()
+
+        # Use fnmatch for wildcard support
+        return fnmatch.fnmatch(text_lower, pattern_lower)
+
     def _emit_summary(self) -> None:
         """Emit summary log"""
         logger.info(
@@ -166,7 +586,11 @@ class RequestTracker:
             f"Avg Duration: {self.summary_metrics.total_duration_ms / max(1, self.summary_metrics.total_requests):.0f}ms | "
             f"Input Tokens: {self.summary_metrics.total_input_tokens:,} | "
             f"Output Tokens: {self.summary_metrics.total_output_tokens:,} | "
-            f"Cache Hits: {self.summary_metrics.total_cache_read_tokens:,}"
+            f"Cache Hits: {self.summary_metrics.total_cache_read_tokens:,} | "
+            f"Cache Creation: {self.summary_metrics.total_cache_creation_tokens:,} | "
+            f"Tool Uses: {self.summary_metrics.total_tool_uses} | "
+            f"Tool Results: {self.summary_metrics.total_tool_results} | "
+            f"Tool Calls: {self.summary_metrics.total_tool_calls}"
         )
 
         # Log model distribution

@@ -4,11 +4,13 @@ import uvicorn
 from fastapi import FastAPI
 
 from src.api.endpoints import router as api_router
+from src.api.metrics import metrics_router
 from src.core.config import config
 
 app = FastAPI(title="Vandamme Proxy", version="1.0.0")
 
 app.include_router(api_router)
+app.include_router(metrics_router, prefix="/metrics", tags=["metrics"])
 
 
 def main() -> None:
