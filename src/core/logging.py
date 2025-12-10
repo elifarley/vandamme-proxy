@@ -128,11 +128,14 @@ class SummaryMetrics:
             self.error_counts[error_key] += 1
 
         # Track metrics by provider/model combination
-        provider_key = (
-            f"{metrics.provider}:{metrics.openai_model}"
-            if metrics.provider and metrics.openai_model
-            else metrics.provider or metrics.openai_model or "unknown"
-        )
+        # Ensure openai_model doesn't already have provider prefix
+        if metrics.openai_model and ":" in metrics.openai_model:
+            # If openai_model already has prefix, use it directly
+            provider_key = metrics.openai_model
+        elif metrics.provider and metrics.openai_model:
+            provider_key = f"{metrics.provider}:{metrics.openai_model}"
+        else:
+            provider_key = metrics.provider or metrics.openai_model or "unknown"
         pm_metrics = self.provider_model_metrics[provider_key]
         pm_metrics.total_requests += 1
         pm_metrics.total_input_tokens += metrics.input_tokens
@@ -472,7 +475,11 @@ class RequestTracker:
         # Process active requests
         for request_id, metrics in self.active_requests.items():
             provider = metrics.provider or "unknown"
-            model = metrics.claude_model or "unknown"
+            # Extract model without provider prefix for consistency with completed requests
+            if metrics.claude_model and ":" in metrics.claude_model:
+                _, model = metrics.claude_model.split(":", 1)
+            else:
+                model = metrics.claude_model or "unknown"
 
             # Apply filters to active requests
             if provider_filter and not self._matches_pattern(provider, provider_filter):
