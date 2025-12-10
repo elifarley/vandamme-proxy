@@ -5,6 +5,7 @@ bypasses all format conversions when talking to Anthropic-compatible APIs.
 """
 
 import asyncio
+import hashlib
 import json
 import time
 from typing import Any, AsyncGenerator, Dict, List, Optional
@@ -73,8 +74,12 @@ class AnthropicClient:
         # Get client for this specific API key
         client = self._get_client(effective_api_key)
 
-        # Log the request
+        # Log the request with API key hash
         if LOG_REQUEST_METRICS:
+            key_hash = hashlib.sha256(effective_api_key.encode()).hexdigest()[:8]
+            conversation_logger.debug(
+                f"🔑 API KEY HASH {key_hash} @ {self.base_url}"
+            )
             conversation_logger.debug(
                 f"📤 ANTHROPIC REQUEST | Model: {request.get('model', 'unknown')}"
             )
@@ -100,7 +105,13 @@ class AnthropicClient:
 
         except httpx.HTTPStatusError as e:
             # Convert HTTP errors to our format
-            error_detail = e.response.json() if e.response.text else str(e)
+            try:
+                error_detail = e.response.json()
+            except Exception:
+                try:
+                    error_detail = e.response.text
+                except Exception:
+                    error_detail = str(e)
             raise HTTPException(status_code=e.response.status_code, detail=error_detail)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Anthropic API error: {str(e)}")
@@ -124,6 +135,10 @@ class AnthropicClient:
         client = self._get_client(effective_api_key)
 
         if LOG_REQUEST_METRICS:
+            key_hash = hashlib.sha256(effective_api_key.encode()).hexdigest()[:8]
+            conversation_logger.debug(
+                f"🔑 API KEY HASH {key_hash} @ {self.base_url}"
+            )
             conversation_logger.debug(
                 f"📤 ANTHROPIC STREAM | Model: {request.get('model', 'unknown')}"
             )
@@ -145,7 +160,12 @@ class AnthropicClient:
                 yield "data: [DONE]"
 
         except httpx.HTTPStatusError as e:
-            error_detail = e.response.json() if e.response.text else str(e)
+            # For streaming responses, we need to read the content first
+            try:
+                content = await e.response.read()
+                error_detail = json.loads(content.decode('utf-8')) if content else str(e)
+            except Exception:
+                error_detail = str(e)
             raise HTTPException(status_code=e.response.status_code, detail=error_detail)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Anthropic API streaming error: {str(e)}")
