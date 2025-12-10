@@ -533,29 +533,34 @@ class RequestTracker:
 
         # Calculate average durations
         total_requests = summary_stats["total_requests"]
-        summary_stats["average_duration_ms"] = (
-            sum(p["total_duration_ms"] for p in provider_data.values()) / max(1, total_requests)  # type: ignore[arg-type, misc]
-            if total_requests > 0
-            else 0
-        )
+        if total_requests > 0:
+            summary_total_duration = sum(
+                cast(float, p["total_duration_ms"]) for p in provider_data.values()
+            )
+            summary_avg = summary_total_duration / max(1, total_requests)
+            summary_stats["average_duration_ms"] = int(round(summary_avg))
+        else:
+            summary_stats["average_duration_ms"] = 0
 
         for provider_name, provider_stats in provider_data.items():
             provider_stats_dict = cast(Dict[str, Any], provider_stats)
             provider_requests = provider_stats_dict["total_requests"]
-            provider_stats_dict["average_duration_ms"] = (
-                provider_stats_dict["total_duration_ms"] / max(1, provider_requests)
-                if provider_requests > 0
-                else 0
-            )
+            if provider_requests > 0:
+                provider_avg = provider_stats_dict["total_duration_ms"] / max(1, provider_requests)
+                provider_stats_dict["average_duration_ms"] = int(round(provider_avg))
+            else:
+                provider_stats_dict["average_duration_ms"] = 0
 
             # Calculate model averages
             for model_name, model_stats in provider_stats_dict.get("models", {}).items():
                 model_requests = model_stats["total_requests"]  # type: ignore[assignment]
-                model_stats["average_duration_ms"] = (
-                    model_stats["total_duration_ms"] / max(1, model_requests)  # type: ignore[arg-type]
-                    if model_requests > 0  # type: ignore[operator]
-                    else 0
-                )
+                if model_requests > 0:  # type: ignore[operator]
+                    model_avg = model_stats["total_duration_ms"] / max(
+                        1, model_requests
+                    )  # type: ignore[arg-type]
+                    model_stats["average_duration_ms"] = int(round(model_avg))
+                else:
+                    model_stats["average_duration_ms"] = 0
                 # Remove duration from model stats (not needed in output)
                 del model_stats["total_duration_ms"]
 
