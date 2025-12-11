@@ -48,9 +48,10 @@ async def get_running_totals(
             provider_filter=provider, model_filter=model
         )
 
-        # Create YAML structure
+        # Create YAML structure - data now has flattened structure
+        # Convert HierarchicalData TypedDict to regular dict for compatibility
         hierarchical_data = create_hierarchical_structure(
-            summary_data=data["summary"], provider_data=data["providers"]
+            summary_data=dict(data), provider_data=data["providers"]
         )
 
         # Format as YAML with metadata
