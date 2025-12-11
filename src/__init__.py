@@ -10,11 +10,12 @@ load_dotenv()
 
 # Dynamic version from Git
 try:
-    from ._version import version as __version__
+    from ._version import version as __version__  # type: ignore[import-untyped]
 except ImportError:
     # Fallback for development installs
     try:
         from importlib.metadata import version
+
         __version__ = version("vandamme-proxy")
     except ImportError:
         __version__ = "1.0.0"

@@ -8,7 +8,6 @@ substring matching, supporting provider prefixes in alias values.
 import logging
 import os
 import re
-from typing import Dict, List, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +134,7 @@ class AliasManager:
         logger.debug(f"Model variations for matching: {model_variations}")
 
         # Find all matching aliases
-        matches: List[Tuple[str, str, int]] = []  # (alias, target, match_length)
+        matches: list[tuple[str, str, int]] = []  # (alias, target, match_length)
 
         logger.debug(f"Checking {len(self.aliases)} configured aliases for matches")
 
@@ -149,7 +148,10 @@ class AliasManager:
                     # Use the actual matched length from the variation
                     match_length = len(alias_lower)
                     matches.append((alias, target, match_length))
-                    logger.debug(f"    ✓ Match found! Alias '{alias}' found in variation '{variation}' (length: {match_length})")
+                    logger.debug(
+                        f"    ✓ Match found! Alias '{alias}' found in variation "
+                        f"'{variation}' (length: {match_length})"
+                    )
                     break  # Found a match, no need to check other variations
             else:
                 logger.debug(f"    ✗ No match found for alias '{alias}'")
@@ -158,7 +160,9 @@ class AliasManager:
             logger.debug(f"No aliases matched model name '{model}'")
             return None
 
-        logger.debug(f"Found {len(matches)} matching aliases: {[(m[0], m[1], m[2]) for m in matches]}")
+        logger.debug(
+            f"Found {len(matches)} matching aliases: {[(m[0], m[1], m[2]) for m in matches]}"
+        )
 
         # Sort matches: exact match first, then by length, then alphabetically
         # For exact match, check against all variations
@@ -180,7 +184,15 @@ class AliasManager:
             f"Resolved model alias '{model}' -> '{best_match[1]}' "
             f"(matched alias '{best_match[0]}' via {match_type} match)"
         )
-        logger.debug(f"  All matches sorted by priority: {[(m[0], m[2], 'exact' if any(m[0].lower() == v for v in model_variations) else 'substring') for m in matches[:3]]}")
+        match_details = [
+            (
+                m[0],
+                m[2],
+                "exact" if any(m[0].lower() == v for v in model_variations) else "substring",
+            )
+            for m in matches[:3]
+        ]
+        logger.debug(f"  All matches sorted by priority: {match_details}")
 
         return best_match[1]
 
@@ -252,6 +264,10 @@ class AliasManager:
             print(f"   {alias:<20} {model_display:<40} {provider_display}")
 
         # Add usage examples
-        print(f"\n   💡 Use aliases in your requests:")
-        print(f"      Example: model='sonnet' → resolves to '{sorted_aliases[0][1]}'" if sorted_aliases else "      Configure VDM_ALIAS_* environment variables to create aliases")
-        print(f"      Substring matching: 'my-sonnet-model' matches alias 'sonnet'")
+        print("\n   💡 Use aliases in your requests:")
+        print(
+            f"      Example: model='sonnet' → resolves to '{sorted_aliases[0][1]}'"
+            if sorted_aliases
+            else "      Configure VDM_ALIAS_* environment variables to create aliases"
+        )
+        print("      Substring matching: 'my-sonnet-model' matches alias 'sonnet'")
