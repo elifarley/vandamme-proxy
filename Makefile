@@ -277,6 +277,8 @@ test-quick: ## Run tests without coverage (fast)
 
 coverage: ## Run tests with coverage report
 	@echo "$(BOLD)$(CYAN)Running tests with coverage...$(RESET)"
+	@echo "$(CYAN)→ Ensuring pytest-cov is installed...$(RESET)"
+	@$(UV) add --group dev pytest-cov 2>/dev/null || true
 	@$(UV) run $(PYTEST) $(TEST_DIR) --cov=$(SRC_DIR) --cov-report=html --cov-report=term-missing
 	@echo "$(GREEN)✓ Coverage report generated in htmlcov/$(RESET)"
 
