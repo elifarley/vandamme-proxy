@@ -303,7 +303,7 @@ class TestAliasManager:
             ),
             caplog.at_level("INFO"),
         ):
-            alias_manager = AliasManager()
+            AliasManager()
 
             # Check that valid alias was logged
             assert any(

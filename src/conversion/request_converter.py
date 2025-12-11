@@ -1,7 +1,6 @@
 import json
 import logging
 from typing import Any, cast
-from venv import logger
 
 from src.core.config import config
 from src.core.constants import Constants

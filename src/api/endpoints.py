@@ -542,7 +542,7 @@ async def create_message(  # type: ignore[no-untyped-def]
             if LOG_REQUEST_METRICS:
                 request_tracker.end_request(request_id)
 
-            raise HTTPException(status_code=500, detail=error_message)
+            raise HTTPException(status_code=500, detail=error_message) from e
 
 
 @router.post("/v1/messages/count_tokens")
@@ -637,7 +637,7 @@ async def count_tokens(
 
     except Exception as e:
         logger.error(f"Error counting tokens: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/health")
@@ -647,7 +647,7 @@ async def health_check() -> PlainTextResponse:
         # Gather provider information
         providers = {}
         try:
-            for provider_name in config.provider_manager.list_providers().keys():
+            for provider_name in config.provider_manager.list_providers():
                 provider_config = config.provider_manager.get_provider_config(provider_name)
                 providers[provider_name] = {
                     "api_format": provider_config.api_format if provider_config else "unknown",

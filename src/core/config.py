@@ -96,9 +96,7 @@ class Config:
         if not self.openai_api_key:
             return False
         # Basic format check for OpenAI API keys
-        if not self.openai_api_key.startswith("sk-"):
-            return False
-        return True
+        return self.openai_api_key.startswith("sk-")
 
     def validate_client_api_key(self, client_api_key: str) -> bool:
         """Validate client's Anthropic API key"""

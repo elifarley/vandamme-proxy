@@ -14,6 +14,7 @@ https://docs.cloud.google.com/vertex-ai/generative-ai/docs/thought-signatures
 """
 
 import asyncio
+import contextlib
 import logging
 import time
 from dataclasses import dataclass
@@ -113,10 +114,8 @@ class ThoughtSignatureStore:
         """Stop the background cleanup task."""
         if self._cleanup_task:
             self._cleanup_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._cleanup_task
-            except asyncio.CancelledError:
-                pass
             self._cleanup_task = None
             self.logger.debug("Stopped background cleanup task")
 

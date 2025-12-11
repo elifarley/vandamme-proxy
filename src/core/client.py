@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import json
 import time
 from collections.abc import AsyncGenerator
@@ -116,10 +117,8 @@ class OpenAIClient:
                 # Cancel pending tasks
                 for task in pending:
                     task.cancel()
-                    try:
+                    with contextlib.suppress(asyncio.CancelledError):
                         await task
-                    except asyncio.CancelledError:
-                        pass
 
                 # Check if request was cancelled
                 if cancel_task in done:
@@ -156,28 +155,30 @@ class OpenAIClient:
             if LOG_REQUEST_METRICS and metrics:
                 metrics.error = "Authentication failed"
                 metrics.error_type = "auth_error"
-            raise HTTPException(status_code=401, detail=self.classify_openai_error(str(e)))
+            raise HTTPException(status_code=401, detail=self.classify_openai_error(str(e))) from e
         except RateLimitError as e:
             if LOG_REQUEST_METRICS and metrics:
                 metrics.error = "Rate limit exceeded"
                 metrics.error_type = "rate_limit"
-            raise HTTPException(status_code=429, detail=self.classify_openai_error(str(e)))
+            raise HTTPException(status_code=429, detail=self.classify_openai_error(str(e))) from e
         except BadRequestError as e:
             if LOG_REQUEST_METRICS and metrics:
                 metrics.error = "Bad request"
                 metrics.error_type = "bad_request"
-            raise HTTPException(status_code=400, detail=self.classify_openai_error(str(e)))
+            raise HTTPException(status_code=400, detail=self.classify_openai_error(str(e))) from e
         except APIError as e:
             if LOG_REQUEST_METRICS and metrics:
                 metrics.error = "OpenAI API error"
                 metrics.error_type = "api_error"
             status_code = getattr(e, "status_code", 500)
-            raise HTTPException(status_code=status_code, detail=self.classify_openai_error(str(e)))
+            raise HTTPException(
+                status_code=status_code, detail=self.classify_openai_error(str(e))
+            ) from e
         except Exception as e:
             if LOG_REQUEST_METRICS and metrics:
                 metrics.error = f"Unexpected error: {str(e)}"
                 metrics.error_type = "unexpected_error"
-            raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}") from e
 
         finally:
             # Clean up active request tracking
@@ -231,16 +232,18 @@ class OpenAIClient:
             yield "data: [DONE]"
 
         except AuthenticationError as e:
-            raise HTTPException(status_code=401, detail=self.classify_openai_error(str(e)))
+            raise HTTPException(status_code=401, detail=self.classify_openai_error(str(e))) from e
         except RateLimitError as e:
-            raise HTTPException(status_code=429, detail=self.classify_openai_error(str(e)))
+            raise HTTPException(status_code=429, detail=self.classify_openai_error(str(e))) from e
         except BadRequestError as e:
-            raise HTTPException(status_code=400, detail=self.classify_openai_error(str(e)))
+            raise HTTPException(status_code=400, detail=self.classify_openai_error(str(e))) from e
         except APIError as e:
             status_code = getattr(e, "status_code", 500)
-            raise HTTPException(status_code=status_code, detail=self.classify_openai_error(str(e)))
+            raise HTTPException(
+                status_code=status_code, detail=self.classify_openai_error(str(e))
+            ) from e
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}") from e
 
         finally:
             # Clean up active request tracking

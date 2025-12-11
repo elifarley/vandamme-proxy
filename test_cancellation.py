@@ -5,8 +5,6 @@ This script demonstrates how client disconnection cancels ongoing requests.
 """
 
 import asyncio
-import json
-import time
 
 import httpx
 

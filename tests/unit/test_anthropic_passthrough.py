@@ -253,7 +253,7 @@ def test_anthropic_passthrough_message_format():
     from src.core.anthropic_client import AnthropicClient
 
     # Create Anthropic client
-    client = AnthropicClient(api_key="test-key", base_url="https://api.anthropic.com")
+    AnthropicClient(api_key="test-key", base_url="https://api.anthropic.com")
 
     # Test request format
     request = {

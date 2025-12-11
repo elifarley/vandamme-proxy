@@ -52,7 +52,7 @@ def mock_provider_config():
     provider_config.base_url = "https://api.test.com/v1"
     provider_config.api_format = "openai"
     provider_config.api_version = None
-    return config
+    return provider_config
 
 
 @pytest.fixture(scope="session")

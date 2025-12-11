@@ -297,7 +297,7 @@ class TestMiddlewareChain:
         openai_mw._should_handle = openai_only
 
         # Test with OpenAI provider
-        context = RequestContext(messages=[], provider="openai", model="gpt-4")
+        RequestContext(messages=[], provider="openai", model="gpt-4")
 
         # Both should handle OpenAI
         should_handle_openai = [

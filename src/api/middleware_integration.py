@@ -84,7 +84,6 @@ class MiddlewareAwareRequestProcessor:
         # Check if messages were modified
         if processed_context.messages != context.messages:
             # Convert back to Claude request format
-            messages_dict = processed_context.messages
             # Note: This is a simplified conversion. In a production system,
             # you'd want to preserve the full message structure
             self.logger.debug(

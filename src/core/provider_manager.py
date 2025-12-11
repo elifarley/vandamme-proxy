@@ -140,7 +140,7 @@ class ProviderManager:
     def _load_additional_providers(self) -> None:
         """Load additional provider configurations from environment variables"""
         # Scan for all provider environment variables
-        for env_key, env_value in os.environ.items():
+        for env_key, _env_value in os.environ.items():
             # Look for PROVIDER_API_KEY pattern
             if env_key.endswith("_API_KEY") and not env_key.startswith(("OPENAI_", "CUSTOM_")):
                 # Extract provider name (everything before _API_KEY)

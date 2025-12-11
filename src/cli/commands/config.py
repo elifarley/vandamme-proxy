@@ -106,10 +106,9 @@ def setup() -> None:
 
     env_path = Path(".env")
 
-    if env_path.exists():
-        if not Confirm.ask(".env file already exists. Overwrite?", default=False):
-            console.print("[yellow]Setup cancelled[/yellow]")
-            return
+    if env_path.exists() and not Confirm.ask(".env file already exists. Overwrite?", default=False):
+        console.print("[yellow]Setup cancelled[/yellow]")
+        return
 
     console.print("[bold cyan]Vandamme Proxy Configuration Setup[/bold cyan]")
     console.print()

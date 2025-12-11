@@ -109,9 +109,9 @@ class AnthropicClient:
                     error_detail = e.response.text
                 except Exception:
                     error_detail = str(e)
-            raise HTTPException(status_code=e.response.status_code, detail=error_detail)
+            raise HTTPException(status_code=e.response.status_code, detail=error_detail) from e
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Anthropic API error: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Anthropic API error: {str(e)}") from e
 
     async def create_chat_completion_stream(
         self,
@@ -120,7 +120,7 @@ class AnthropicClient:
         api_key: str | None = None,  # Override API key for this request
     ) -> AsyncGenerator[str, None]:
         """Send streaming chat completion to Anthropic API with SSE passthrough."""
-        start_time = time.time()
+        time.time()
 
         # Use provided API key or fall back to default
         effective_api_key = api_key or self.default_api_key
@@ -161,9 +161,11 @@ class AnthropicClient:
                 error_detail = json.loads(content.decode("utf-8")) if content else str(e)
             except Exception:
                 error_detail = str(e)
-            raise HTTPException(status_code=e.response.status_code, detail=error_detail)
+            raise HTTPException(status_code=e.response.status_code, detail=error_detail) from e
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Anthropic API streaming error: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Anthropic API streaming error: {str(e)}"
+            ) from e
 
     def classify_openai_error(self, error_message: str) -> str:
         """Classify error message for Anthropic API (passthrough)."""

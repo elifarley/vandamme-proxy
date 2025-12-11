@@ -564,7 +564,7 @@ class RequestTracker:
             summary_stats["total_tool_calls"] += pm_metrics.total_tool_calls  # type: ignore[operator]
 
         # Process active requests
-        for request_id, metrics in self.active_requests.items():
+        for _request_id, metrics in self.active_requests.items():
             provider = metrics.provider or "unknown"
             # Extract model without provider prefix for consistency with completed requests
             if metrics.claude_model and ":" in metrics.claude_model:
@@ -647,7 +647,7 @@ class RequestTracker:
         else:
             summary_stats["average_duration_ms"] = 0
 
-        for provider_name, provider_stats in provider_data.items():
+        for _provider_name, provider_stats in provider_data.items():
             provider_stats_dict = cast(dict[str, Any], provider_stats)
             provider_requests = provider_stats_dict["total_requests"]
             if provider_requests > 0:
@@ -657,7 +657,7 @@ class RequestTracker:
                 provider_stats_dict["average_duration_ms"] = 0
 
             # Calculate model averages
-            for model_name, model_stats in provider_stats_dict.get("models", {}).items():
+            for _model_name, model_stats in provider_stats_dict.get("models", {}).items():
                 model_requests = model_stats["total_requests"]  # type: ignore[assignment]
                 if model_requests > 0:  # type: ignore[operator]
                     model_avg = model_stats["total_duration_ms"] / max(1, model_requests)  # type: ignore[arg-type]
