@@ -15,7 +15,9 @@ MAKEFLAGS += --no-builtin-rules
         test test-unit test-integration format lint type-check check build \
         run dev docker-build docker-up docker-down docker-logs health \
         ci coverage pre-commit all watch deps-check security-check validate \
-        quick-check init-dev check-install
+        quick-check init-dev check-install version version-set version-bump \
+        tag-release release-check release-build release-publish release \
+        release-full release-patch release-minor release-major info
 
 # ============================================================================
 # Configuration
@@ -355,19 +357,62 @@ all: clean install-dev check test build ## Run everything (clean, install, check
 	@echo "$(BOLD)$(GREEN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(RESET)"
 
 # ============================================================================
-# Utility Targets
+# Release Management
 # ============================================================================
 
-.PHONY: version
-version: ## Show project version
-	@echo "$(BOLD)Claude Code Proxy v1.0.0$(RESET)"
+# Version Management
+version: ## Show current version
+	@$(UV) run python scripts/release.py version
+
+version-set: ## Set new version interactively
+	@$(UV) run python scripts/release.py version-set
+
+version-bump: ## Bump version (patch/minor/major)
+	@$(UV) run python scripts/release.py version-bump $(BUMP_TYPE)
+
+# Tag Management
+tag-release: ## Create and push git tag for current version
+	@$(UV) run python scripts/release.py tag
+
+# Release Workflow
+release-check: ## Validate release readiness
+	@$(UV) run python scripts/release.py check
+
+release-build: ## Build distribution packages
+	@$(MAKE) release-check
+	@$(MAKE) clean
+	@$(UV) build
+
+release-publish: ## Publish to PyPI (manual)
+	@$(MAKE) release-build
+	@$(UV) run python scripts/release.py publish
+
+release: tag-release ## Complete release (tag + publish via GitHub Actions)
+	@$(UV) run python scripts/release.py post-tag
+
+# Combined Workflows
+release-full: ## Complete interactive release
+	@$(UV) run python scripts/release.py full
+
+release-patch: ## Quick patch release
+	@$(UV) run python scripts/release.py quick patch
+
+release-minor: ## Quick minor release
+	@$(UV) run python scripts/release.py quick minor
+
+release-major: ## Quick major release
+	@$(UV) run python scripts/release.py quick major
+
+# ============================================================================
+# Utility Targets
+# ============================================================================
 
 .PHONY: info
 info: ## Show project information
 	@echo "$(BOLD)$(CYAN)Project Information$(RESET)"
-	@echo "  Name:         Claude Code Proxy"
-	@echo "  Version:      1.0.0"
-	@echo "  Python:       >= 3.9"
+	@echo "  Name:         Vandamme Proxy"
+	@echo "  Version:      $$($(UV) run python -c 'from src import __version__; print(__version__)' 2>/dev/null || echo 'unknown')"
+	@echo "  Python:       >= 3.10"
 	@echo "  Source:       $(SRC_DIR)/"
 	@echo "  Tests:        $(TEST_DIR)/"
 	@echo "  Default Host: $(HOST)"

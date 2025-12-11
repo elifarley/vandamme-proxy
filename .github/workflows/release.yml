@@ -1,0 +1,80 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - '*.*.*'  # Semantic version tags
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Get full history for tags
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Set up UV
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Cache UV dependencies
+        uses: actions/cache@v4
+        with:
+          path: /tmp/uv-cache
+          key: ${{ runner.os }}-uv-release-${{ hashFiles('**/pyproject.toml') }}
+
+      - name: Install dependencies
+        run: make install-dev
+
+      - name: Get version from tag
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Run tests
+        run: make test-quick
+
+      - name: Build package
+        run: |
+          make clean
+          uv build
+
+      - name: List built packages
+        run: ls -la dist/
+
+      - name: Publish to PyPI
+        env:
+          PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}
+        run: |
+          if [ -n "$PYPI_TOKEN" ]; then
+            uv publish --token $PYPI_TOKEN dist/*
+          else
+            echo "No PYPI_TOKEN found, skipping publish"
+            exit 1
+          fi
+
+      - name: Create GitHub Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          release_name: Release ${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: false
+          body: |
+            ## Changes in ${{ steps.version.outputs.version }}
+
+            [View changelog](https://github.com/elifarley/vandamme-proxy/blob/main/CHANGELOG.md)
+
+            ### Installation
+            ```bash
+            pip install vandamme-proxy==${{ steps.version.outputs.version }}
+            ```

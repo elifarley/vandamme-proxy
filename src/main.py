@@ -6,8 +6,9 @@ from fastapi import FastAPI
 from src.api.endpoints import router as api_router
 from src.api.metrics import metrics_router
 from src.core.config import config
+from src import __version__
 
-app = FastAPI(title="Vandamme Proxy", version="1.0.0")
+app = FastAPI(title="Vandamme Proxy", version=__version__)
 
 app.include_router(api_router)
 app.include_router(metrics_router, prefix="/metrics", tags=["metrics"])
@@ -15,7 +16,7 @@ app.include_router(metrics_router, prefix="/metrics", tags=["metrics"])
 
 def main() -> None:
     if len(sys.argv) > 1 and sys.argv[1] == "--help":
-        print("Vandamme Proxy v1.0.0")
+        print(f"Vandamme Proxy v{__version__}")
         print("")
         print("Usage: python src/main.py")
         print("       or: vdm start")

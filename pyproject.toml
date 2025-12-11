@@ -1,10 +1,10 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
 name = "vandamme-proxy"
-version = "1.0.0"
+dynamic = ["version"]
 description = "A proxy server that converts Claude API requests to OpenAI-compatible API calls"
 readme = "README.md"
 authors = [
@@ -55,6 +55,7 @@ dev = [
     "mypy>=1.0.0",
     "pyinstaller>=6.15.0",
     "pytest-cov>=7.0.0",
+    "hatch-vcs>=0.5.0",
 ]
 
 [tool.ruff]
@@ -96,6 +97,12 @@ quote-style = "double"
 indent-style = "space"
 docstring-code-format = true
 docstring-code-line-length = "dynamic"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
