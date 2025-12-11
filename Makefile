@@ -24,8 +24,7 @@ MAKEFLAGS += --no-builtin-rules
 PYTHON := python3
 UV := uv
 PYTEST := pytest
-BLACK := black
-ISORT := isort
+RUFF := ruff
 MYPY := mypy
 
 SRC_DIR := src
@@ -188,18 +187,20 @@ clean: ## Clean temporary files and caches
 # Code Quality
 # ============================================================================
 
-format: ## Auto-format code with black and isort
+format: ## Auto-format code with ruff (includes type transformations)
 	@echo "$(BOLD)$(YELLOW)Formatting code...$(RESET)"
-	@$(UV) run $(BLACK) $(PYTHON_FILES)
-	@$(UV) run $(ISORT) $(PYTHON_FILES)
+	@echo "$(CYAN)→ ruff format$(RESET)"
+	@$(UV) run $(RUFF) format $(PYTHON_FILES)
+	@echo "$(CYAN)→ ruff check --fix (UP006, UP007, UP035 enabled)$(RESET)"
+	@$(UV) run $(RUFF) check --fix $(PYTHON_FILES) --select=UP006,UP007,UP035
 	@echo "$(GREEN)✓ Code formatted$(RESET)"
 
-lint: ## Run code linting checks (black, isort - check only)
+lint: ## Run code linting checks (ruff - check only)
 	@echo "$(BOLD)$(YELLOW)Running linters...$(RESET)"
-	@echo "$(CYAN)→ black (check)$(RESET)"
-	@$(UV) run $(BLACK) --check $(PYTHON_FILES) || (echo "$(YELLOW)⚠ Run 'make format' to fix formatting$(RESET)" && exit 1)
-	@echo "$(CYAN)→ isort (check)$(RESET)"
-	@$(UV) run $(ISORT) --check-only $(PYTHON_FILES) || (echo "$(YELLOW)⚠ Run 'make format' to fix imports$(RESET)" && exit 1)
+	@echo "$(CYAN)→ ruff format --check$(RESET)"
+	@$(UV) run $(RUFF) format --check $(PYTHON_FILES) || (echo "$(YELLOW)⚠ Run 'make format' to fix formatting$(RESET)" && exit 1)
+	@echo "$(CYAN)→ ruff check$(RESET)"
+	@$(UV) run $(RUFF) check $(PYTHON_FILES) || (echo "$(YELLOW)⚠ Run 'make format' to fix issues$(RESET)" && exit 1)
 	@echo "$(GREEN)✓ Linting passed$(RESET)"
 
 type-check: ## Run type checking with mypy
@@ -212,8 +213,8 @@ check: lint type-check ## Run all code quality checks (lint + type-check)
 
 quick-check: ## Fast check (format + lint only, skip type-check)
 	@echo "$(BOLD)$(YELLOW)Running quick checks (format + lint)...$(RESET)"
-	@$(UV) run $(BLACK) --check $(PYTHON_FILES) || (echo "$(YELLOW)⚠ Run 'make format' to fix formatting$(RESET)" && exit 1)
-	@$(UV) run $(ISORT) --check-only $(PYTHON_FILES) || (echo "$(YELLOW)⚠ Run 'make format' to fix imports$(RESET)" && exit 1)
+	@$(UV) run $(RUFF) format --check $(PYTHON_FILES) || (echo "$(YELLOW)⚠ Run 'make format' to fix formatting$(RESET)" && exit 1)
+	@$(UV) run $(RUFF) check $(PYTHON_FILES) || (echo "$(YELLOW)⚠ Run 'make format' to fix issues$(RESET)" && exit 1)
 	@echo "$(GREEN)✓ Quick checks passed$(RESET)"
 
 security-check: ## Run security vulnerability checks
