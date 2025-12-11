@@ -3,8 +3,9 @@ Unit tests for the AliasManager component.
 """
 
 import os
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 from src.core.alias_manager import AliasManager
 

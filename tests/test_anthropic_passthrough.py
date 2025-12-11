@@ -2,8 +2,8 @@
 
 import os
 from unittest.mock import MagicMock, patch
-import yaml
 
+import yaml
 from fastapi.testclient import TestClient
 
 from src.api.endpoints import router
