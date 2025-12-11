@@ -27,16 +27,31 @@ class ModelManager:
         Returns:
             Tuple[str, str]: (provider_name, actual_model_name)
         """
+        logger.debug(f"Starting model resolution for: '{model}'")
+
         # Apply alias resolution if available
         resolved_model = model
         if self.alias_manager and self.alias_manager.has_aliases():
+            logger.debug(f"Alias manager available with {self.alias_manager.get_alias_count()} aliases")
             alias_target = self.alias_manager.resolve_alias(model)
             if alias_target:
-                logger.debug(f"Resolved model alias '{model}' to '{alias_target}'")
+                logger.info(f"Model resolution step 1 - Alias resolved: '{model}' -> '{alias_target}'")
                 resolved_model = alias_target
+            else:
+                logger.debug(f"No alias match found for '{model}', using original model name")
+        else:
+            logger.debug(f"No aliases configured or alias manager unavailable")
 
         # Parse provider prefix
+        logger.debug(f"Parsing provider prefix from resolved model: '{resolved_model}'")
         provider_name, actual_model = self.provider_manager.parse_model_name(resolved_model)
+        logger.debug(f"Parsed provider: '{provider_name}', actual model: '{actual_model}'")
+
+        # Log the final resolution result
+        if resolved_model != model:
+            logger.info(f"Model resolution complete: '{model}' -> provider:{provider_name}, model:{actual_model} (via alias)")
+        else:
+            logger.debug(f"Model resolution complete: '{model}' -> provider:{provider_name}, model:{actual_model} (no alias)")
 
         return provider_name, actual_model
 
