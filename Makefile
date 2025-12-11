@@ -191,8 +191,15 @@ format: ## Auto-format code with ruff (includes type transformations)
 	@echo "$(BOLD)$(YELLOW)Formatting code...$(RESET)"
 	@echo "$(CYAN)→ ruff format$(RESET)"
 	@$(UV) run $(RUFF) format $(PYTHON_FILES)
-	@echo "$(CYAN)→ ruff check --fix (UP006, UP007, UP035 enabled)$(RESET)"
-	@$(UV) run $(RUFF) check --fix $(PYTHON_FILES) --select=UP006,UP007,UP035
+	@echo "$(CYAN)→ ruff check --fix (all auto-fixable rules)$(RESET)"
+	@if $(UV) run $(RUFF) check --fix $(PYTHON_FILES); then \
+		echo "$(GREEN)✓ All fixes applied successfully$(RESET)"; \
+	else \
+		echo "$(YELLOW)⚠ Some issues require manual fixes$(RESET)"; \
+		echo "$(CYAN)→ Running additional unsafe fixes...$(RESET)"; \
+		$(UV) run $(RUFF) check --fix $(PYTHON_FILES) --unsafe-fixes || true; \
+		echo "$(YELLOW)⚠ Remaining issues need manual intervention$(RESET)"; \
+	fi
 	@echo "$(GREEN)✓ Code formatted$(RESET)"
 
 lint: ## Run code linting checks (ruff - check only)
