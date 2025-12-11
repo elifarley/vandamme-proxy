@@ -158,7 +158,7 @@ class AnthropicClient:
         except httpx.HTTPStatusError as e:
             # For streaming responses, we need to read the content first
             try:
-                content = await e.response.read()
+                content = e.response.read()
                 error_detail = json.loads(content.decode("utf-8")) if content else str(e)
             except Exception:
                 error_detail = str(e)
