@@ -81,8 +81,11 @@ jobs:
       - name: Run unit tests
         run: make test-unit
 
-      - name: Generate coverage report
-        run: make coverage
+      - name: Generate coverage report (unit tests only)
+        run: |
+          echo "→ Ensuring pytest-cov is installed..."
+          uv add --group dev pytest-cov 2>/dev/null || true
+          uv run pytest tests --cov=src --cov-report=html --cov-report=term-missing -m unit
 
       - name: Upload coverage to Codecov
         if: matrix.python-version == '3.11'

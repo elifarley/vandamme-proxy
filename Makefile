@@ -279,7 +279,15 @@ coverage: ## Run tests with coverage report
 	@echo "$(BOLD)$(CYAN)Running tests with coverage...$(RESET)"
 	@echo "$(CYAN)→ Ensuring pytest-cov is installed...$(RESET)"
 	@$(UV) add --group dev pytest-cov 2>/dev/null || true
-	@$(UV) run $(PYTEST) $(TEST_DIR) --cov=$(SRC_DIR) --cov-report=html --cov-report=term-missing
+	@# Check if server is running, if so run all tests, otherwise run only unit tests
+	@if curl -s http://localhost:$(PORT)/health > /dev/null 2>&1 || \
+	   curl -s http://localhost:18082/health > /dev/null 2>&1; then \
+		echo "$(YELLOW)Server detected, running coverage on all tests...$(RESET)"; \
+		$(UV) run $(PYTEST) $(TEST_DIR) --cov=$(SRC_DIR) --cov-report=html --cov-report=term-missing; \
+	else \
+		echo "$(YELLOW)Server not running, running coverage on unit tests only...$(RESET)"; \
+		$(UV) run $(PYTEST) $(TEST_DIR) --cov=$(SRC_DIR) --cov-report=html --cov-report=term-missing -m unit; \
+	fi
 	@echo "$(GREEN)✓ Coverage report generated in htmlcov/$(RESET)"
 
 # ============================================================================
