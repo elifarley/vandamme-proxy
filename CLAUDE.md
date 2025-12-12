@@ -41,15 +41,27 @@ docker compose up -d
 
 ### Testing
 
+The test suite follows a three-tier pyramid strategy:
+
+1. **Unit Tests** (~90%): Fast, mocked, no external dependencies
+2. **Integration Tests** (~10%): Require running server, no API calls
+3. **E2E Tests** (<5%): Real API calls for critical validation
+
 ```bash
-# Run all tests
+# Run all tests except e2e (default - no API costs)
 make test
 
-# Run comprehensive integration tests
+# Run unit tests only (fastest)
+make test-unit
+
+# Run integration tests (requires server, no API calls)
 make test-integration
 
-# Run unit tests
-make test-unit
+# Run e2e tests with real APIs (requires API keys, incurs costs)
+make test-e2e
+
+# Run ALL tests including e2e (full validation)
+make test-all
 
 # Quick tests without coverage
 make test-quick
@@ -60,6 +72,47 @@ vdm test models
 vdm health upstream
 vdm config validate
 ```
+
+#### HTTP Mocking with RESPX
+
+The project uses **RESPX** for elegant HTTP API mocking:
+
+```python
+import pytest
+import httpx
+from tests.fixtures.mock_http import (
+    openai_chat_completion,
+    mock_openai_api,
+)
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_chat(mock_openai_api, openai_chat_completion):
+    """Test chat completion with mocked OpenAI API."""
+    # Mock the OpenAI endpoint
+    mock_openai_api.post("/v1/chat/completions").mock(
+        return_value=httpx.Response(200, json=openai_chat_completion)
+    )
+
+    # Your test code using the proxy
+    # The HTTP call is intercepted and returns the mocked response
+```
+
+**Key fixtures available in `tests/fixtures/mock_http.py`:**
+- `mock_openai_api` - RESPX mock for OpenAI endpoints
+- `mock_anthropic_api` - RESPX mock for Anthropic endpoints
+- `openai_chat_completion` - Standard chat response
+- `openai_chat_completion_with_tool` - Function calling response
+- `openai_streaming_chunks` - Streaming SSE events
+- `anthropic_message_response` - Anthropic message format
+- `anthropic_streaming_events` - Anthropic SSE events
+
+**Benefits:**
+- ✅ Zero API costs for regular development
+- ✅ 10-100x faster test execution
+- ✅ Works offline, no network dependencies
+- ✅ Deterministic, reproducible tests
+- ✅ Mock at HTTP layer (not SDK objects)
 
 ### Code Quality
 
