@@ -68,7 +68,12 @@ class MockMiddleware(Middleware):
     async def cleanup(self) -> None:
         self.cleaned_up = True
 
+    async def on_stream_complete(self, context: StreamChunkContext) -> None:
+        """Handle stream completion."""
+        pass
 
+
+@pytest.mark.unit
 class TestRequestContext:
     """Test RequestContext functionality."""
 
@@ -126,6 +131,7 @@ class TestRequestContext:
         assert original.messages == [{"role": "user", "content": "Hello"}]
 
 
+@pytest.mark.unit
 class TestResponseContext:
     """Test ResponseContext functionality."""
 
@@ -160,6 +166,7 @@ class TestResponseContext:
         assert updated.response == original.response
 
 
+@pytest.mark.unit
 class TestStreamChunkContext:
     """Test StreamChunkContext functionality."""
 
@@ -176,6 +183,7 @@ class TestStreamChunkContext:
         assert context.accumulated_metadata == {}
 
 
+@pytest.mark.unit
 class TestMiddlewareChain:
     """Test MiddlewareChain functionality."""
 
@@ -354,6 +362,18 @@ class TestMiddlewareChain:
 
             async def before_request(self, context: RequestContext) -> RequestContext:
                 raise ValueError("Test error")
+
+            async def after_response(self, context: ResponseContext) -> ResponseContext:
+                return context
+
+            async def initialize(self) -> None:
+                pass
+
+            async def cleanup(self) -> None:
+                pass
+
+            async def on_stream_complete(self, context: StreamChunkContext) -> None:
+                pass
 
         chain = MiddlewareChain()
         chain.add(ErrorMiddleware())

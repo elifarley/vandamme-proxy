@@ -40,6 +40,7 @@ def middleware(mock_store):
     return ThoughtSignatureMiddleware(store=mock_store)
 
 
+@pytest.mark.unit
 class TestThoughtSignatureStore:
     """Test the ThoughtSignatureStore implementation."""
 
@@ -217,6 +218,7 @@ class TestThoughtSignatureStore:
         assert mock_store._cleanup_task is None
 
 
+@pytest.mark.unit
 class TestThoughtSignatureMiddleware:
     """Test the ThoughtSignatureMiddleware implementation."""
 

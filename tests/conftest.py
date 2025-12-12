@@ -85,8 +85,8 @@ def pytest_configure(config):
 def pytest_collection_modifyitems(config, items):
     """Add markers to tests based on their location."""
     for item in items:
-        # Add unit marker to tests in unit/ directory
-        if "tests/unit/" in str(item.fspath):
+        # Add unit marker to tests in unit/ and middleware/ directories
+        if "tests/unit/" in str(item.fspath) or "tests/middleware/" in str(item.fspath):
             item.add_marker(pytest.mark.unit)
 
         # Add integration marker to tests in integration/ directory

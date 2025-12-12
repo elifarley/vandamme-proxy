@@ -111,18 +111,6 @@ def test_anthropic_client_selection():
         os.environ.update(original_env)
 
 
-@pytest.mark.skip(reason="Endpoint test - requires integration test environment")
-@pytest.mark.unit
-def test_models_endpoint_anthropic_format():
-    """Test /v1/models endpoint with Anthropic format provider.
-
-    NOTE: This test is skipped as it requires TestClient with endpoints,
-    which is brittle in unit test context due to global config singleton.
-    Integration tests should cover this functionality.
-    """
-    pass
-
-
 @pytest.mark.unit
 def test_models_endpoint_openai_format():
     """Test /v1/models endpoint with OpenAI format provider."""
@@ -174,18 +162,6 @@ def test_models_endpoint_openai_format():
         assert "gpt-4o-mini" in model_ids
 
 
-@pytest.mark.skip(reason="Endpoint test - requires integration test environment")
-@pytest.mark.unit
-def test_health_check_provider_status():
-    """Test health check endpoint includes provider status.
-
-    NOTE: This test is skipped as it requires TestClient with endpoints,
-    which is brittle in unit test context due to global config singleton.
-    Integration tests should cover this functionality.
-    """
-    pass
-
-
 @pytest.mark.unit
 def test_anthropic_passthrough_message_format():
     """Test that Anthropic passthrough maintains correct message format."""
@@ -222,8 +198,6 @@ if __name__ == "__main__":
     test_provider_config_api_format()
     test_provider_manager_loads_api_format()
     test_anthropic_client_selection()
-    test_models_endpoint_anthropic_format()
     test_models_endpoint_openai_format()
-    test_health_check_provider_status()
     test_anthropic_passthrough_message_format()
     print("✅ All tests passed!")

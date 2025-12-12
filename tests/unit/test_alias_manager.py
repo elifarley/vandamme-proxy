@@ -10,6 +10,7 @@ import pytest
 from src.core.alias_manager import AliasManager
 
 
+@pytest.mark.unit
 class TestAliasManager:
     """Test cases for AliasManager functionality."""
 
