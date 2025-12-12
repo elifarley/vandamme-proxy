@@ -9,15 +9,18 @@ from typing import Tuple
 
 
 def get_current_version() -> str:
-    """Get current version from Git."""
+    """Get current version from Git (only semver tags)."""
     try:
+        # List only semver-formatted tags, sorted by version
         result = subprocess.run(
-            ["git", "describe", "--tags", "--abbrev=0"],
+            ["git", "tag", "--list", "[0-9]*.[0-9]*.[0-9]*", "--sort=-version:refname"],
             capture_output=True,
             text=True,
             check=True
         )
-        return result.stdout.strip()
+        tags = result.stdout.strip().split('\n')
+        # Return first (highest) semver tag, or default if none found
+        return tags[0] if tags and tags[0] else "1.0.0"
     except subprocess.CalledProcessError:
         return "1.0.0"  # Initial version
 

@@ -32,15 +32,24 @@ def run_cmd(cmd, check=True, capture_output=False):
 
 
 def get_current_version():
-    """Get current version from Git or package."""
+    """Get current version from Git (only semver tags) or package."""
     try:
-        result = run_cmd("git describe --tags --abbrev=0", capture_output=True)
-        return result.stdout.strip()
+        # List only semver-formatted tags, sorted by version
+        result = run_cmd("git tag --list '[0-9]*.[0-9]*.[0-9]*' --sort=-version:refname", capture_output=True)
+        tags = result.stdout.strip().split('\n')
+        # Return first (highest) semver tag if found
+        if tags and tags[0]:
+            return tags[0]
+        # Fall through to package version fallback
     except:
-        # Fallback to package version
+        pass
+    # Fallback to package version
+    try:
         result = run_cmd("uv run python -c 'from src import __version__; print(__version__)'",
                         capture_output=True)
         return result.stdout.strip()
+    except:
+        return "1.0.0"
 
 
 def check_git_clean():
