@@ -367,8 +367,14 @@ version: ## Show current version
 version-set: ## Set new version interactively
 	@$(UV) run python scripts/release.py version-set
 
-version-bump: ## Bump version (patch/minor/major)
+version-bump: ## Bump version interactively (or: make version-bump BUMP_TYPE=patch|minor|major)
+ifndef BUMP_TYPE
+	@echo "$(CYAN)💡 Tip: Skip interactive mode with: make version-bump BUMP_TYPE=patch|minor|major$(RESET)"
+	@echo ""
+	@$(UV) run python scripts/release.py full
+else
 	@$(UV) run python scripts/release.py version-bump $(BUMP_TYPE)
+endif
 
 # Tag Management
 tag-release: ## Create and push git tag for current version
