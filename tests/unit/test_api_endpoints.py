@@ -350,6 +350,7 @@ class TestListAliases:
     async def test_list_aliases_with_data(self):
         """Test listing aliases when aliases are configured."""
         from src.api.endpoints import list_aliases
+        import src.api.endpoints as endpoints_module
 
         mock_alias_manager = MagicMock()
         mock_alias_manager.get_all_aliases.return_value = {
@@ -358,8 +359,8 @@ class TestListAliases:
             "plain": "gpt-4",
         }
 
-        # Patch config.alias_manager using PropertyMock to handle property correctly
-        with patch.object(type(config), "alias_manager", new_callable=lambda: property(lambda self: mock_alias_manager)):
+        # Patch the config in the endpoints module directly
+        with patch.object(endpoints_module.config, '_alias_manager', mock_alias_manager):
             response = await list_aliases(_=None)
 
             assert response.status_code == 200
@@ -383,12 +384,13 @@ class TestListAliases:
     async def test_list_aliases_no_data(self):
         """Test listing aliases when no aliases are configured."""
         from src.api.endpoints import list_aliases
+        import src.api.endpoints as endpoints_module
 
         mock_alias_manager = MagicMock()
         mock_alias_manager.get_all_aliases.return_value = {}
 
-        # Patch config.alias_manager using PropertyMock to handle property correctly
-        with patch.object(type(config), "alias_manager", new_callable=lambda: property(lambda self: mock_alias_manager)):
+        # Patch the config in the endpoints module directly
+        with patch.object(endpoints_module.config, '_alias_manager', mock_alias_manager):
             response = await list_aliases(_=None)
 
             assert response.status_code == 200
@@ -400,13 +402,13 @@ class TestListAliases:
     async def test_list_aliases_error_handling(self):
         """Test error handling in list_aliases endpoint."""
         from src.api.endpoints import list_aliases
+        import src.api.endpoints as endpoints_module
 
         mock_alias_manager = MagicMock()
         mock_alias_manager.get_all_aliases.side_effect = Exception("Test error")
 
-        # Patch config.alias_manager using PropertyMock to handle property correctly
-        with patch.object(type(config), "alias_manager", new_callable=lambda: property(lambda self: mock_alias_manager)):
-
+        # Patch the config in the endpoints module directly
+        with patch.object(endpoints_module.config, '_alias_manager', mock_alias_manager):
             response = await list_aliases(_=None)
 
             assert response.status_code == 500
