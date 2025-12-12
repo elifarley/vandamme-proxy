@@ -12,7 +12,7 @@ MAKEFLAGS += --warn-undefined-variables
 MAKEFLAGS += --no-builtin-rules
 
 .PHONY: help install install-deps install-dev install-pip clean \
-        test test-unit test-integration format lint type-check check build \
+        test test-unit test-integration test-e2e test-all format lint type-check check build \
         run dev docker-build docker-up docker-down docker-logs health \
         ci coverage pre-commit all watch deps-check security-check validate \
         quick-check init-dev check-install version version-set version-bump \
@@ -241,33 +241,61 @@ pre-commit: format check ## Format code and run all checks (run before commit)
 # Testing
 # ============================================================================
 
-test: ## Run all tests (runs unit tests, integration if server is running)
-	@echo "$(BOLD)$(CYAN)Running all tests...$(RESET)"
+test: ## Run all tests except e2e (unit + integration, no API calls)
+	@echo "$(BOLD)$(CYAN)Running all tests (excluding e2e)...$(RESET)"
 	@# First run unit tests
 	@$(UV) run $(PYTEST) $(TEST_DIR) -v -m unit
 	@# Then try integration tests if server is running
 	@if curl -s http://localhost:$(PORT)/health > /dev/null 2>&1 || \
 	   curl -s http://localhost:18082/health > /dev/null 2>&1; then \
 		echo "$(YELLOW)Server detected, running integration tests...$(RESET)"; \
-		$(UV) run $(PYTEST) $(TEST_DIR) -v -m integration || echo "$(YELLOW)⚠ Some integration tests failed (check API keys)$(RESET)"; \
+		$(UV) run $(PYTEST) $(TEST_DIR) -v -m "integration and not e2e" || echo "$(YELLOW)⚠ Some integration tests failed$(RESET)"; \
 	else \
 		echo "$(YELLOW)⚠ Server not running, skipping integration tests$(RESET)"; \
 		echo "$(CYAN)To run integration tests:$(RESET)"; \
 		echo "  1. Start server: make dev"; \
-		echo "  2. Set API keys in .env"; \
-		echo "  3. Run: make test-integration"; \
+		echo "  2. Run: make test-integration"; \
 	fi
 
 test-unit: ## Run unit tests only (fast, no external deps)
 	@echo "$(BOLD)$(CYAN)Running unit tests...$(RESET)"
 	@$(UV) run $(PYTEST) $(TEST_DIR) -v -m unit
 
-test-integration: ## Run integration tests (requires server and API keys)
+test-integration: ## Run integration tests (requires server, no API calls)
 	@echo "$(BOLD)$(CYAN)Running integration tests...$(RESET)"
-	@echo "$(YELLOW)Note: Ensure server is running and API keys are set$(RESET)"
+	@echo "$(YELLOW)Note: Ensure server is running$(RESET)"
 	@if curl -s http://localhost:$(PORT)/health > /dev/null 2>&1 || \
 	   curl -s http://localhost:18082/health > /dev/null 2>&1; then \
-		$(UV) run $(PYTEST) $(TEST_DIR) -v -m integration; \
+		$(UV) run $(PYTEST) $(TEST_DIR) -v -m "integration and not e2e"; \
+	else \
+		echo "$(RED)❌ Server not running. Start with 'make dev' first$(RESET)"; \
+		exit 1; \
+	fi
+
+test-e2e: ## Run end-to-end tests with real APIs (requires server and API keys)
+	@echo "$(BOLD)$(CYAN)Running end-to-end tests...$(RESET)"
+	@echo "$(YELLOW)⚠ These tests make real API calls and will incur costs$(RESET)"
+	@echo "$(YELLOW)Note: Ensure server is running and API keys are set in .env$(RESET)"
+	@if curl -s http://localhost:$(PORT)/health > /dev/null 2>&1 || \
+	   curl -s http://localhost:18082/health > /dev/null 2>&1; then \
+		$(UV) run $(PYTEST) $(TEST_DIR) -v -m e2e; \
+	else \
+		echo "$(RED)❌ Server not running. Start with 'make dev' first$(RESET)"; \
+		exit 1; \
+	fi
+
+test-all: ## Run ALL tests including e2e (requires server and API keys)
+	@echo "$(BOLD)$(CYAN)Running ALL tests (unit + integration + e2e)...$(RESET)"
+	@echo "$(YELLOW)⚠ E2E tests make real API calls and will incur costs$(RESET)"
+	@# First run unit tests
+	@$(UV) run $(PYTEST) $(TEST_DIR) -v -m unit
+	@# Then check if server is running for integration and e2e tests
+	@if curl -s http://localhost:$(PORT)/health > /dev/null 2>&1 || \
+	   curl -s http://localhost:18082/health > /dev/null 2>&1; then \
+		echo "$(YELLOW)Server detected, running integration tests...$(RESET)"; \
+		$(UV) run $(PYTEST) $(TEST_DIR) -v -m "integration and not e2e" || echo "$(YELLOW)⚠ Some integration tests failed$(RESET)"; \
+		echo "$(YELLOW)Running e2e tests...$(RESET)"; \
+		$(UV) run $(PYTEST) $(TEST_DIR) -v -m e2e || echo "$(YELLOW)⚠ Some e2e tests failed (check API keys)$(RESET)"; \
 	else \
 		echo "$(RED)❌ Server not running. Start with 'make dev' first$(RESET)"; \
 		exit 1; \

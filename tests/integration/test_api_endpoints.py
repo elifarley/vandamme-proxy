@@ -130,10 +130,10 @@ async def test_connection_test():
         assert "message" in data
 
 
-@pytest.mark.integration
+@pytest.mark.e2e
 @pytest.mark.asyncio
 async def test_basic_chat():
-    """Test basic chat completion."""
+    """Test basic chat completion with real API."""
     if not os.getenv("OPENAI_API_KEY"):
         pytest.skip("OPENAI_API_KEY not set")
 
@@ -155,10 +155,10 @@ async def test_basic_chat():
         assert data["role"] == "assistant"
 
 
-@pytest.mark.integration
+@pytest.mark.e2e
 @pytest.mark.asyncio
 async def test_streaming_chat():
-    """Test streaming chat completion."""
+    """Test streaming chat completion with real API."""
     if not os.getenv("OPENAI_API_KEY"):
         pytest.skip("OPENAI_API_KEY not set")
 
@@ -193,10 +193,10 @@ async def test_streaming_chat():
         assert any("message_stop" in event for event in events)
 
 
-@pytest.mark.integration
+@pytest.mark.e2e
 @pytest.mark.asyncio
 async def test_function_calling():
-    """Test function calling capability."""
+    """Test function calling with real API."""
     if not os.getenv("OPENAI_API_KEY"):
         pytest.skip("OPENAI_API_KEY not set")
 
@@ -428,10 +428,10 @@ async def test_token_counting():
         assert data["usage"]["input_tokens"] > 0
 
 
-@pytest.mark.integration
+@pytest.mark.e2e
 @pytest.mark.asyncio
 async def test_anthropic_passthrough():
-    """Test Anthropic API passthrough format."""
+    """Test Anthropic API passthrough format with real API."""
     if not os.getenv("ANTHROPIC_API_KEY"):
         pytest.skip("ANTHROPIC_API_KEY not set")
 

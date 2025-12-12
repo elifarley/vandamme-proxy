@@ -9,6 +9,9 @@ from dotenv import load_dotenv
 # Load test environment variables
 load_dotenv(".env.test")
 
+# Import HTTP mocking fixtures from fixtures module
+pytest_plugins = ["tests.fixtures.mock_http"]
+
 
 @pytest.fixture
 def mock_openai_api_key():
@@ -72,6 +75,9 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "unit: marks tests as unit tests (fast, no external deps)")
     config.addinivalue_line(
         "markers", "integration: marks tests as integration tests (requires services)"
+    )
+    config.addinivalue_line(
+        "markers", "e2e: marks tests as end-to-end tests (requires valid API keys)"
     )
 
 
