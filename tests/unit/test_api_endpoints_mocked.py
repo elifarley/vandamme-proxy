@@ -4,52 +4,38 @@ Elegant HTTP-layer mocking for fast, reliable tests without external dependencie
 Converted from integration tests to use RESPX fixtures.
 """
 
-import os
-import sys
-from unittest.mock import patch
-
 import httpx
+import os
 import pytest
+from tests.config import TEST_HEADERS
+from tests.fixtures.mock_http import (
+    openai_chat_completion,
+    openai_chat_completion_with_tool,
+    openai_streaming_chunks,
+)
+
+# Set test environment BEFORE importing any src modules
+# This ensures clean test state without external dependencies
+os.environ["OPENAI_API_KEY"] = "test-openai-key"
+os.environ["ANTHROPIC_API_KEY"] = "test-anthropic-key"  # Must match TEST_HEADERS
+os.environ["POE_API_KEY"] = "test-poe-key"
+os.environ["GLM_API_KEY"] = "test-glm-key"
+os.environ["VDM_DEFAULT_PROVIDER"] = "openai"
+
+# Clear any aliases to ensure clean test environment
+for key in list(os.environ.keys()):
+    if key.startswith("VDM_ALIAS_"):
+        os.environ.pop(key, None)
+
+# Now it's safe to import app modules
 from fastapi.testclient import TestClient
-
 from src.main import app
-
-
-@pytest.fixture(autouse=True)
-def setup_test_env():
-    """Setup test environment for mocked tests."""
-    original_env = {}
-    try:
-        # Store original values
-        for key in ["OPENAI_API_KEY", "VDM_DEFAULT_PROVIDER", "ANTHROPIC_API_KEY"]:
-            original_env[key] = os.environ.get(key)
-
-        # Set test values
-        os.environ["OPENAI_API_KEY"] = "test-openai-key"
-        os.environ["VDM_DEFAULT_PROVIDER"] = "openai"
-        os.environ["ANTHROPIC_API_KEY"] = "test-anthropic-key"
-        # Clear model aliases to avoid conflicts in tests
-        for key in list(os.environ.keys()):
-            if key.startswith("VDM_ALIAS_"):
-                os.environ.pop(key, None)
-
-        yield
-
-    finally:
-        # Restore original values
-        for key, value in original_env.items():
-            if value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = value
 
 
 @pytest.mark.unit
 def test_basic_chat_mocked(mock_openai_api, openai_chat_completion):
     """Test basic chat completion with mocked OpenAI API."""
-    # API key is already set by setup_test_env fixture
-
-    # Mock OpenAI endpoint - use full URL since we're not using base_url
+    # Mock OpenAI endpoint
     mock_openai_api.post("https://api.openai.com/v1/chat/completions").mock(
         return_value=httpx.Response(200, json=openai_chat_completion)
     )
@@ -63,7 +49,7 @@ def test_basic_chat_mocked(mock_openai_api, openai_chat_completion):
                 "max_tokens": 100,
                 "messages": [{"role": "user", "content": "Hello"}]
             },
-            headers={"x-api-key": "test-anthropic-key"}
+            headers=TEST_HEADERS
         )
 
     assert response.status_code == 200
@@ -112,7 +98,7 @@ def test_function_calling_mocked(mock_openai_api, openai_chat_completion_with_to
                 ],
                 "tool_choice": {"type": "auto"},
             },
-            headers={"x-api-key": "test-anthropic-key"}
+            headers=TEST_HEADERS
         )
 
     assert response.status_code == 200
@@ -153,7 +139,7 @@ def test_with_system_message_mocked(mock_openai_api, openai_chat_completion):
                 ),
                 "messages": [{"role": "user", "content": "Say hello"}],
             },
-            headers={"x-api-key": "test-anthropic-key"}
+            headers=TEST_HEADERS
         )
 
     assert response.status_code == 200
@@ -201,7 +187,7 @@ def test_multimodal_mocked(mock_openai_api, openai_chat_completion):
                     }
                 ],
             },
-            headers={"x-api-key": "test-anthropic-key"}
+            headers=TEST_HEADERS
         )
 
     assert response.status_code == 200
@@ -247,7 +233,7 @@ def test_conversation_with_tool_use_mocked(mock_openai_api, openai_chat_completi
                     }
                 ],
             },
-            headers={"x-api-key": "test-anthropic-key"}
+            headers=TEST_HEADERS
         )
 
         assert response1.status_code == 200
@@ -282,7 +268,7 @@ def test_conversation_with_tool_use_mocked(mock_openai_api, openai_chat_completi
                     },
                 ],
             },
-            headers={"x-api-key": "test-anthropic-key"}
+            headers=TEST_HEADERS
         )
 
         assert response2.status_code == 200
@@ -304,7 +290,7 @@ def test_token_counting_mocked():
                     {"role": "user", "content": "This is a test message for token counting."}
                 ],
             },
-            headers={"x-api-key": "test-anthropic-key"}
+            headers=TEST_HEADERS
         )
 
     assert response.status_code == 200

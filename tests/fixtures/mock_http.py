@@ -8,6 +8,9 @@ import httpx
 import pytest
 import respx
 
+# Import test configuration
+from tests.config import TEST_API_KEYS, TEST_ENDPOINTS
+
 
 # === OpenAI Response Fixtures ===
 
@@ -151,10 +154,10 @@ def anthropic_streaming_events():
 
 @pytest.fixture(scope="function")
 def mock_openai_api():
-    """Mock OpenAI API endpoints with RESPX.
+    """Mock OpenAI API endpoints with strict network isolation.
 
-    Yields a RESPX router that can be used to register mock responses
-    for OpenAI API endpoints.
+    This fixture ensures NO real HTTP calls are made during testing.
+    All endpoints must be explicitly mocked in tests.
 
     Example:
         def test_chat(mock_openai_api, openai_chat_completion):
@@ -162,53 +165,34 @@ def mock_openai_api():
                 return_value=httpx.Response(200, json=openai_chat_completion)
             )
     """
-    # Use function scope for complete isolation between tests
-    # Use assert_all_mocked=False to prevent blocking requests that should be allowed
-    with respx.mock(assert_all_called=False, assert_all_mocked=False) as respx_mock:
-        # Pre-mock common endpoints with full URLs
-        respx_mock.get("https://api.openai.com/v1/models").mock(
+    # Use assert_all_mocked=True to guarantee no real network calls
+    with respx.mock(assert_all_called=False, assert_all_mocked=True) as respx_mock:
+        # Mock common OpenAI endpoints
+        respx_mock.get(f"{TEST_ENDPOINTS['OPENAI']}/v1/models").mock(
             return_value=httpx.Response(200, json={"object": "list", "data": []})
         )
-        # Add default chat completion mock that tests can override
-        default_response = httpx.Response(200, json={
-            "id": "chatcmpl-default",
-            "object": "chat.completion",
-            "created": 1677652288,
-            "model": "gpt-4",
-            "choices": [{
-                "index": 0,
-                "message": {
-                    "role": "assistant",
-                    "content": "Default mock response"
-                },
-                "finish_reason": "stop"
-            }],
-            "usage": {
-                "prompt_tokens": 10,
-                "completion_tokens": 10,
-                "total_tokens": 20
-            }
-        })
-        chat_route = respx_mock.post("https://api.openai.com/v1/chat/completions").mock(return_value=default_response)
+        # Note: Tests must explicitly mock /v1/chat/completions
+        # This prevents silent failures and ensures proper test coverage
         yield respx_mock
 
 
 @pytest.fixture
 def mock_anthropic_api():
-    """Mock Anthropic API endpoints with RESPX.
+    """Mock Anthropic API endpoints with strict network isolation.
 
-    Yields a RESPX router that can be used to register mock responses
-    for Anthropic API endpoints.
+    This fixture ensures NO real HTTP calls are made during testing.
+    All endpoints must be explicitly mocked in tests.
 
     Example:
         def test_message(mock_anthropic_api, anthropic_message_response):
-            mock_anthropic_api.post("/v1/messages").mock(
+            mock_anthropic_api.post("https://api.anthropic.com/v1/messages").mock(
                 return_value=httpx.Response(200, json=anthropic_message_response)
             )
     """
-    # Use base_url for Anthropic API with strict mocking to prevent real calls
-    with respx.mock(base_url="https://api.anthropic.com", assert_all_called=False, assert_all_mocked=True) as respx_mock:
-        # Don't pre-mock endpoints - let tests add their own mocks
+    # Use assert_all_mocked=True to guarantee no real network calls
+    with respx.mock(assert_all_called=False, assert_all_mocked=True) as respx_mock:
+        # Note: Tests must explicitly mock all Anthropic endpoints
+        # This prevents silent failures and ensures proper test coverage
         yield respx_mock
 
 

@@ -1,16 +1,17 @@
 """Shared pytest configuration and fixtures for Vandamme Proxy tests."""
 
 import os
+import sys
 from unittest.mock import MagicMock
 
 import pytest
 from dotenv import load_dotenv
 
-# Load test environment variables
-load_dotenv(".env.test")
-
 # Import HTTP mocking fixtures from fixtures module
 pytest_plugins = ["tests.fixtures.mock_http"]
+
+# Import test configuration constants
+from tests.config import TEST_API_KEYS, TEST_ENDPOINTS, DEFAULT_TEST_CONFIG
 
 
 @pytest.fixture
@@ -100,5 +101,83 @@ def pytest_collection_modifyitems(config, items):
             # Otherwise mark as integration
             else:
                 item.add_marker(pytest.mark.integration)
+
+
+@pytest.fixture(scope="function", autouse=True)
+def setup_test_environment_for_unit_tests():
+    """Setup test environment for unit tests with minimal provider configuration.
+
+    This fixture runs before each test to ensure a clean environment.
+    Unit tests should only need minimal provider setup since all HTTP calls are mocked.
+    """
+    import os
+    import sys
+
+    # Load basic test configuration (non-sensitive settings only)
+    # Use dotenv_path to avoid loading from home directory .env file
+    load_dotenv(dotenv_path=".env.test")
+
+    # Store original values
+    original_env = {}
+
+    # Minimal test API keys - these are NOT real keys and will never be used
+    # since RESPX mocks all HTTP requests
+    test_api_keys = {
+        "OPENAI_API_KEY": "test-openai-key-mocked",
+        "ANTHROPIC_API_KEY": "test-anthropic-key-mocked",
+        "POE_API_KEY": "test-poe-key-mocked",
+        "GLM_API_KEY": "test-glm-key-mocked",
+        "VDM_DEFAULT_PROVIDER": "openai",
+    }
+
+    try:
+        # Store original values
+        for key in test_api_keys:
+            original_env[key] = os.environ.get(key)
+
+        # Clear any existing test aliases
+        for key in list(os.environ.keys()):
+            if key.startswith("VDM_ALIAS_"):
+                os.environ.pop(key, None)
+
+        # Set minimal test environment
+        os.environ.update(test_api_keys)
+
+        # Force reimport of modules to pick up new environment
+        modules_to_reload = [
+            "src.core.config",
+            "src.core.provider_manager",
+            "src.core.client",
+            "src.core.alias_manager",
+            "src.core.model_manager",
+            # Also reload the endpoints module since it imports config at module level
+            "src.api.endpoints",
+        ]
+
+        for module_name in modules_to_reload:
+            if module_name in sys.modules:
+                del sys.modules[module_name]
+
+        # Fresh import with new environment
+        # This will create new instances with the updated environment
+        import src.core.config
+
+        # Reset the global config instance to pick up new environment
+        # The config module creates a global `config` instance that we need to replace
+        config_class = src.core.config.Config
+        src.core.config.config = config_class()
+
+        import src.api.endpoints
+        import src.main
+
+        yield
+
+    finally:
+        # Restore original values
+        for key, value in original_env.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
 
