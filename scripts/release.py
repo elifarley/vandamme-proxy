@@ -146,7 +146,7 @@ def main():
 
     elif command == "publish":
         print(f"{Colors.BOLD}{Colors.GREEN}Publishing to PyPI...{Colors.RESET}")
-        token = os.getenv("PYPI_TOKEN")
+        token = os.getenv("PYPI_API_TOKEN")
         if token:
             run_cmd(f'uv publish --token {token} dist/*')
         else:

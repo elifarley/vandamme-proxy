@@ -51,12 +51,12 @@ jobs:
 
       - name: Publish to PyPI
         env:
-          PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}
+          PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
         run: |
-          if [ -n "$PYPI_TOKEN" ]; then
-            uv publish --token $PYPI_TOKEN dist/*
+          if [ -n "$PYPI_API_TOKEN" ]; then
+            uv publish --token $PYPI_API_TOKEN dist/*
           else
-            echo "No PYPI_TOKEN found, skipping publish"
+            echo "No PYPI_API_TOKEN found, skipping publish"
             exit 1
           fi
 
