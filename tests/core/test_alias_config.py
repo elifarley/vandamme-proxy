@@ -220,7 +220,7 @@ some_key = "some_value"
                 """
 [aliases]
 not_a_dict = "invalid"
-[aliases.poe]
+[poe.aliases]
 haiku = ["not", "a", "string"]
 """
             )

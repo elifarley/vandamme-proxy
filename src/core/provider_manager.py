@@ -1,7 +1,8 @@
 import hashlib
+import logging
 import os
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, Any, Union
 
 from src.core.client import OpenAIClient
 from src.core.provider_config import PASSTHROUGH_SENTINEL, ProviderConfig
@@ -9,6 +10,8 @@ from src.middleware import MiddlewareChain, ThoughtSignatureMiddleware
 
 if TYPE_CHECKING:
     from src.core.anthropic_client import AnthropicClient
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -149,17 +152,42 @@ class ProviderManager:
                 # Load provider configuration
                 self._load_provider_config_with_result(provider_name)
 
+    def _load_provider_toml_config(self, provider_name: str) -> dict[str, Any]:
+        """Load provider configuration from TOML files.
+
+        Args:
+            provider_name: Name of the provider (e.g., "poe", "openai")
+
+        Returns:
+            Provider configuration dictionary from TOML
+        """
+        try:
+            from src.core.alias_config import AliasConfigLoader
+
+            loader = AliasConfigLoader()
+            return loader.get_provider_config(provider_name)
+        except ImportError:
+            logger.debug(f"AliasConfigLoader not available for provider '{provider_name}'")
+            return {}
+        except Exception as e:
+            logger.debug(f"Failed to load TOML config for provider '{provider_name}': {e}")
+            return {}
+
     def _load_provider_config_with_result(self, provider_name: str) -> None:
         """Load configuration for a specific provider and track the result"""
         provider_upper = provider_name.upper()
 
-        api_key = os.environ.get(f"{provider_upper}_API_KEY")
+        # First, try to load from TOML configuration
+        toml_config = self._load_provider_toml_config(provider_name)
+
+        # Then override with environment variables
+        api_key = os.environ.get(f"{provider_upper}_API_KEY") or toml_config.get("api-key")
         if not api_key:
-            # Skip entirely if no API key - don't even track it
+            # Skip entirely if no API key in either source
             return
 
-        # Check if we have a base URL or can use a default
-        base_url = os.environ.get(f"{provider_upper}_BASE_URL")
+        # Load base URL with precedence: env > TOML > default
+        base_url = os.environ.get(f"{provider_upper}_BASE_URL") or toml_config.get("base-url")
         if not base_url:
             base_url = self.get_default_base_url(provider_name)
             if not base_url:
@@ -174,10 +202,15 @@ class ProviderManager:
                 self._load_results.append(result)
                 return
 
-        # Load API format (default to "openai")
-        api_format = os.environ.get(f"{provider_upper}_API_FORMAT", "openai")
+        # Load other settings with precedence: env > TOML > defaults
+        api_format = os.environ.get(
+            f"{provider_upper}_API_FORMAT", toml_config.get("api-format", "openai")
+        )
         if api_format not in ["openai", "anthropic"]:
             api_format = "openai"  # Default to openai if invalid
+
+        timeout = int(os.environ.get("REQUEST_TIMEOUT", toml_config.get("timeout", "90")))
+        max_retries = int(os.environ.get("MAX_RETRIES", toml_config.get("max-retries", "2")))
 
         # Create result for successful configuration
         result = ProviderLoadResult(
@@ -193,9 +226,10 @@ class ProviderManager:
             name=provider_name,
             api_key=api_key,
             base_url=base_url,
-            api_version=os.environ.get(f"{provider_upper}_API_VERSION"),
-            timeout=int(os.environ.get("REQUEST_TIMEOUT", "90")),
-            max_retries=int(os.environ.get("MAX_RETRIES", "2")),
+            api_version=os.environ.get(f"{provider_upper}_API_VERSION")
+            or toml_config.get("api-version"),
+            timeout=timeout,
+            max_retries=max_retries,
             custom_headers=self._get_provider_custom_headers(provider_upper),
             api_format=api_format,
         )
@@ -206,16 +240,20 @@ class ProviderManager:
         """Load configuration for a specific provider (legacy method for default provider)"""
         provider_upper = provider_name.upper()
 
-        api_key = os.environ.get(f"{provider_upper}_API_KEY")
+        # Load from TOML first
+        toml_config = self._load_provider_toml_config(provider_name)
+
+        # API key is required (from env or TOML)
+        api_key = os.environ.get(f"{provider_upper}_API_KEY") or toml_config.get("api-key")
         if not api_key:
             raise ValueError(
                 f"API key not found for provider '{provider_name}'. "
                 f"Please set {provider_upper}_API_KEY environment variable."
             )
 
-        base_url = os.environ.get(f"{provider_upper}_BASE_URL")
+        # Base URL with precedence: env > TOML > default
+        base_url = os.environ.get(f"{provider_upper}_BASE_URL") or toml_config.get("base-url")
         if not base_url:
-            # For default provider, also try defaults
             base_url = self.get_default_base_url(provider_name)
             if not base_url:
                 raise ValueError(
@@ -223,18 +261,24 @@ class ProviderManager:
                     f"Please set {provider_upper}_BASE_URL environment variable."
                 )
 
-        # Load API format (default to "openai")
-        api_format = os.environ.get(f"{provider_upper}_API_FORMAT", "openai")
+        # Load other settings with precedence: env > TOML > defaults
+        api_format = os.environ.get(
+            f"{provider_upper}_API_FORMAT", toml_config.get("api-format", "openai")
+        )
         if api_format not in ["openai", "anthropic"]:
             api_format = "openai"  # Default to openai if invalid
+
+        timeout = int(os.environ.get("REQUEST_TIMEOUT", toml_config.get("timeout", "90")))
+        max_retries = int(os.environ.get("MAX_RETRIES", toml_config.get("max-retries", "2")))
 
         config = ProviderConfig(
             name=provider_name,
             api_key=api_key,
             base_url=base_url,
-            api_version=os.environ.get(f"{provider_upper}_API_VERSION"),
-            timeout=int(os.environ.get("REQUEST_TIMEOUT", "90")),
-            max_retries=int(os.environ.get("MAX_RETRIES", "2")),
+            api_version=os.environ.get(f"{provider_upper}_API_VERSION")
+            or toml_config.get("api-version"),
+            timeout=timeout,
+            max_retries=max_retries,
             custom_headers=self._get_provider_custom_headers(provider_upper),
             api_format=api_format,
         )

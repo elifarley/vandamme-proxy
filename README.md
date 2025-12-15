@@ -143,12 +143,13 @@ POE_API_KEY=!PASSTHRU  # Client provides key per-request
 ANTHROPIC_API_KEY=sk-ant-your-key
 ANTHROPIC_API_FORMAT=anthropic  # Direct passthrough (no conversion)
 
-# Smart Aliases
-VDM_ALIAS_FAST=poe:gemini-flash
-VDM_ALIAS_CHAT=anthropic:claude-3-5-sonnet-20241022
-VDM_ALIAS_CODE=openai:gpt-4o
+# Smart Aliases (provider-specific)
+POE_ALIAS_FAST=gemini-flash
+ANTHROPIC_ALIAS_CHAT=claude-3-5-sonnet-20241022
+OPENAI_ALIAS_CODE=gpt-4o
 
 # Default Provider (when no prefix specified)
+# Overrides the default_provider from src/config/defaults.toml
 VDM_DEFAULT_PROVIDER=openai
 EOF
 ```
@@ -201,6 +202,35 @@ curl http://localhost:8082/v1/aliases
 
 ---
 
+## ⚙️ Configuration System
+
+Vandamme Proxy uses a hierarchical configuration system. Settings from higher levels override those from lower levels:
+
+```
+Environment Variables (highest priority)
+├── Local: ./vandamme-config.toml
+├── User: ~/.config/vandamme-proxy/vandamme-config.toml
+└── Package: src/config/defaults.toml (lowest priority)
+```
+
+### Default Provider
+
+The default provider is determined in this order:
+1. `VDM_DEFAULT_PROVIDER` environment variable (if set)
+2. `default_provider` from your local `./vandamme-config.toml`
+3. `default_provider` from your user config `~/.config/vandamme-proxy/vandamme-config.toml`
+4. `default_provider` from `src/config/defaults.toml` (defaults to "openai")
+
+### Package Defaults
+
+The `src/config/defaults.toml` file provides built-in defaults:
+- Default provider: "openai"
+- Fallback model aliases for providers like Poe
+
+You can override any of these settings using environment variables or your own TOML configuration files.
+
+---
+
 ## 📖 Core Concepts
 
 ### Provider Prefix Routing
@@ -230,18 +260,25 @@ Create memorable shortcuts with powerful substring matching:
 
 ```bash
 # .env configuration
-VDM_ALIAS_FAST=poe:gemini-flash
-VDM_ALIAS_HAIKU=poe:gpt-4o-mini
-VDM_ALIAS_CHAT=anthropic:claude-3-5-sonnet-20241022
+POE_ALIAS_FAST=gemini-flash
+POE_ALIAS_HAIKU=gpt-4o-mini
+ANTHROPIC_ALIAS_CHAT=claude-3-5-sonnet-20241022
 ```
 
 **Intelligent Matching Rules:**
 - **Case-Insensitive:** `fast`, `Fast`, `FAST` all match
 - **Substring Matching:** `my-fast-model` matches `FAST` alias
-- **Hyphen/Underscore:** `my-alias` and `my_alias` both match `VDM_ALIAS_MY_ALIAS`
-- **Priority Order:** Exact match → Longest substring → Alphabetical
+- **Hyphen/Underscore:** `my-alias` and `my_alias` both match `MY_ALIAS`
+- **Provider-Scoped:** Each alias is tied to a specific provider
+- **Priority Order:** Exact match → Longest substring → Provider order → Alphabetical
 
 **[📚 Model Aliases Guide →](docs/model-aliases.md)**
+
+- **Automatic Fallbacks**: Default mappings for `haiku`, `sonnet`, `opus`
+- **Project Overrides**: Local configuration files
+- **User Preferences**: System-wide defaults
+
+**[📚 Fallback Aliases →](docs/fallback-aliases.md)**
 
 ---
 
@@ -338,6 +375,7 @@ POE_API_KEY=!PASSTHRU
 ### 🌐 Feature Guides
 - [**Multi-Provider Routing**](docs/provider-routing-guide.md) - Complete routing and configuration guide
 - [**Smart Model Aliases**](docs/model-aliases.md) - Alias configuration and matching rules
+- [**Fallback Model Aliases**](docs/fallback-aliases.md) - Automatic defaults for special model names
 - [**API Key Passthrough**](docs/api-key-passthrough.md) - Security and multi-tenancy patterns
 - [**Anthropic API Support**](ANTHROPIC_API_SUPPORT.md) - Dual-format operation details
 
@@ -432,6 +470,14 @@ OPENAI_API_KEY=sk-your-openai-key
 ANTHROPIC_API_KEY=sk-ant-your-key
 POE_API_KEY=your-poe-key
 # Any {PROVIDER}_API_KEY creates a provider
+```
+
+#### Default Provider
+```bash
+# Default provider for models without provider prefixes
+# Overrides the default_provider from src/config/defaults.toml
+# If not set, uses value from defaults.toml (defaults to "openai")
+VDM_DEFAULT_PROVIDER=openai
 ```
 
 #### Provider Configuration
