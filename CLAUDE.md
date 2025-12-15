@@ -368,10 +368,10 @@ VDM_DEFAULT_PROVIDER=vertex
 Model aliases provide flexible model selection with case-insensitive substring matching.
 
 ```bash
-# Configure aliases in .env file
-VDM_ALIAS_HAIKU=poe:gpt-4o-mini
-VDM_ALIAS_FAST=openai:gpt-4o-mini
-VDM_ALIAS_CHAT=anthropic:claude-3-5-sonnet-20241022
+# Configure aliases in .env file (provider-specific)
+POE_ALIAS_HAIKU=gpt-4o-mini
+OPENAI_ALIAS_FAST=gpt-4o-mini
+ANTHROPIC_ALIAS_CHAT=claude-3-5-sonnet-20241022
 
 # List all configured aliases
 curl http://localhost:8082/v1/aliases
@@ -398,9 +398,9 @@ curl -X POST http://localhost:8082/v1/messages \
 #### Claude Code with Aliases
 
 ```bash
-# Configure aliases
-export VDM_ALIAS_HAIKU=poe:gpt-4o-mini
-export VDM_ALIAS_FAST=openai:gpt-4o-mini
+# Configure aliases (provider-specific)
+export POE_ALIAS_HAIKU=gpt-4o-mini
+export OPENAI_ALIAS_FAST=gpt-4o-mini
 
 # Use aliases with Claude Code
 ANTHROPIC_BASE_URL=http://localhost:8082 claude --model haiku "Quick response"

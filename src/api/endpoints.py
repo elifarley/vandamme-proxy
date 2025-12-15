@@ -942,33 +942,19 @@ async def list_models(
 
 @router.get("/v1/aliases")
 async def list_aliases(_: None = Depends(validate_api_key)) -> JSONResponse:
-    """List all configured model aliases"""
+    """List all configured model aliases grouped by provider"""
     try:
         aliases = config.alias_manager.get_all_aliases()
 
-        # Transform aliases to API response format
-        alias_data = []
-        for alias, target in aliases.items():
-            # Extract provider from target if present
-            provider = "default"
-            model = target
-            if ":" in target:
-                provider, model = target.split(":", 1)
-
-            alias_data.append(
-                {
-                    "alias": alias,
-                    "target": target,
-                    "provider": provider,
-                    "model": model,
-                }
-            )
+        # Return aliases grouped by provider
+        total_aliases = sum(len(provider_aliases) for provider_aliases in aliases.values())
 
         return JSONResponse(
             status_code=200,
             content={
                 "object": "list",
-                "data": alias_data,
+                "aliases": aliases,
+                "total": total_aliases,
             },
         )
     except Exception as e:

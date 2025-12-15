@@ -26,6 +26,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "openai>=1.54.0",
     "respx>=0.22.0",
+    "tomli>=2.0.0",
 ]
 
 [project.optional-dependencies]
@@ -112,6 +113,9 @@ version-file = "src/_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
+include = [
+    "src/config/*.toml",
+]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

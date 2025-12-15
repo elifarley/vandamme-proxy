@@ -1,0 +1,41 @@
+# Vandamme Proxy Configuration
+# This file contains default configuration values and fallback aliases
+# These are used when users haven't explicitly configured them via environment variables
+
+[defaults]
+# Default provider to use when not specified via environment variable
+# Can be overridden by VDM_DEFAULT_PROVIDER environment variable
+default_provider = "openai"
+
+# OpenAI provider defaults
+[openai]
+base-url = "https://api.openai.com/v1"
+api-format = "openai"
+timeout = 90
+max-retries = 2
+[openai.aliases]
+# haiku = "gpt-4o-mini"
+# sonnet = "gpt-4o"
+# opus = "o1-preview"
+
+# Poe provider defaults
+[poe]
+base-url = "https://api.poe.com/v1"
+api-format = "openai"
+timeout = 90
+max-retries = 2
+[poe.aliases]
+haiku = "grok-4.1-fast-non-reasoning"
+sonnet = "glm-4.6"
+opus = "gpt-5.2"
+
+# Anthropic provider defaults
+[anthropic]
+base-url = "https://api.anthropic.com"
+api-format = "anthropic"
+timeout = 90
+max-retries = 2
+[anthropic.aliases]
+haiku = "claude-3-5-haiku-20241022"
+sonnet = "claude-3-5-sonnet-20241022"
+opus = "claude-3-opus-20240229"

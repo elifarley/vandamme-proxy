@@ -123,9 +123,9 @@ def setup_test_environment_for_unit_tests():
     original_modules = set(sys.modules.keys())
 
     try:
-        # Clear any existing test aliases
+        # Clear any existing test aliases (both old and new patterns)
         for key in list(os.environ.keys()):
-            if key.startswith("VDM_ALIAS_"):
+            if key.startswith("VDM_ALIAS_") or "_ALIAS_" in key:
                 os.environ.pop(key, None)
 
         # Set minimal test environment from centralized config

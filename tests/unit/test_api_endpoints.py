@@ -353,9 +353,8 @@ class TestListAliases:
 
         mock_alias_manager = MagicMock()
         mock_alias_manager.get_all_aliases.return_value = {
-            "haiku": "poe:gpt-4o-mini",
-            "fast": "openai:gpt-4o-mini",
-            "plain": "gpt-4",
+            "poe": {"haiku": "gpt-4o-mini", "sonnet": "gpt-4o"},
+            "openai": {"fast": "gpt-4o-mini"},
         }
 
         # Patch the config in the endpoints module directly
@@ -365,19 +364,13 @@ class TestListAliases:
             assert response.status_code == 200
             content = json.loads(response.body)
             assert content["object"] == "list"
-            assert len(content["data"]) == 3
+            assert "aliases" in content
+            assert content["total"] == 3
 
-            # Check first alias
-            haiku_data = next(d for d in content["data"] if d["alias"] == "haiku")
-            assert haiku_data["target"] == "poe:gpt-4o-mini"
-            assert haiku_data["provider"] == "poe"
-            assert haiku_data["model"] == "gpt-4o-mini"
-
-            # Check plain alias (no provider prefix)
-            plain_data = next(d for d in content["data"] if d["alias"] == "plain")
-            assert plain_data["target"] == "gpt-4"
-            assert plain_data["provider"] == "default"
-            assert plain_data["model"] == "gpt-4"
+            # Check aliases structure (grouped by provider)
+            assert content["aliases"]["poe"]["haiku"] == "gpt-4o-mini"
+            assert content["aliases"]["poe"]["sonnet"] == "gpt-4o"
+            assert content["aliases"]["openai"]["fast"] == "gpt-4o-mini"
 
     @pytest.mark.asyncio
     async def test_list_aliases_no_data(self):
@@ -395,7 +388,8 @@ class TestListAliases:
             assert response.status_code == 200
             content = json.loads(response.body)
             assert content["object"] == "list"
-            assert len(content["data"]) == 0
+            assert content["aliases"] == {}
+            assert content["total"] == 0
 
     @pytest.mark.asyncio
     async def test_list_aliases_error_handling(self):

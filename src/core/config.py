@@ -1,7 +1,10 @@
 import hashlib
+import logging
 import os
 import sys
 from typing import TYPE_CHECKING
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from src.core.alias_manager import AliasManager
@@ -11,8 +14,25 @@ if TYPE_CHECKING:
 # Configuration
 class Config:
     def __init__(self) -> None:
-        # Determine default provider first
-        self.default_provider = os.environ.get("VDM_DEFAULT_PROVIDER", "openai")
+        # First, check if default provider is set via environment variable
+        env_default_provider = os.environ.get("VDM_DEFAULT_PROVIDER")
+
+        if env_default_provider:
+            self.default_provider = env_default_provider
+            logger.debug(f"Using default provider from environment: {self.default_provider}")
+        else:
+            # Try to load from TOML configuration
+            try:
+                from src.core.alias_config import AliasConfigLoader
+
+                loader = AliasConfigLoader()
+                defaults = loader.get_defaults()
+                self.default_provider = defaults.get("default_provider", "openai")
+                logger.debug(f"Using default provider from configuration: {self.default_provider}")
+            except Exception as e:
+                logger.debug(f"Failed to load default provider from config: {e}")
+                self.default_provider = "openai"
+                logger.debug(f"Using hardcoded default provider: {self.default_provider}")
 
         # Get API key for the default provider
         provider_upper = self.default_provider.upper()
