@@ -152,6 +152,7 @@ def setup_test_environment_for_unit_tests():
             "src.core.client",
             "src.core.anthropic_client",
             "src.core.alias_manager",
+            "src.core.alias_config",
             "src.core.model_manager",
             "src.api.endpoints",
             "src.main",
@@ -165,6 +166,11 @@ def setup_test_environment_for_unit_tests():
         import src.core.config
 
         src.core.config.Config.reset_singleton()
+
+        # Reset the AliasConfigLoader cache for test isolation
+        from src.core.alias_config import AliasConfigLoader
+
+        AliasConfigLoader.reset_cache()
 
         # Force reload of modules that import config at module level
         # This ensures they get the new config instance after reset

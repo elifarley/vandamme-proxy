@@ -92,9 +92,7 @@ class TestAliasManagerFallback:
             assert alias_manager.resolve_alias("Sonnet") == "poe:glm-4.6"
 
             # Test substring matching
-            assert (
-                alias_manager.resolve_alias("my-haiku-model") == "poe:gpt-5.1-mini"
-            )
+            assert alias_manager.resolve_alias("my-haiku-model") == "poe:gpt-5.1-mini"
 
     def test_no_fallbacks_for_unconfigured_providers(self):
         """Test that fallbacks are not applied to providers without defaults."""
@@ -152,8 +150,7 @@ class TestAliasManagerFallback:
             # Clear the config cache to force reload
             from src.core.alias_config import AliasConfigLoader
 
-            if hasattr(AliasConfigLoader, "_config_cache"):
-                AliasConfigLoader._config_cache = None
+            AliasConfigLoader.reset_cache()
 
             alias_manager = AliasManager()
 

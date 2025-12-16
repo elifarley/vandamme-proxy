@@ -18,28 +18,16 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# Module-level cache to avoid reloading configuration multiple times
+_config_cache: dict[str, Any] | None = None
+_configuration_logged = False
+
 
 class AliasConfigLoader:
-    """Loads and merges fallback alias configurations, provider settings, and defaults from TOML.
-
-    Implemented as a singleton to ensure configuration is loaded only once.
-    """
-    _instance = None
-    _initialized = False
-
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
+    """Loads and merges fallback alias configurations, provider settings, and defaults from TOML."""
 
     def __init__(self) -> None:
-        """Initialize AliasConfigLoader as singleton."""
-        # Only initialize once
-        if self._initialized:
-            return
-
-        self._config_cache: dict[str, Any] | None = None
-        self._logged = False  # Track if configuration has been logged
+        """Initialize AliasConfigLoader with configuration paths."""
         self._config_paths = [
             # Local override (highest priority)
             Path.cwd() / "vandamme-config.toml",
@@ -48,7 +36,6 @@ class AliasConfigLoader:
             # Package defaults (lowest priority)
             Path(__file__).parent.parent / "config" / "defaults.toml",
         ]
-        self._initialized = True
 
     def load_config(self, force_reload: bool = False) -> dict[str, Any]:
         """Load and merge configurations from all TOML files.
@@ -61,13 +48,16 @@ class AliasConfigLoader:
             - 'providers': {provider_name: {config_key: value, "aliases": {alias: target}}}
             - 'defaults': {default_key: value}
         """
-        if self._config_cache is not None and not force_reload:
-            return self._config_cache
+        global _config_cache, _configuration_logged
 
-        if tomli is None:
+        if _config_cache is not None and not force_reload:
+            return _config_cache
+
+        # Check for tomli at runtime to allow proper patching in tests
+        if globals().get("tomli") is None:
             logger.warning("tomli/tomllib not available, configuration disabled")
-            self._config_cache = {"providers": {}, "defaults": {}}
-            return self._config_cache
+            _config_cache = {"providers": {}, "defaults": {}}
+            return _config_cache
 
         merged_config: dict[str, Any] = {"providers": {}, "defaults": {}}
 
@@ -76,7 +66,7 @@ class AliasConfigLoader:
             if config_path.exists():
                 try:
                     with open(config_path, "rb") as f:
-                        config_data = tomli.load(f)
+                        config_data = globals()["tomli"].load(f)
 
                     # Extract provider sections (e.g., [poe], [openai])
                     for key, value in config_data.items():
@@ -135,10 +125,10 @@ class AliasConfigLoader:
                 except Exception as e:
                     logger.warning(f"Failed to load {config_path}: {e}")
 
-        self._config_cache = merged_config
+        _config_cache = merged_config
 
-        # Log provider and alias info (only once)
-        if not self._logged:
+        # Log provider and alias info (only once per process)
+        if not _configuration_logged:
             providers_config = merged_config.get("providers", {})
             total_providers = len(providers_config)
             total_aliases = sum(
@@ -147,9 +137,9 @@ class AliasConfigLoader:
             logger.info(
                 f"Loaded configuration: {total_providers} providers with {total_aliases} aliases"
             )
-            self._logged = True
+            _configuration_logged = True
 
-        return self._config_cache
+        return _config_cache
 
     def get_fallback_alias(self, provider: str, alias: str) -> str | None:
         """Get fallback alias target for a specific provider and alias.
@@ -208,3 +198,13 @@ class AliasConfigLoader:
 
         # Return a copy to avoid modifying cached data
         return dict(provider_config) if provider_config else {"aliases": {}}
+
+    @staticmethod
+    def reset_cache() -> None:
+        """Reset the module-level configuration cache.
+
+        This should only be used in tests to ensure test isolation.
+        """
+        global _config_cache, _configuration_logged
+        _config_cache = None
+        _configuration_logged = False

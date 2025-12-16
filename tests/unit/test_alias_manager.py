@@ -352,7 +352,7 @@ class TestAliasManager:
             mock_pm = mock_provider_manager_class.return_value
             mock_pm._configs = {"openai": {}, "poe": {}}
             alias_manager = AliasManager()
-            # Should have 1 openai explicit + 3 openai fallbacks + 1 poe explicit + 2 poe fallbacks = 7 total
+            # Total aliases: 1 openai explicit + 3 fallbacks + 1 poe explicit + 2 fallbacks = 7
             assert alias_manager.get_alias_count() == 7
 
     def test_invalid_provider_skip(self):

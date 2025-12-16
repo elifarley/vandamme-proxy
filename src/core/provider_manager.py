@@ -28,8 +28,9 @@ class ProviderLoadResult:
 class ProviderManager:
     """Manages multiple OpenAI clients for different providers"""
 
-    def __init__(self, default_provider: str | None = None,
-                 default_provider_source: str | None = None) -> None:
+    def __init__(
+        self, default_provider: str | None = None, default_provider_source: str | None = None
+    ) -> None:
         # Use provided default_provider or fall back to "openai" for backward compatibility
         self.default_provider = default_provider if default_provider is not None else "openai"
         self.default_provider_source = default_provider_source or "system"
@@ -60,7 +61,7 @@ class ProviderManager:
         return defaults.get(provider_name.lower())
 
     def _select_default_from_available(self) -> None:
-        """Select a default provider from available providers if original default is not available"""
+        """Select a default provider from available providers if original default is unavailable"""
         if self.default_provider in self._configs:
             return  # Original default is available
 

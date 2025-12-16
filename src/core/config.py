@@ -32,7 +32,9 @@ class Config:
                 if toml_default:
                     self.default_provider = toml_default
                     self.default_provider_source = "toml"
-                    logger.debug(f"Using default provider from configuration: {self.default_provider}")
+                    logger.debug(
+                        f"Using default provider from configuration: {self.default_provider}"
+                    )
                 else:
                     self.default_provider = "openai"
                     self.default_provider_source = "system"
@@ -48,14 +50,13 @@ class Config:
         api_key_env_var = f"{provider_upper}_API_KEY"
         self.openai_api_key = os.environ.get(api_key_env_var)
 
-        if not self.openai_api_key:
+        if not self.openai_api_key and self.default_provider_source != "system":
             # Only warn about missing API key if the provider was explicitly configured
-            if self.default_provider_source != "system":
-                warning_msg = (
-                    f"Warning: {api_key_env_var} not found in environment variables. "
-                    f"{self.default_provider} provider will not be available."
-                )
-                print(warning_msg)
+            warning_msg = (
+                f"Warning: {api_key_env_var} not found in environment variables. "
+                f"{self.default_provider} provider will not be available."
+            )
+            print(warning_msg)
             # Don't raise error - allow server to start for testing
 
         # Add Anthropic API key for client validation
@@ -130,7 +131,7 @@ class Config:
 
             self._provider_manager = ProviderManager(
                 default_provider=self.default_provider,
-                default_provider_source=getattr(self, 'default_provider_source', 'system')
+                default_provider_source=getattr(self, "default_provider_source", "system"),
             )
             # Auto-load configurations on first access
             self._provider_manager.load_provider_configs()

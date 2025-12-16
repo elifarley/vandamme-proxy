@@ -48,15 +48,17 @@ class AliasManager:
         skipped_count = 0
 
         # Get available providers from ProviderManager for validation
-        from src.core.provider_manager import ProviderManager
-
         # Get default provider from config to ensure consistency
         from src.core.alias_config import AliasConfigLoader
+        from src.core.provider_manager import ProviderManager
+
         loader = AliasConfigLoader()
         defaults = loader.get_defaults()
         default_provider = defaults.get("default-provider", "openai")
 
-        provider_manager = ProviderManager(default_provider=default_provider, default_provider_source="toml")
+        provider_manager = ProviderManager(
+            default_provider=default_provider, default_provider_source="toml"
+        )
         provider_manager.load_provider_configs()
         available_providers = set(provider_manager._configs.keys())
 
@@ -162,15 +164,17 @@ class AliasManager:
     def _merge_fallback_aliases(self) -> None:
         """Merge fallback aliases for any missing configurations."""
         # Get available providers for validation
-        from src.core.provider_manager import ProviderManager
-
         # Get default provider from config to ensure consistency
         from src.core.alias_config import AliasConfigLoader
+        from src.core.provider_manager import ProviderManager
+
         loader = AliasConfigLoader()
         defaults = loader.get_defaults()
         default_provider = defaults.get("default-provider", "openai")
 
-        provider_manager = ProviderManager(default_provider=default_provider, default_provider_source="toml")
+        provider_manager = ProviderManager(
+            default_provider=default_provider, default_provider_source="toml"
+        )
         provider_manager.load_provider_configs()
         available_providers = set(provider_manager._configs.keys())
 
