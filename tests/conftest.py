@@ -33,7 +33,7 @@ def mock_config():
     """Mock configuration with test values."""
     config = MagicMock()
     config.provider_manager = MagicMock()
-    config.anthropic_api_key = None
+    config.proxy_api_key = None
     config.default_provider = "openai"
     config.openai_api_key = "test-key"
     config.openai_base_url = "https://api.openai.com/v1"
@@ -125,7 +125,7 @@ def setup_test_environment_for_unit_tests():
     try:
         # Clear any existing test aliases (both old and new patterns)
         for key in list(os.environ.keys()):
-            if key.startswith("VDM_ALIAS_") or "_ALIAS_" in key:
+            if "_ALIAS_" in key:
                 os.environ.pop(key, None)
 
         # Set minimal test environment from centralized config

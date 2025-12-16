@@ -22,7 +22,7 @@ class TestAliasManager:
 
         # Clear all alias variables for clean test
         for key in list(os.environ.keys()):
-            if key.startswith("VDM_ALIAS_") or "_ALIAS_" in key:
+            if "_ALIAS_" in key:
                 os.environ.pop(key, None)
 
         yield
@@ -41,7 +41,6 @@ class TestAliasManager:
                     "OPENAI_ALIAS_FAST": "gpt-4o-mini",
                     "ANTHROPIC_ALIAS_CHAT": "claude-3-5-sonnet-20241022",
                     "OTHER_VAR": "should_be_ignored",
-                    "VDM_ALIAS_OLD": "should_be_ignored",
                 },
             ),
             patch("src.core.provider_manager.ProviderManager") as mock_provider_manager,

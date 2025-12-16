@@ -61,10 +61,6 @@ class AliasManager:
                 provider = provider.lower()
                 alias_name = alias_name.lower()  # Store aliases in lowercase
 
-                # Skip old VDM_ALIAS_* patterns silently
-                if provider == "vdm":
-                    continue
-
                 # Validate provider exists
                 if provider not in available_providers:
                     logger.warning(f"Provider '{provider}' not found for alias {env_key}, skipping")

@@ -22,7 +22,7 @@ class TestAliasManagerFallback:
 
         # Clear all alias variables for clean test
         for key in list(os.environ.keys()):
-            if key.startswith("VDM_ALIAS_") or "_ALIAS_" in key:
+            if "_ALIAS_" in key:
                 os.environ.pop(key, None)
 
         yield
