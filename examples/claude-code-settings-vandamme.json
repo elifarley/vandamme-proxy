@@ -1,9 +1,9 @@
 {
   "env": {
     "ANTHROPIC_BASE_URL": "http://localhost:8082",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "poe:glm-4.5-air-t",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "poe:glm-4.6",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "poe:gemini-3-pro",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "poe:haiku",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "poe:sonnet",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "poe:opus",
     "API_TIMEOUT_MS": "3000000"
   },
   "model": "sonnet"
