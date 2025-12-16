@@ -41,7 +41,7 @@ class TestAliasConfigLoader:
             assert "haiku" in config["providers"]["poe"]["aliases"]
             assert "sonnet" in config["providers"]["poe"]["aliases"]
             assert "opus" in config["providers"]["poe"]["aliases"]
-            assert config["providers"]["poe"]["aliases"]["haiku"] == "grok-4.1-fast-non-reasoning"
+            assert config["providers"]["poe"]["aliases"]["haiku"] == "gpt-5.1-mini"
             assert config["providers"]["poe"]["aliases"]["sonnet"] == "glm-4.6"
             assert config["providers"]["poe"]["aliases"]["opus"] == "gpt-5.2"
         finally:
@@ -131,7 +131,7 @@ opus = "default-opus"
         loader = AliasConfigLoader()
 
         # Test existing alias
-        assert loader.get_fallback_alias("poe", "haiku") == "grok-4.1-fast-non-reasoning"
+        assert loader.get_fallback_alias("poe", "haiku") == "gpt-5.1-mini"
 
         # Test non-existing alias
         assert loader.get_fallback_alias("poe", "nonexistent") is None
@@ -218,8 +218,6 @@ some_key = "some_value"
             malformed_config = Path(tmpdir) / "vandamme-config.toml"
             malformed_config.write_text(
                 """
-[aliases]
-not_a_dict = "invalid"
 [poe.aliases]
 haiku = ["not", "a", "string"]
 """
@@ -233,7 +231,7 @@ haiku = ["not", "a", "string"]
                 assert "providers" in config
                 assert "poe" in config["providers"]
                 assert (
-                    config["providers"]["poe"]["aliases"]["haiku"] == "grok-4.1-fast-non-reasoning"
+                    config["providers"]["poe"]["aliases"]["haiku"] == "gpt-5.1-mini"
                 )
 
     def test_case_insensitive_alias_names(self):

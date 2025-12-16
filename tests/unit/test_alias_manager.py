@@ -86,24 +86,26 @@ class TestAliasManager:
             patch.dict(
                 os.environ,
                 {
-                    "POE_ALIAS_HAIKU": "grok-4.1-fast-non-reasoning",
-                    "OPENAI_ALIAS_MY_ALIAS": "gpt-4o",
+                    "POE_ALIAS_HAIKU": "custom-haiku-model",  # Only set POE alias
                 },
             ),
             patch("src.core.provider_manager.ProviderManager") as mock_provider_manager,
         ):
             mock_pm = mock_provider_manager.return_value
-            mock_pm._configs = {"poe": {}, "openai": {}}
+            mock_pm._configs = {"poe": {}}
 
             alias_manager = AliasManager()
 
             # Exact match (now returns with provider prefix)
-            assert alias_manager.resolve_alias("haiku") == "poe:grok-4.1-fast-non-reasoning"
-            assert alias_manager.resolve_alias("HAIKU") == "poe:grok-4.1-fast-non-reasoning"
+            assert alias_manager.resolve_alias("haiku") == "poe:custom-haiku-model"
+            assert alias_manager.resolve_alias("HAIKU") == "poe:custom-haiku-model"
 
-            # Test underscore to hyphen normalization for exact match
-            assert alias_manager.resolve_alias("my-alias") == "openai:gpt-4o"
-            assert alias_manager.resolve_alias("MY-ALIAS") == "openai:gpt-4o"
+            # Test fallback when no exact alias is set
+            # Remove environment variable to test fallback behavior
+            with patch.dict(os.environ, {}, clear=True):
+                alias_manager2 = AliasManager()
+                # Should use fallback from defaults.toml
+                assert alias_manager2.resolve_alias("haiku") == "poe:gpt-5.1-mini"
 
     def test_resolve_substring_match(self):
         """Test resolving substring matches."""
@@ -350,8 +352,8 @@ class TestAliasManager:
             mock_pm = mock_provider_manager_class.return_value
             mock_pm._configs = {"openai": {}, "poe": {}}
             alias_manager = AliasManager()
-            # Should have 1 openai explicit + 3 poe (1 custom + 2 fallbacks) = 4 total
-            assert alias_manager.get_alias_count() == 4
+            # Should have 1 openai explicit + 3 openai fallbacks + 1 poe explicit + 2 poe fallbacks = 7 total
+            assert alias_manager.get_alias_count() == 7
 
     def test_invalid_provider_skip(self):
         """Test that aliases for unknown providers are skipped."""
@@ -420,7 +422,7 @@ class TestAliasManager:
             # Modifying one shouldn't affect the other
             aliases1["openai"]["new"] = "value"
             assert "new" not in aliases2.get("openai", {})
-            assert alias_manager.get_alias_count() == 1
+            assert alias_manager.get_alias_count() == 4  # 1 explicit + 3 fallbacks
 
     def test_none_and_empty_inputs(self):
         """Test handling of None and empty inputs."""

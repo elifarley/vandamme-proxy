@@ -45,7 +45,7 @@ class TestAliasManagerFallback:
             assert "haiku" in aliases["poe"]
             assert "sonnet" in aliases["poe"]
             assert "opus" in aliases["poe"]
-            assert aliases["poe"]["haiku"] == "grok-4.1-fast-non-reasoning"
+            assert aliases["poe"]["haiku"] == "gpt-5.1-mini"
             assert aliases["poe"]["sonnet"] == "glm-4.6"
             assert aliases["poe"]["opus"] == "gpt-5.2"
 
@@ -83,17 +83,17 @@ class TestAliasManagerFallback:
             alias_manager = AliasManager()
 
             # Test resolving fallback aliases
-            assert alias_manager.resolve_alias("haiku") == "poe:grok-4.1-fast-non-reasoning"
+            assert alias_manager.resolve_alias("haiku") == "poe:gpt-5.1-mini"
             assert alias_manager.resolve_alias("sonnet") == "poe:glm-4.6"
             assert alias_manager.resolve_alias("opus") == "poe:gpt-5.2"
 
             # Test case insensitive matching
-            assert alias_manager.resolve_alias("HAIKU") == "poe:grok-4.1-fast-non-reasoning"
+            assert alias_manager.resolve_alias("HAIKU") == "poe:gpt-5.1-mini"
             assert alias_manager.resolve_alias("Sonnet") == "poe:glm-4.6"
 
             # Test substring matching
             assert (
-                alias_manager.resolve_alias("my-haiku-model") == "poe:grok-4.1-fast-non-reasoning"
+                alias_manager.resolve_alias("my-haiku-model") == "poe:gpt-5.1-mini"
             )
 
     def test_no_fallbacks_for_unconfigured_providers(self):
@@ -198,7 +198,7 @@ class TestAliasManagerFallback:
                 output_text = " ".join(print_calls)
                 assert "3 fallback" in output_text or "fallback defaults" in output_text
                 assert "haiku" in output_text
-                assert "grok-4.1-fast-non-reasoning" in output_text
+                assert "gpt-5.1-mini" in output_text
 
     def test_provider_validation_applies_to_fallbacks(self):
         """Test that fallback aliases are only loaded for configured providers."""
