@@ -475,9 +475,9 @@ env-template: ## Generate .env template file
 	@echo "#ANTHROPIC_API_KEY=your-key-here" >> .env.template
 	@echo "" >> .env.template
 	@echo "# Optional: Model Configuration" >> .env.template
-	@echo "#ANTHROPIC_DEFAULT_HAIKU_MODEL=gpt-4o-mini" >> .env.template
-	@echo "#ANTHROPIC_DEFAULT_SONNET_MODEL=glm-4.6" >> .env.template
-	@echo "#ANTHROPIC_DEFAULT_OPUS_MODEL=gemini-3-pro" >> .env.template
+	@echo "#ANTHROPIC_ALIAS_HAIKU=gpt-4o-mini" >> .env.template
+	@echo "#ANTHROPIC_ALIAS_SONNET=glm-4.6" >> .env.template
+	@echo "#ANTHROPIC_ALIAS_OPUS=gemini-3-pro" >> .env.template
 	@echo "" >> .env.template
 	@echo "# Optional: API Configuration" >> .env.template
 	@echo "#OPENAI_BASE_URL=https://api.openai.com/v1" >> .env.template

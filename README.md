@@ -1,6 +1,6 @@
 # Vandamme Proxy
 
-**The Universal LLM Gateway for Multi-Provider AI Development**
+**The LLM Gateway for Multi-Provider AI Development**
 
 [![ci](https://github.com/CedarVerse/vandamme-proxy/actions/workflows/ci.yml/badge.svg)](https://github.com/CedarVerse/vandamme-proxy/actions/workflows/ci.yml)
 [![PyPI version](https://img.shields.io/pypi/v/vandamme-proxy.svg)](https://pypi.org/project/vandamme-proxy/)
@@ -9,24 +9,25 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-> **Transform any AI client into a powerful command center for OpenAI, Anthropic, Poe, Azure, Gemini, and 100+ compatible APIs.**
->
-> Supercharge Claude Code CLI with intelligent routing, smart aliases, and zero-configuration provider switching.
+> **Transform Claude Code (or any Anthropic API client) into a multi-provider client for OpenAI, Anthropic, Poe, Azure, Gemini, and other compatible APIs.**
 
 ---
 
 ## 🚀 Why Vandamme Proxy?
 
 ### For Claude Code Users
-Break free from single-provider limitations. Route requests to any LLM provider with simple model prefixes:
+Route requests to any LLM provider with simple model prefixes
 
-```bash
+```shell
 # Install and setup in seconds
 pip install vandamme-proxy
-vdm config setup  # Interactive provider configuration
+# Export your API key
 vdm server start
 
-# Use with Claude Code CLI
+```
+
+```shell
+`# Use with Claude Code CLI
 export ANTHROPIC_BASE_URL=http://localhost:8082
 claude --model openai:gpt-4o "Analyze this code"
 claude --model poe:gemini-flash "Quick question"
@@ -46,27 +47,27 @@ A lightweight, production-ready proxy with enterprise features:
 
 ## ✨ Features at a Glance
 
-### 🌐 Universal Provider Support
-- **Major Providers**: OpenAI, Anthropic, Poe, Azure OpenAI, Google Gemini, AWS Bedrock, Google Vertex AI
+### 🌐 Provider Support
+- **Major Providers**: OpenAI, Anthropic, Poe, Azure OpenAI, etc
 - **Custom Endpoints**: Any OpenAI/Anthropic-compatible API
 - **Auto-Discovery**: Configure via `{PROVIDER}_API_KEY` environment variables
 - **Mixed Formats**: Run OpenAI conversion and Anthropic passthrough simultaneously
 
 ### 🎯 Intelligent Routing
-- **Provider Prefix Routing**: `provider:model` syntax with automatic fallback
+- **Provider Prefix Routing**: `provider:model` syntax
 - **Smart Model Aliases**: Substring matching with priority ordering
 - **Dynamic Provider Selection**: Switch providers per-request without configuration changes
 
 ### 🔒 Security & Multi-Tenancy
-- **API Key Passthrough**: `!PASSTHRU` sentinel for client-provided keys
+- **API Key Passthrough**: Set `{PROVIDER}_API_KEY=!PASSTHRU` to enable client-provided keys
 - **Mixed Authentication**: Static keys + passthrough simultaneously per-provider
 - **Isolated Configuration**: Per-provider settings, custom headers, API versions
 
 ### 🛠️ Developer Experience
-- **Powerful CLI (`vdm`)**: Server management, health checks, configuration validation
-- **Production Ready**: Connection pooling, streaming support, metrics endpoints
+- **Handy CLI (`vdm`)**: Server management, health checks, configuration validation
+- Streaming support, metrics endpoints
 - **Extensible Architecture**: Built-in middleware for Google Gemini thought signatures
-- **Zero Downtime**: Hot reload support during development
+- Hot reload support during development
 
 ---
 
@@ -106,7 +107,7 @@ A lightweight, production-ready proxy with enterprise features:
 ```
 
 **Request Flow:**
-1. Client sends request to Vandamme Proxy
+1. Anthropic Client sends request to Vandamme Proxy
 2. Smart alias resolution (if applicable)
 3. Provider routing based on model prefix
 4. Format selection (OpenAI conversion vs Anthropic passthrough)
@@ -119,11 +120,11 @@ A lightweight, production-ready proxy with enterprise features:
 ### 1️⃣ Installation
 
 ```bash
-# Using pip (recommended)
-pip install vandamme-proxy
-
-# Or using uv (fastest)
+# Using uv (fastest)
 uv pip install vandamme-proxy
+
+# Or using pip
+pip install vandamme-proxy
 
 # Verify installation
 vdm version
@@ -149,7 +150,7 @@ ANTHROPIC_ALIAS_CHAT=claude-3-5-sonnet-20241022
 OPENAI_ALIAS_CODE=gpt-4o
 
 # Default Provider (when no prefix specified)
-# Overrides the default_provider from src/config/defaults.toml
+# Overrides the default-provider from src/config/defaults.toml
 VDM_DEFAULT_PROVIDER=openai
 EOF
 ```
@@ -217,9 +218,9 @@ Environment Variables (highest priority)
 
 The default provider is determined in this order:
 1. `VDM_DEFAULT_PROVIDER` environment variable (if set)
-2. `default_provider` from your local `./vandamme-config.toml`
-3. `default_provider` from your user config `~/.config/vandamme-proxy/vandamme-config.toml`
-4. `default_provider` from `src/config/defaults.toml` (defaults to "openai")
+2. `default-provider` from your local `./vandamme-config.toml`
+3. `default-provider` from your user config `~/.config/vandamme-proxy/vandamme-config.toml`
+4. `default-provider` from `src/config/defaults.toml` (defaults to "openai")
 
 ### Package Defaults
 
@@ -330,6 +331,11 @@ POE_API_KEY=!PASSTHRU
 ---
 
 ## 🆚 Vandamme Proxy vs Alternatives
+
+VanDamme Proxy is designed around a specific problem space:
+acting as a multi-provider LLM gateway that is natively compatible with Claude Code and Anthropic’s SSE protocol, while still supporting OpenAI-style APIs and other providers.
+
+Most alternatives solve adjacent but different problems. The comparisons below are scoped specifically to Claude Code compatibility and protocol behavior, not general LLM usage.
 
 | Feature | Vandamme Proxy | LiteLLM | OpenRouter |
 |---------|---------------|---------|------------|
@@ -475,7 +481,7 @@ POE_API_KEY=your-poe-key
 #### Default Provider
 ```bash
 # Default provider for models without provider prefixes
-# Overrides the default_provider from src/config/defaults.toml
+# Overrides the default-provider from src/config/defaults.toml
 # If not set, uses value from defaults.toml (defaults to "openai")
 VDM_DEFAULT_PROVIDER=openai
 ```

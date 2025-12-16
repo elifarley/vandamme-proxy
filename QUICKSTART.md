@@ -101,8 +101,6 @@ VDM_DEFAULT_PROVIDER="ollama"  # Optional: overrides defaults.toml
 OPENAI_API_KEY="sk-..."
 POE_API_KEY="..."
 ANTHROPIC_API_KEY="sk-ant-..."
-ANTHROPIC_BASE_URL="https://api.anthropic.com"
-ANTHROPIC_API_FORMAT="anthropic"
 
 # Set default provider (optional, overrides defaults.toml)
 VDM_DEFAULT_PROVIDER="poe"

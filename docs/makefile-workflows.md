@@ -87,7 +87,7 @@ HOST=127.0.0.1 PORT=3000 make dev
 make run
 
 # Or directly
-python start_proxy.py
+vdm server start
 ```
 
 #### 4. Health Check
