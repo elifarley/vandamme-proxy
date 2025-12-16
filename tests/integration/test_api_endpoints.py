@@ -423,9 +423,8 @@ async def test_token_counting():
 
         assert response.status_code == 200
         data = response.json()
-        assert "usage" in data
-        assert "input_tokens" in data["usage"]
-        assert data["usage"]["input_tokens"] > 0
+        assert "input_tokens" in data
+        assert data["input_tokens"] > 0
 
 
 @pytest.mark.e2e

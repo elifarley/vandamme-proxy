@@ -1,5 +1,3 @@
-import os
-
 import httpx
 import pytest
 from fastapi.testclient import TestClient
@@ -29,10 +27,10 @@ def test_multi_api_key_round_robin_and_retry_openai(mock_openai_api, openai_chat
     )
 
     # Import app (autouse fixture will have set up test config)
-    from src.main import app
-
     # Modify the provider config directly to use multiple keys
     from src.core.config import config
+    from src.main import app
+
     provider = config.provider_manager.get_provider_config("openai")
     assert provider is not None, "OpenAI provider should be configured"
 
