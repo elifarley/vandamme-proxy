@@ -25,7 +25,7 @@ def main() -> None:
         print("  OPENAI_API_KEY - Your OpenAI API key")
         print("")
         print("Optional environment variables:")
-        print("  ANTHROPIC_API_KEY - Expected API key for client validation")
+        print("  PROXY_API_KEY - Expected API key for client validation at the proxy")
         print("                      If set, clients must provide this exact API key")
         print("  HOST - Server host (default: 0.0.0.0)")
         print("  PORT - Server port (default: 8082)")
@@ -49,7 +49,7 @@ def main() -> None:
     print(f"   Max Tokens Limit: {config.max_tokens_limit}")
     print(f"   Request Timeout : {config.request_timeout}s")
     print(f"   Server: {config.host}:{config.port}")
-    print(f"   Client API Key Validation: {'Enabled' if config.anthropic_api_key else 'Disabled'}")
+    print(f"   Client API Key Validation: {'Enabled' if config.proxy_api_key else 'Disabled'}")
     print("")
 
     # Show provider summary

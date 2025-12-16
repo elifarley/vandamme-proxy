@@ -149,7 +149,7 @@ def test_models_endpoint_openai_format():
         mock_provider_manager.get_client.return_value = mock_client
         mock_provider_manager.get_provider_config.return_value = mock_provider_config
         mock_config.provider_manager = mock_provider_manager
-        mock_config.anthropic_api_key = None  # No client auth required
+        mock_config.proxy_api_key = None  # No client auth required
 
         # Make request with mock auth header
         response = client.get("/v1/models", headers={"x-api-key": "test-key"})

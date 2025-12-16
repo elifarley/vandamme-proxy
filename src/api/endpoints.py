@@ -67,8 +67,8 @@ async def validate_api_key(
     elif authorization and authorization.startswith("Bearer "):
         client_api_key = authorization.replace("Bearer ", "")
 
-    # Skip validation if ANTHROPIC_API_KEY is not set in the environment
-    if not config.anthropic_api_key:
+    # Skip validation if PROXY_API_KEY is not set in the environment
+    if not config.proxy_api_key:
         return client_api_key  # Return the key even if validation is disabled
 
     # Validate the client API key
@@ -667,8 +667,8 @@ async def health_check() -> PlainTextResponse:
             "timestamp": datetime.now().isoformat(),
             "openai_api_configured": bool(config.openai_api_key),
             "api_key_valid": config.validate_api_key(),
-            "client_api_key_validation": bool(config.anthropic_api_key),
-            "default_provider": getattr(config.provider_manager, "default_provider", "unknown"),
+            "client_api_key_validation": bool(config.proxy_api_key),
+            "default-provider": getattr(config.provider_manager, "default-provider", "unknown"),
             "providers": providers,
         }
 
@@ -981,7 +981,7 @@ async def root() -> dict[str, Any]:
             "base_url": config.base_url,
             "max_tokens_limit": config.max_tokens_limit,
             "api_key_configured": bool(config.openai_api_key),
-            "client_api_key_validation": bool(config.anthropic_api_key),
+            "client_api_key_validation": bool(config.proxy_api_key),
         },
         "endpoints": {
             "messages": "/v1/messages",

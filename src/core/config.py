@@ -27,7 +27,7 @@ class Config:
 
                 loader = AliasConfigLoader()
                 defaults = loader.get_defaults()
-                self.default_provider = defaults.get("default_provider", "openai")
+                self.default_provider = defaults.get("default-provider", "openai")
                 logger.debug(f"Using default provider from configuration: {self.default_provider}")
             except Exception as e:
                 logger.debug(f"Failed to load default provider from config: {e}")
@@ -48,9 +48,9 @@ class Config:
             # Don't raise error - allow server to start for testing
 
         # Add Anthropic API key for client validation
-        self.anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY")
-        if not self.anthropic_api_key:
-            print("Warning: ANTHROPIC_API_KEY not set. Client API key validation will be disabled.")
+        self.proxy_api_key = os.environ.get("PROXY_API_KEY")
+        if not self.proxy_api_key:
+            print("Warning: PROXY_API_KEY not set. Client API key validation will be disabled.")
 
         # Get base URL for the default provider
         provider_upper = self.default_provider.upper()
@@ -140,12 +140,12 @@ class Config:
 
     def validate_client_api_key(self, client_api_key: str) -> bool:
         """Validate client's Anthropic API key"""
-        # If no ANTHROPIC_API_KEY is set in environment, skip validation
-        if not self.anthropic_api_key:
+        # If no PROXY_API_KEY is set in environment, skip validation
+        if not self.proxy_api_key:
             return True
 
         # Check if the client's API key matches the expected value
-        return client_api_key == self.anthropic_api_key
+        return client_api_key == self.proxy_api_key
 
     def get_custom_headers(self) -> dict[str, str]:
         """Get custom headers from environment variables"""
