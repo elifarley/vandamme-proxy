@@ -2,7 +2,7 @@
 
 ## Understanding Vandamme Proxy
 
-Vandamme Proxy is an advanced fork that transforms Claude Code's single-provider limitation into a flexible, multi-provider gateway, including OpenAI- and Anthropic-compatible API providers.
+Vandamme Proxy transforms Claude Code's single-provider limitation into a flexible, multi-provider gateway, including OpenAI- and Anthropic-compatible API providers.
 
 This guide explains how it works and helps you leverage its full capabilities.
 
@@ -142,7 +142,7 @@ VDM_DEFAULT_PROVIDER=openai
 ```
 
 Now `claude --model gpt-4` (without the provider prefix) routes to OpenAI automatically.
-If `VDM_DEFAULT_PROVIDER` is not set, it uses the `default_provider` from `src/config/defaults.toml` (defaults to "openai").
+If `VDM_DEFAULT_PROVIDER` is not set, it uses the `default-provider` from `src/config/defaults.toml` (defaults to "openai").
 
 ### 2. API Key Passthrough
 

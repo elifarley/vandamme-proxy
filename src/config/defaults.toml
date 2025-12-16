@@ -5,7 +5,7 @@
 [defaults]
 # Default provider to use when not specified via environment variable
 # Can be overridden by VDM_DEFAULT_PROVIDER environment variable
-default_provider = "openai"
+default-provider = "poe"
 
 # OpenAI provider defaults
 [openai]
@@ -14,9 +14,9 @@ api-format = "openai"
 timeout = 90
 max-retries = 2
 [openai.aliases]
-# haiku = "gpt-4o-mini"
-# sonnet = "gpt-4o"
-# opus = "o1-preview"
+haiku = "gpt-5.1-mini"
+sonnet = "gpt-5.1-codex"
+opus = "gpt-5.2"
 
 # Poe provider defaults
 [poe]
@@ -25,9 +25,20 @@ api-format = "openai"
 timeout = 90
 max-retries = 2
 [poe.aliases]
-haiku = "grok-4.1-fast-non-reasoning"
+haiku = "gpt-5.1-mini"
 sonnet = "glm-4.6"
 opus = "gpt-5.2"
+
+# Z.AI provider defaults
+[zai]
+base-url = "https://api.z.ai/api/anthropic"
+api-format = "anthropic"
+timeout = 90
+max-retries = 2
+[zai.aliases]
+haiku = "GLM-4.5-Air"
+sonnet = "GLM-4.6"
+opus = "GLM-4.6"
 
 # Anthropic provider defaults
 [anthropic]

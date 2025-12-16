@@ -117,7 +117,7 @@ async def test_chat(mock_openai_api, openai_chat_completion):
 ### Code Quality
 
 ```bash
-# Format code (black + isort)
+# Format code (ruff format + ruff check --fix with type transformations)
 make format
 
 # Lint check only (doesn't modify files)
@@ -137,6 +137,9 @@ make validate
 
 # Pre-commit checks (format + all checks)
 make pre-commit
+
+# Security checks
+make security-check
 ```
 
 ### Common Development Tasks
@@ -200,9 +203,9 @@ make help
    - Special defaults: OpenAI and Poe providers have default BASE_URLs if not specified
 
 5. **Authentication & Security**:
-   - **Proxy Authentication**: Optional client API key validation via `ANTHROPIC_API_KEY` environment variable
+   - **Proxy Authentication**: Optional client API key validation at the proxy via `PROXY_API_KEY` environment variable
      - This controls access TO the proxy itself, not to external providers
-     - If `ANTHROPIC_API_KEY` is set, clients must provide this exact key to use the proxy
+     - If `PROXY_API_KEY` is set, clients must provide this exact key to use the proxy
      - If not set, the proxy accepts all requests (open access)
    - **Provider Authentication**: Each provider has its own API key (e.g., `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` for provider)
      - These are separate from proxy authentication
@@ -211,8 +214,11 @@ make help
 6. **Configuration**:
    - `src/core/config.py` - Central configuration management
    - `src/core/provider_config.py` - Per-provider configuration management
+   - `src/config/defaults.toml` - Default provider configurations and fallback model aliases
+   - `src/core/alias_config.py` - TOML-based configuration loader for hierarchical alias system
    - Environment variables loaded from `.env` file via `python-dotenv`
    - Custom headers support via `CUSTOM_HEADER_*` environment variables (auto-converted to HTTP headers)
+   - Configuration hierarchy: Environment vars > ./vandamme-config.toml > ~/.config/vandamme-proxy/vandamme-config.toml > defaults.toml
 
 7. **Data Models**:
    - `src/models/claude.py` - Pydantic models for Claude API format
@@ -230,10 +236,7 @@ The converter handles:
 
 ### Model Names
 
-The proxy passes Claude model names through unchanged. Claude Code handles model mapping via its own environment variables:
-- `ANTHROPIC_DEFAULT_HAIKU_MODEL`
-- `ANTHROPIC_DEFAULT_SONNET_MODEL`
-- `ANTHROPIC_DEFAULT_OPUS_MODEL`
+The proxy passes Claude model names through unchanged unless there is a configured alias that matches the model.
 
 ### Custom Headers
 
@@ -250,20 +253,25 @@ Environment variables prefixed with `CUSTOM_HEADER_` are automatically converted
 - `src/cli/commands/` - CLI command implementations
 - `src/api/endpoints.py` - Main API endpoints
 - `src/core/config.py` - Configuration management (83 lines)
-- `src/core/alias_manager.py` - Model alias management and resolution
+- `src/core/alias_manager.py` - Model alias management with case-insensitive substring matching
+- `src/core/alias_config.py` - TOML configuration loader for hierarchical alias system
+- `src/config/defaults.toml` - Default provider configurations and fallback aliases
 - `src/conversion/request_converter.py` - Claude→OpenAI request conversion
 - `src/conversion/response_converter.py` - OpenAI→Claude response conversion
 
 ## Environment Variables
 
 Required (at least one provider):
-- `OPENAI_API_KEY` - API key for OpenAI provider
-- `{PROVIDER}_API_KEY` - API key for any configured provider (e.g., `ANTHROPIC_API_KEY`, `AZURE_API_KEY`)
+- `{PROVIDER}_API_KEY` - API key for any configured provider (e.g., `POE_API_KEY`, `AZURE_API_KEY`)
 
 Provider Configuration:
 - `{PROVIDER}_API_FORMAT` - API format: "openai" (default) or "anthropic"
 - `{PROVIDER}_BASE_URL` - Base URL for the provider
-- `VDM_DEFAULT_PROVIDER` - Default provider to use (defaults to "openai")
+- `VDM_DEFAULT_PROVIDER` - Default provider to use (overrides defaults.toml)
+
+Model Aliases:
+- `{PROVIDER}_ALIAS_{NAME}` - Provider-specific model alias (e.g., `POE_ALIAS_HAIKU=gpt-4o-mini`)
+- Takes precedence over TOML configuration files
 
 Examples:
 ```bash
@@ -285,6 +293,10 @@ AZURE_API_KEY=...
 AZURE_BASE_URL=https://your-resource.openai.azure.com
 AZURE_API_FORMAT=openai
 AZURE_API_VERSION=2024-02-15-preview
+
+# Model Aliases (override TOML defaults)
+POE_ALIAS_HAIKU=my-custom-haiku-model
+OPENAI_ALIAS_FAST=gpt-4o
 ```
 
 Security (Proxy Authentication):
@@ -322,10 +334,10 @@ Middleware Configuration:
 
 ```bash
 # Start proxy
-python start_proxy.py
+vdm server start
 
 # Use Claude Code with proxy (if ANTHROPIC_API_KEY not set in proxy)
-ANTHROPIC_BASE_URL=http://localhost:8082 ANTHROPIC_API_KEY="any-value" claude
+ANTHROPIC_BASE_URL=http://localhost:8082 ANTHROPIC_API_KEY= claude
 
 # Use Claude Code with proxy (if ANTHROPIC_API_KEY is set in proxy)
 ANTHROPIC_BASE_URL=http://localhost:8082 ANTHROPIC_API_KEY="exact-matching-key" claude
@@ -365,15 +377,47 @@ VDM_DEFAULT_PROVIDER=vertex
 
 ### Using Model Aliases
 
-Model aliases provide flexible model selection with case-insensitive substring matching.
+Model aliases provide flexible model selection with case-insensitive substring matching and intelligent fallbacks.
+
+#### Configuration Methods
+
+1. **Environment Variables** (highest priority):
+   ```bash
+   # Provider-specific aliases
+   POE_ALIAS_HAIKU=gpt-4o-mini
+   OPENAI_ALIAS_FAST=gpt-4o-mini
+   ANTHROPIC_ALIAS_CHAT=claude-3-5-sonnet-20241022
+   ```
+
+2. **TOML Configuration Files** (fallback defaults):
+   - `./vandamme-config.toml` - Project-specific overrides
+   - `~/.config/vandamme-proxy/vandamme-config.toml` - User preferences
+   - `src/config/defaults.toml` - Built-in package defaults
+
+   ```toml
+   # vandamme-config.toml example
+   [poe]
+   base-url = "https://api.poe.com"
+   timeout = 60
+   [poe.aliases]
+   haiku = "my-custom-haiku"
+   sonnet = "my-preferred-sonnet"
+   ```
+
+#### Built-in Fallback Aliases
+
+The proxy automatically provides sensible defaults for common model names:
+
+| Alias  | Poe Provider              | OpenAI Provider       | Anthropic Provider               |
+|--------|--------------------------|-----------------------|----------------------------------|
+| haiku  | grok-4.1-fast-non-reasoning | gpt-5.1-mini          | claude-3-5-haiku-20241022        |
+| sonnet | glm-4.6                  | gpt-5.1-codex         | claude-3-5-sonnet-20241022       |
+| opus   | gpt-5.2                  | gpt-5.2               | claude-3-opus-20240229           |
+
+#### Usage Examples
 
 ```bash
-# Configure aliases in .env file (provider-specific)
-POE_ALIAS_HAIKU=gpt-4o-mini
-OPENAI_ALIAS_FAST=gpt-4o-mini
-ANTHROPIC_ALIAS_CHAT=claude-3-5-sonnet-20241022
-
-# List all configured aliases
+# List all configured aliases (including fallbacks)
 curl http://localhost:8082/v1/aliases
 
 # Use aliases in requests
@@ -405,6 +449,10 @@ export OPENAI_ALIAS_FAST=gpt-4o-mini
 # Use aliases with Claude Code
 ANTHROPIC_BASE_URL=http://localhost:8082 claude --model haiku "Quick response"
 ANTHROPIC_BASE_URL=http://localhost:8082 claude --model fast "Process this quickly"
+
+# Or rely on fallback defaults (no config needed!)
+export POE_API_KEY=your-key
+ANTHROPIC_BASE_URL=http://localhost:8082 claude --model sonnet "Uses glm-4.6 fallback"
 ```
 
 #### Provider Selection in Requests

@@ -11,7 +11,7 @@ The provider-specific alias mechanism allows you to create flexible model aliase
 - **Flexible Hyphen/Underscore Matching**: Aliases match model names regardless of whether they use hyphens or underscores
   - `OPENAI_ALIAS_MY_ALIAS` matches "my-alias", "my_alias", "oh-my-alias-model", and "oh-my_alias_model"
 - **Provider-Scoped**: Each alias is tied to a specific provider, eliminating ambiguity
-- **Simplified Target Values**: No need to specify provider prefix in target values
+- **Target Values**: Target values cannot use provider prefixes as the provider is specified in the key itself
 - **Flexible Naming**: Support any alias name, not just tier-specific ones
 - **Automatic Fallbacks**: Sensible defaults for common Claude model names (haiku, sonnet, opus) when not explicitly configured
 
@@ -33,7 +33,7 @@ These fallbacks are automatically applied when:
 You can override these fallbacks by setting your own aliases:
 ```bash
 # Override the haiku fallback
-POE_ALIAS_HAIKU=my-preferred-haiku-model
+POE_ALIAS_HAIKU=my-preferred-haiku-model-in-this-provider
 ```
 
 ## Configuration
@@ -74,7 +74,7 @@ Configure fallback defaults using TOML files. The proxy loads configurations fro
 [defaults]
 # Default provider to use when not specified via environment variable
 # Can be overridden by VDM_DEFAULT_PROVIDER environment variable
-default_provider = "openai"
+default-provider = "openai"
 
 [aliases]
 # Fallback aliases for special model names
@@ -87,11 +87,11 @@ opus = "gpt-5.2"
 # You can add more aliases as needed
 fast = "model-1-turbo"
 
-[aliases.openai]
+[openai.aliases]
 haiku = "gpt-4o-mini"
 fast = "gpt-4o"
 
-[aliases.anthropic]
+[anthropic.aliases]
 haiku = "claude-3-5-haiku-20241022"
 chat = "claude-3-5-sonnet-20241022"
 ```
@@ -323,21 +323,11 @@ curl http://localhost:8082/v1/aliases
 # Example: "haiku" matches "my-haiku-model" but not "haikumodel"
 ```
 
-#### Provider Not Found
-
-```bash
-# Error: Provider 'unknown' not found
-VDM_ALIAS_FAST=unknown:gpt-4o  # Invalid provider
-
-# Fix: Use a configured provider
-VDM_ALIAS_FAST=openai:gpt-4o
-```
-
 #### Circular Reference
 
 ```bash
 # Error: Circular alias reference detected
-VDM_ALIAS_WRONG=wrong  # Invalid
+POE_ALIAS_WRONG=wrong  # Invalid
 ```
 
 ### Debug Logging
@@ -433,11 +423,11 @@ List all configured model aliases.
 
 ### Error Codes
 
-| Error | Description | Solution |
-|-------|-------------|----------|
-| 401 | Invalid API key | Check `ANTHROPIC_API_KEY` configuration |
+| Error | Description | Solution                                         |
+|-------|-------------|--------------------------------------------------|
+| 401 | Invalid API key | Check `PROXY_API_KEY` configuration              |
 | 404 | Provider not found | Configure the provider with `{PROVIDER}_API_KEY` |
-| 500 | Internal server error | Check server logs for alias resolution errors |
+| 500 | Internal server error | Check server logs for alias resolution errors    |
 
 ### Supported Characters
 

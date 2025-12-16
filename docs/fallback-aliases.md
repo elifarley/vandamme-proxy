@@ -198,12 +198,12 @@ When Vandamme Proxy starts, it shows active aliases:
 Want to add defaults for new providers? Just update the TOML:
 
 ```toml
-[aliases.newprovider]
+[newprovider.aliases]
 haiku = "newprovider-haiku-v1"
 sonnet = "newprovider-sonnet-v2"
 opus = "newprovider-opus-v3"
 
-[aliases.anotherprovider]
+[anotherprovider.aliases]
 # Different defaults for different use cases
 haiku = "fast-model-1"
 sonnet = "balanced-model-2"
@@ -223,22 +223,6 @@ VDM_DEFAULT_PROVIDER=openai
 
 # Both work with same model names!
 claude --model haiku  # Uses Poe's fast model
-```
-
-## Migration Path
-
-If you were manually configuring aliases before:
-
-```bash
-# Old way
-POE_ALIAS_HAIKU=custom-model
-POE_ALIAS_SONNET=custom-model
-POE_ALIAS_OPUS=custom-model
-
-# New way
-# Just configure what you want to override
-POE_ALIAS_HAIKU=my-preferred-model
-# sonnet and opus get sensible defaults automatically
 ```
 
 ## Technical Details
@@ -281,7 +265,7 @@ The fallback system uses:
 3. **Check logs**:
    ```bash
    export LOG_LEVEL=DEBUG
-   python start_proxy.py
+   vdm server start
    ```
 
 ### Unexpected Model Names?
