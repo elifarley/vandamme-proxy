@@ -100,6 +100,7 @@ def models_ag_grid(
             "width": 80,  # Fixed width for emoji icon with padding
             "suppressSizeToFit": True,
             "suppressMovable": True,
+            "suppressHtmlEscaping": True,
             "cellRenderer": "vdmModelPageLinkRenderer",
             "cellRendererParams": {"suppressHtmlEscaping": True},
         },
@@ -231,7 +232,7 @@ window.dashAgGridFunctions.vdmModelPageLinkRenderer = window.vdmModelPageLinkRen
 window.dashAgGridComponentFunctions.vdmModelPageLinkRenderer = window.vdmModelPageLinkRenderer;
 window.__vdmModelPageLinkRenderer = window.vdmModelPageLinkRenderer;
 
-// Ensure AG Grid treats the returned string as HTML in this column (set in columnDefs via suppressHtmlEscaping)
+// Ensure AG Grid treats the returned string as HTML (set in columnDefs via suppressHtmlEscaping)
 window.dashAgGridFunctions.vdmModelPageLinkRenderer.suppressHtmlEscaping = true;
 window.dashAgGridComponentFunctions.vdmModelPageLinkRenderer.suppressHtmlEscaping = true;
 window.__vdmModelPageLinkRenderer.suppressHtmlEscaping = true;
@@ -256,10 +257,18 @@ window.__vdmModelPageLinkRenderer.suppressHtmlEscaping = true;
 // Also expose as components map (some dash-ag-grid versions read componentFuncs/components)
 window.dashAgGridFunctions.components = window.dashAgGridFunctions.components || {};
 window.dashAgGridFunctions.components.vdmModelPageLinkRenderer = window.vdmModelPageLinkRenderer;
-window.dashAgGridComponentFunctions.components = window.dashAgGridComponentFunctions.components || {};
-window.dashAgGridComponentFunctions.components.vdmModelPageLinkRenderer = window.vdmModelPageLinkRenderer;
-window.dashAgGridComponentFunctions.components.__vdmModelPageLinkRenderer = window.vdmModelPageLinkRenderer;
-window.dashAgGridFunctions.components.__vdmModelPageLinkRenderer = window.vdmModelPageLinkRenderer;
+window.dashAgGridComponentFunctions.components = (
+    window.dashAgGridComponentFunctions.components || {}
+);
+window.dashAgGridComponentFunctions.components.vdmModelPageLinkRenderer = (
+    window.vdmModelPageLinkRenderer
+);
+window.dashAgGridComponentFunctions.components.__vdmModelPageLinkRenderer = (
+    window.vdmModelPageLinkRenderer
+);
+window.dashAgGridFunctions.components.__vdmModelPageLinkRenderer = (
+    window.vdmModelPageLinkRenderer
+);
 
 // Utility: make sure escapeHtml exists
 window.escapeHtml = window.escapeHtml || function(text) {
@@ -276,8 +285,12 @@ window.dashAgGridComponentFunctions.vdmModelPageLinkRenderer = window.vdmModelPa
 window.__vdmModelPageLinkRenderer = window.vdmModelPageLinkRenderer;
 window.dashAgGridFunctions.components = window.dashAgGridFunctions.components || {};
 window.dashAgGridFunctions.components.vdmModelPageLinkRenderer = window.vdmModelPageLinkRenderer;
-window.dashAgGridComponentFunctions.components = window.dashAgGridComponentFunctions.components || {};
-window.dashAgGridComponentFunctions.components.vdmModelPageLinkRenderer = window.vdmModelPageLinkRenderer;
+window.dashAgGridComponentFunctions.components = (
+    window.dashAgGridComponentFunctions.components || {}
+);
+window.dashAgGridComponentFunctions.components.vdmModelPageLinkRenderer = (
+    window.vdmModelPageLinkRenderer
+);
 window.dashAgGridFunctions.suppressHtmlEscaping = true;
 window.dashAgGridComponentFunctions.suppressHtmlEscaping = true;
 window.__vdmModelPageLinkRenderer.suppressHtmlEscaping = true;
@@ -285,14 +298,30 @@ window.dashAgGridFunctions.vdmModelPageLinkRenderer.suppressHtmlEscaping = true;
 window.dashAgGridComponentFunctions.vdmModelPageLinkRenderer.suppressHtmlEscaping = true;
 window.dashAgGridFunctions.components.vdmModelPageLinkRenderer.suppressHtmlEscaping = true;
 window.dashAgGridComponentFunctions.components.vdmModelPageLinkRenderer.suppressHtmlEscaping = true;
-window.dashAgGridFunctions.components.__vdmModelPageLinkRenderer = window.vdmModelPageLinkRenderer;
-window.dashAgGridComponentFunctions.components.__vdmModelPageLinkRenderer = window.vdmModelPageLinkRenderer;
-window.dashAgGridFunctions.components.__vdmModelPageLinkRenderer.suppressHtmlEscaping = true;
-window.dashAgGridComponentFunctions.components.__vdmModelPageLinkRenderer.suppressHtmlEscaping = true;
-window.__vdmModelPageLinkRenderer.components = window.__vdmModelPageLinkRenderer.components || {};
-window.__vdmModelPageLinkRenderer.components.vdmModelPageLinkRenderer = window.vdmModelPageLinkRenderer;
-window.__vdmModelPageLinkRenderer.components.__vdmModelPageLinkRenderer = window.vdmModelPageLinkRenderer;
-window.__vdmModelPageLinkRenderer.components.__vdmModelPageLinkRenderer.suppressHtmlEscaping = true;
+window.dashAgGridFunctions.components.__vdmModelPageLinkRenderer = (
+    window.vdmModelPageLinkRenderer
+);
+window.dashAgGridComponentFunctions.components.__vdmModelPageLinkRenderer = (
+    window.vdmModelPageLinkRenderer
+);
+window.dashAgGridFunctions.components.__vdmModelPageLinkRenderer.suppressHtmlEscaping = (
+    true
+);
+window.dashAgGridComponentFunctions.components.__vdmModelPageLinkRenderer.suppressHtmlEscaping = (
+    true
+);
+window.__vdmModelPageLinkRenderer.components = (
+    window.__vdmModelPageLinkRenderer.components || {}
+);
+window.__vdmModelPageLinkRenderer.components.vdmModelPageLinkRenderer = (
+    window.vdmModelPageLinkRenderer
+);
+window.__vdmModelPageLinkRenderer.components.__vdmModelPageLinkRenderer = (
+    window.vdmModelPageLinkRenderer
+);
+window.__vdmModelPageLinkRenderer.components.__vdmModelPageLinkRenderer.suppressHtmlEscaping = (
+    true
+);
 window.__vdmModelPageLinkRenderer.components.vdmModelPageLinkRenderer.suppressHtmlEscaping = true;
 window.__vdmModelPageLinkRenderer.components = {
     ...window.__vdmModelPageLinkRenderer.components,
