@@ -1,10 +1,66 @@
 """AG-Grid component for the dashboard with dark theme support."""
 
+import os
+import urllib.parse
 from typing import Any
 
 import dash_ag_grid as dag  # type: ignore[import-untyped]
 
+from src.core.alias_config import AliasConfigLoader
 from src.dashboard.components.ui import format_model_created_timestamp, format_timestamp
+
+# Module-level cache for provider configs
+_alias_config_loader = None
+
+
+def get_model_page_template(provider_name: str) -> str | None:
+    """Get model page template URL for a provider.
+
+    Priority: Environment variable > TOML config
+
+    Args:
+        provider_name: Provider name (e.g., "poe", "openrouter")
+
+    Returns:
+        Template URL string or None if not configured
+    """
+    global _alias_config_loader
+
+    # Check environment variable first (highest priority)
+    env_var = f"{provider_name.upper()}_MODEL_PAGE"
+    env_value = os.environ.get(env_var)
+    if env_value:
+        return env_value
+
+    # Initialize config loader if needed
+    if _alias_config_loader is None:
+        _alias_config_loader = AliasConfigLoader()
+
+    # Get provider config from TOML
+    provider_config = _alias_config_loader.get_provider_config(provider_name)
+    return provider_config.get("model-page")
+
+
+def format_model_page_url(template: str, model_id: str, display_name: str) -> str:
+    """Format model page URL by substituting template variables.
+
+    Args:
+        template: URL template with {id} and {display_name} placeholders
+        model_id: Model ID from API
+        display_name: Model display name from API
+
+    Returns:
+        Fully formatted URL with encoded parameters
+    """
+    try:
+        return template.format(
+            id=urllib.parse.quote(model_id), display_name=urllib.parse.quote(display_name)
+        )
+    except Exception:
+        # Fall back to just ID if display_name causes issues
+        return template.format(
+            id=urllib.parse.quote(model_id), display_name=urllib.parse.quote(model_id)
+        )
 
 
 def models_ag_grid(
@@ -20,31 +76,18 @@ def models_ag_grid(
     Returns:
         AG-Grid component with models data
     """
-    # Define column definitions
+    # Define column definitions with new order: Created → Actions → Model ID
     column_defs = [
         {
-            "headerName": "Model ID",
-            "field": "id",
-            "sortable": True,
-            "filter": True,
-            "resizable": True,
-            "flex": 2,
-            "minWidth": 200,
-            "suppressMovable": False,
-            "sort": "asc",  # Default sort by model ID
-            "cellStyle": {"cursor": "copy"},
-        },
-        {
             "headerName": "Created",
-            # Show the canonical timestamp in the cell and keep the relative time in the tooltip.
             "field": "created_iso",
             "sortable": True,
             "filter": True,
             "resizable": True,
-            "flex": 1,
-            "minWidth": 150,
+            "width": 120,  # Fixed width for yyyy-mm-dd format (plus padding)
+            "suppressSizeToFit": True,
             "suppressMovable": False,
-            # Sort uses numeric `created` from the row via the comparator.
+            "sort": "desc",  # Default sort by creation date (newest first)
             "tooltipField": "created_relative",
             "comparator": {"function": "vdmDateComparator"},
         },
@@ -54,14 +97,22 @@ def models_ag_grid(
             "sortable": False,
             "filter": False,
             "resizable": False,
-            "width": 100,
+            "width": 80,  # Fixed width for emoji icon with padding
             "suppressSizeToFit": True,
             "suppressMovable": True,
-            "pinned": "right",
-            "cellRenderer": "agGroupCellRenderer",
-            "cellRendererParams": {
-                "suppressCount": True,
-            },
+            "cellRenderer": "vdmModelPageLinkRenderer",
+            "cellRendererParams": {"suppressHtmlEscaping": True},
+        },
+        {
+            "headerName": "Model ID",
+            "field": "id",
+            "sortable": True,
+            "filter": True,
+            "resizable": True,
+            "flex": 2,
+            "minWidth": 200,
+            "suppressMovable": False,
+            "cellStyle": {"cursor": "copy"},
         },
     ]
 
@@ -76,15 +127,26 @@ def models_ag_grid(
 
         created_iso = format_model_created_timestamp(created_value)
         created_relative = format_timestamp(created_iso)
-
         created_day = (created_iso or "")[:10]
 
+        # Get model page URL
+        provider = model.get("provider", "multiple")
+        model_id = model.get("id", "")
+        display_name = model.get("display_name", model_id)
+        model_page_url = None
+
+        if model_id:
+            template = get_model_page_template(provider)
+            if template:
+                model_page_url = format_model_page_url(template, model_id, display_name)
+
         row = {
-            "id": model.get("id", "Unknown"),
-            "provider": model.get("provider", "multiple"),
+            "id": model_id,
+            "provider": provider,
             "created": int(created_value),
             "created_relative": created_relative or "Unknown",
             "created_iso": created_day,
+            "model_page_url": model_page_url,  # Add model page URL
         }
         row_data.append(row)
 
@@ -141,6 +203,107 @@ def models_ag_grid(
 # These will be injected into the app's HTML
 CELL_RENDERER_SCRIPTS = """
 console.info('[vdm] CELL_RENDERER_SCRIPTS loaded');
+
+// Render model page link with emoji as HTML string (AG Grid will inject as HTML)
+window.vdmModelPageLinkRenderer = function(params) {
+    const url = params && params.data && params.data.model_page_url;
+
+    if (!url) {
+        // No URL available, show disabled link icon
+        return (
+            '<span style="color: #666; opacity: 0.3; font-size: 16px;" ' +
+            'title="No model page available">🔗</span>'
+        );
+    }
+
+    const safeUrl = window.escapeHtml(url);
+    return (
+        `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" ` +
+        `style="color: #61DAFB; text-decoration: none; font-size: 16px;" ` +
+        `title="Open model page in new tab">🔗</a>`
+    );
+};
+
+// For dash-ag-grid function registry compatibility
+window.dashAgGridFunctions = window.dashAgGridFunctions || {};
+window.dashAgGridComponentFunctions = window.dashAgGridComponentFunctions || {};
+window.dashAgGridFunctions.vdmModelPageLinkRenderer = window.vdmModelPageLinkRenderer;
+window.dashAgGridComponentFunctions.vdmModelPageLinkRenderer = window.vdmModelPageLinkRenderer;
+window.__vdmModelPageLinkRenderer = window.vdmModelPageLinkRenderer;
+
+// Ensure AG Grid treats the returned string as HTML in this column (set in columnDefs via suppressHtmlEscaping)
+window.dashAgGridFunctions.vdmModelPageLinkRenderer.suppressHtmlEscaping = true;
+window.dashAgGridComponentFunctions.vdmModelPageLinkRenderer.suppressHtmlEscaping = true;
+window.__vdmModelPageLinkRenderer.suppressHtmlEscaping = true;
+
+// Provide a componentFuncs map in case some builds look there
+window.dashAgGridComponentFunctions = window.dashAgGridComponentFunctions || {};
+window.dashAgGridComponentFunctions = {
+    ...window.dashAgGridComponentFunctions,
+    vdmModelPageLinkRenderer: window.vdmModelPageLinkRenderer,
+};
+window.dashAgGridFunctions = {
+    ...window.dashAgGridFunctions,
+    vdmModelPageLinkRenderer: window.vdmModelPageLinkRenderer,
+};
+window.__vdmModelPageLinkRenderer = window.vdmModelPageLinkRenderer;
+window.dashAgGridFunctions.__vdmModelPageLinkRenderer = window.vdmModelPageLinkRenderer;
+window.dashAgGridComponentFunctions.__vdmModelPageLinkRenderer = window.vdmModelPageLinkRenderer;
+window.dashAgGridComponentFunctions.suppressHtmlEscaping = true;
+window.dashAgGridFunctions.suppressHtmlEscaping = true;
+window.__vdmModelPageLinkRenderer.suppressHtmlEscaping = true;
+
+// Also expose as components map (some dash-ag-grid versions read componentFuncs/components)
+window.dashAgGridFunctions.components = window.dashAgGridFunctions.components || {};
+window.dashAgGridFunctions.components.vdmModelPageLinkRenderer = window.vdmModelPageLinkRenderer;
+window.dashAgGridComponentFunctions.components = window.dashAgGridComponentFunctions.components || {};
+window.dashAgGridComponentFunctions.components.vdmModelPageLinkRenderer = window.vdmModelPageLinkRenderer;
+window.dashAgGridComponentFunctions.components.__vdmModelPageLinkRenderer = window.vdmModelPageLinkRenderer;
+window.dashAgGridFunctions.components.__vdmModelPageLinkRenderer = window.vdmModelPageLinkRenderer;
+
+// Utility: make sure escapeHtml exists
+window.escapeHtml = window.escapeHtml || function(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+};
+
+// For dash-ag-grid function registry compatibility
+window.dashAgGridFunctions = window.dashAgGridFunctions || {};
+window.dashAgGridComponentFunctions = window.dashAgGridComponentFunctions || {};
+window.dashAgGridFunctions.vdmModelPageLinkRenderer = window.vdmModelPageLinkRenderer;
+window.dashAgGridComponentFunctions.vdmModelPageLinkRenderer = window.vdmModelPageLinkRenderer;
+window.__vdmModelPageLinkRenderer = window.vdmModelPageLinkRenderer;
+window.dashAgGridFunctions.components = window.dashAgGridFunctions.components || {};
+window.dashAgGridFunctions.components.vdmModelPageLinkRenderer = window.vdmModelPageLinkRenderer;
+window.dashAgGridComponentFunctions.components = window.dashAgGridComponentFunctions.components || {};
+window.dashAgGridComponentFunctions.components.vdmModelPageLinkRenderer = window.vdmModelPageLinkRenderer;
+window.dashAgGridFunctions.suppressHtmlEscaping = true;
+window.dashAgGridComponentFunctions.suppressHtmlEscaping = true;
+window.__vdmModelPageLinkRenderer.suppressHtmlEscaping = true;
+window.dashAgGridFunctions.vdmModelPageLinkRenderer.suppressHtmlEscaping = true;
+window.dashAgGridComponentFunctions.vdmModelPageLinkRenderer.suppressHtmlEscaping = true;
+window.dashAgGridFunctions.components.vdmModelPageLinkRenderer.suppressHtmlEscaping = true;
+window.dashAgGridComponentFunctions.components.vdmModelPageLinkRenderer.suppressHtmlEscaping = true;
+window.dashAgGridFunctions.components.__vdmModelPageLinkRenderer = window.vdmModelPageLinkRenderer;
+window.dashAgGridComponentFunctions.components.__vdmModelPageLinkRenderer = window.vdmModelPageLinkRenderer;
+window.dashAgGridFunctions.components.__vdmModelPageLinkRenderer.suppressHtmlEscaping = true;
+window.dashAgGridComponentFunctions.components.__vdmModelPageLinkRenderer.suppressHtmlEscaping = true;
+window.__vdmModelPageLinkRenderer.components = window.__vdmModelPageLinkRenderer.components || {};
+window.__vdmModelPageLinkRenderer.components.vdmModelPageLinkRenderer = window.vdmModelPageLinkRenderer;
+window.__vdmModelPageLinkRenderer.components.__vdmModelPageLinkRenderer = window.vdmModelPageLinkRenderer;
+window.__vdmModelPageLinkRenderer.components.__vdmModelPageLinkRenderer.suppressHtmlEscaping = true;
+window.__vdmModelPageLinkRenderer.components.vdmModelPageLinkRenderer.suppressHtmlEscaping = true;
+window.__vdmModelPageLinkRenderer.components = {
+    ...window.__vdmModelPageLinkRenderer.components,
+    vdmModelPageLinkRenderer: window.vdmModelPageLinkRenderer,
+    __vdmModelPageLinkRenderer: window.vdmModelPageLinkRenderer,
+};
+
+// No-op return to avoid returning undefined
+window.vdmModelPageLinkRenderer;
+
+
 // Date comparator function for sorting by creation date
 window.dateComparator = function(dateA, dateB) {
     if (dateA === null && dateB === null) {
@@ -401,6 +564,16 @@ window.vdmAttachModelCellCopyListener('vdm-models-grid');
 
 // dash-ag-grid expects functions under dashAgGridFunctions (kept for other formatters/comparators)
 window.dashAgGridFunctions = window.dashAgGridFunctions || {};
+
+// Some dash-ag-grid versions also look under dashAgGridComponentFunctions for components.
+window.dashAgGridComponentFunctions = window.dashAgGridComponentFunctions || {};
+
+// Register our custom cell renderer
+window.dashAgGridFunctions.vdmModelPageLinkRenderer = window.vdmModelPageLinkRenderer;
+window.dashAgGridComponentFunctions.vdmModelPageLinkRenderer = window.vdmModelPageLinkRenderer;
+
+// Expose as a global for debugging
+window.__vdmModelPageLinkRenderer = window.vdmModelPageLinkRenderer;
 
 // Utility function to escape HTML
 window.escapeHtml = function(text) {

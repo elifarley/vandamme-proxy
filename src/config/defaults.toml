@@ -21,6 +21,8 @@ opus = "gpt-5.2"
 # Poe provider defaults
 [poe]
 base-url = "https://api.poe.com/v1"
+# Only used if POE_MODEL_PAGE is empty
+model-page = "https://poe.com/{display_name}/api"
 api-format = "openai"
 timeout = 90
 max-retries = 2
@@ -32,6 +34,8 @@ opus = "gpt-5.1-codex-max"
 # OpenRouter provider defaults
 [openrouter]
 base-url = "https://openrouter.ai/api/v1"
+# Only used if OPENROUTER_MODEL_PAGE is empty
+model-page = "https://openrouter.ai/{id}"
 api-format = "openai"
 timeout = 90
 max-retries = 2

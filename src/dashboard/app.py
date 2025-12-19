@@ -38,6 +38,9 @@ from src.dashboard.pages import (
     token_composition_chart,
 )
 
+# NOTE: AG-Grid JS helpers are imported inside create_dashboard when building index_string.
+# Keeping this import out of module scope avoids scoping pitfalls.
+
 
 def _run(coro: Any) -> Any:
     try:
@@ -128,6 +131,24 @@ def create_dashboard(*, cfg: DashboardConfigProtocol) -> dash.Dash:
             className="py-3",
             fluid=True,
         )
+
+    # Inject clientside renderer scripts for AG-Grid (models grid)
+    # Inline-inject the JS so dash-ag-grid can use vdmModelPageLinkRenderer.
+    from src.dashboard.components.ag_grid import CELL_RENDERER_SCRIPTS
+
+    app.index_string = app.index_string.replace(
+        "</body>", f"<script>{CELL_RENDERER_SCRIPTS}</script></body>"
+    )
+
+    # -------------------- Overview callbacks --------------------
+
+    # Simple no-op clientside callback placeholder (keeps dash happy, avoids attribute errors)
+    app.clientside_callback(
+        "function(pathname){return pathname;}",
+        Output("vdm-models-grid", "id"),
+        Input("vdm-url", "pathname"),
+        prevent_initial_call=True,
+    )
 
     # -------------------- Overview callbacks --------------------
 
