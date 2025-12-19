@@ -20,9 +20,10 @@ class ModelManager:
         """Resolve model name to (provider, actual_model)
 
         Resolution process:
-        1. Apply alias resolution first (if aliases are configured)
-        2. Parse provider prefix from resolved value
-        3. Return provider and actual model name
+        1. Determine provider context (from explicit prefix or default provider)
+        2. Apply alias resolution scoped to that provider (if aliases are configured)
+        3. Parse provider prefix from resolved value
+        4. Return provider and actual model name
 
         Returns:
             Tuple[str, str]: (provider_name, actual_model_name)
@@ -35,7 +36,18 @@ class ModelManager:
             logger.debug(
                 f"Alias manager available with {self.alias_manager.get_alias_count()} aliases"
             )
-            alias_target = self.alias_manager.resolve_alias(model)
+
+            # Check if model already has provider prefix
+            if ":" not in model:
+                # No provider prefix - resolve using default provider only
+                default_provider = self.provider_manager.default_provider
+                logger.debug(f"Resolving alias '{model}' with provider scope '{default_provider}'")
+                alias_target = self.alias_manager.resolve_alias(model, provider=default_provider)
+            else:
+                # Has provider prefix - allow cross-provider resolution for backward compatibility
+                logger.debug(f"Resolving alias '{model}' across all providers")
+                alias_target = self.alias_manager.resolve_alias(model)
+
             if alias_target:
                 logger.info(f"[ModelManager] Alias resolved: '{model}' -> '{alias_target}'")
                 resolved_model = alias_target

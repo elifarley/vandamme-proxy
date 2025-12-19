@@ -492,3 +492,125 @@ class TestAliasManager:
                 "Provider 'unknown' not found for alias UNKNOWN_ALIAS_FAST" in record.message
                 for record in caplog.records
             )
+
+    def test_resolve_alias_with_provider_scope(self):
+        """Test resolve_alias with provider parameter for scoped resolution."""
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "POE_ALIAS_HAIKU": "poe-grok-4.1-fast",
+                    "OPENAI_ALIAS_HAIKU": "openai-gpt-4o-mini",
+                    "ANTHROPIC_ALIAS_CHAT": "claude-3-5-sonnet",
+                },
+            ),
+            patch("src.core.provider_manager.ProviderManager") as mock_provider_manager,
+        ):
+            mock_pm = mock_provider_manager.return_value
+            mock_pm._configs = {"poe": {}, "openai": {}, "anthropic": {}}
+
+            alias_manager = AliasManager()
+
+            # Test provider-scoped resolution
+            assert alias_manager.resolve_alias("haiku", provider="poe") == "poe:poe-grok-4.1-fast"
+            assert (
+                alias_manager.resolve_alias("haiku", provider="openai")
+                == "openai:openai-gpt-4o-mini"
+            )
+            assert (
+                alias_manager.resolve_alias("chat", provider="anthropic")
+                == "anthropic:claude-3-5-sonnet"
+            )
+
+            # Test that non-matching provider returns None (but fallback aliases are still included)
+            assert alias_manager.resolve_alias("fast", provider="anthropic") is None
+
+            # Test case insensitive provider names
+            assert alias_manager.resolve_alias("haiku", provider="POE") == "poe:poe-grok-4.1-fast"
+            assert (
+                alias_manager.resolve_alias("haiku", provider="OpenAI")
+                == "openai:openai-gpt-4o-mini"
+            )
+
+    def test_resolve_alias_explicit_prefix_overrides_provider_parameter(self):
+        """Test that explicit provider prefix in model name overrides provider parameter."""
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "POE_ALIAS_HAIKU": "poe-grok-4.1-fast",
+                    "OPENAI_ALIAS_HAIKU": "openai-gpt-4o-mini",
+                },
+            ),
+            patch("src.core.provider_manager.ProviderManager") as mock_provider_manager,
+        ):
+            mock_pm = mock_provider_manager.return_value
+            mock_pm._configs = {"poe": {}, "openai": {}}
+
+            alias_manager = AliasManager()
+
+            # Explicit prefix should override provider parameter
+            assert (
+                alias_manager.resolve_alias("openai:haiku", provider="poe")
+                == "openai:openai-gpt-4o-mini"
+            )
+            assert (
+                alias_manager.resolve_alias("poe:haiku", provider="openai")
+                == "poe:poe-grok-4.1-fast"
+            )
+
+            # Case insensitive explicit prefix
+            assert (
+                alias_manager.resolve_alias("OPENAI:haiku", provider="poe")
+                == "openai:openai-gpt-4o-mini"
+            )
+
+    def test_resolve_alias_backward_compatibility(self):
+        """Test that resolve_alias without provider parameter maintains backward compatibility."""
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "POE_ALIAS_HAIKU": "poe-grok-4.1-fast",
+                    "OPENAI_ALIAS_FAST": "openai-gpt-4o-mini",
+                },
+            ),
+            patch("src.core.provider_manager.ProviderManager") as mock_provider_manager,
+            patch("src.core.alias_config.AliasConfigLoader") as mock_config_loader,
+        ):
+            mock_pm = mock_provider_manager.return_value
+            mock_pm._configs = {"poe": {}, "openai": {}}
+
+            # Mock empty fallbacks to avoid interference
+            mock_loader_instance = mock_config_loader.return_value
+            mock_loader_instance.load_config.return_value = {"providers": {}, "defaults": {}}
+
+            alias_manager = AliasManager()
+
+            # Without provider parameter, should search across all providers
+            # The longest match should win
+            assert alias_manager.resolve_alias("haiku") == "poe:poe-grok-4.1-fast"
+            assert alias_manager.resolve_alias("fast") == "openai:openai-gpt-4o-mini"
+
+            # Test substring matching across providers
+            assert alias_manager.resolve_alias("my-haiku-model") == "poe:poe-grok-4.1-fast"
+            assert alias_manager.resolve_alias("super-fast") == "openai:openai-gpt-4o-mini"
+
+    def test_resolve_alias_provider_scope_with_fallbacks(self):
+        """Test provider-scoped resolution works with fallback aliases."""
+        with (
+            patch("src.core.provider_manager.ProviderManager") as mock_provider_manager,
+            patch.dict(os.environ, {}, clear=True),  # No explicit aliases
+        ):
+            mock_pm = mock_provider_manager.return_value
+            mock_pm._configs = {"poe": {}}  # Only poe configured
+
+            alias_manager = AliasManager()
+
+            # Provider-scoped resolution should include fallbacks
+            assert alias_manager.resolve_alias("haiku", provider="poe") == "poe:gpt-5.1-mini"
+            assert alias_manager.resolve_alias("sonnet", provider="poe") == "poe:gpt-5.1-codex-mini"
+            assert alias_manager.resolve_alias("opus", provider="poe") == "poe:gpt-5.1-codex-max"
+
+            # Provider not configured should return None even with fallbacks
+            assert alias_manager.resolve_alias("haiku", provider="openai") is None

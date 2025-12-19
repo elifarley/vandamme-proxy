@@ -194,20 +194,22 @@ class AliasManager:
                     self.aliases[provider][alias] = target
                     logger.debug(f"Applied fallback alias: {provider}:{alias} -> {target}")
 
-    def resolve_alias(self, model: str) -> str | None:
+    def resolve_alias(self, model: str, provider: str | None = None) -> str | None:
         """
         Resolve model name to alias value with case-insensitive substring matching.
 
         Resolution algorithm:
         1. Convert model name to lowercase
         2. Create variations of model name (with underscores and hyphens)
-        3. Find all aliases across all providers where alias name matches any variation
+        3. Find aliases within provider scope where alias name matches any variation
         4. If exact match exists, return it immediately
         5. Otherwise, select longest matching substring
         6. If tie, select alphabetically first
 
         Args:
             model: The requested model name
+            provider: Optional provider name to scope the search. If None, searches
+                     across all providers (backward compatible behavior).
 
         Returns:
             The resolved alias target with provider prefix (e.g., "poe:grok-4.1-fast")
@@ -232,6 +234,8 @@ class AliasManager:
         model_for_alias_match = model_lower.split(":", 1)[1] if ":" in model_lower else model_lower
 
         logger.debug(f"Model name for alias matching: '{model_for_alias_match}'")
+        if provider:
+            logger.debug(f"Provider scope: '{provider}'")
 
         # Create variations of the model name for matching
         # This allows "my_model" to match both "my-model" and "my_model" in the model name
@@ -242,23 +246,40 @@ class AliasManager:
         }
         logger.debug(f"Model variations for matching: {model_variations}")
 
-        # Find all matching aliases across all providers
+        # Determine if model has explicit provider prefix that overrides the provider parameter
+        explicit_provider: str | None = model_lower.split(":", 1)[0] if ":" in model_lower else None
+
+        # Normalize provider parameter to lowercase for consistent comparison
+        normalized_provider = provider.lower() if provider else None
+
+        # Use explicit provider if present, otherwise use the provider parameter
+        search_provider = explicit_provider or normalized_provider
+
+        # Find all matching aliases within the specified provider scope
         matches: list[tuple[str, str, str, int]] = []  # (provider, alias, target, match_length)
 
-        total_aliases = sum(len(aliases) for aliases in self.aliases.values())
-        logger.debug(
-            f"Checking {total_aliases} configured aliases across {len(self.aliases)} providers "
-            f"for matches"
-        )
+        # Log search scope for debugging
+        if search_provider:
+            provider_aliases = self.aliases.get(search_provider, {})
+            total_aliases = len(provider_aliases)
+            logger.debug(
+                f"Checking {total_aliases} aliases for provider '{search_provider}' for matches"
+            )
+        else:
+            total_aliases = sum(len(aliases) for aliases in self.aliases.values())
+            logger.debug(
+                f"Checking {total_aliases} configured aliases across {len(self.aliases)} providers "
+                f"for matches"
+            )
 
-        requested_provider: str | None = (
-            model_lower.split(":", 1)[0] if ":" in model_lower else None
-        )
-
-        for provider, provider_aliases in self.aliases.items():
-            if requested_provider and provider != requested_provider:
+        for provider_name, provider_aliases in self.aliases.items():
+            # Skip if we're scoping to a specific provider
+            if search_provider and provider_name != search_provider:
+                logger.debug(f"  Skipping provider '{provider_name}' (not in search scope)")
                 continue
-            logger.debug(f"  Checking provider '{provider}' with {len(provider_aliases)} aliases")
+            logger.debug(
+                f"  Checking provider '{provider_name}' with {len(provider_aliases)} aliases"
+            )
 
             for alias, target in provider_aliases.items():
                 alias_lower = alias.lower()
@@ -269,7 +290,7 @@ class AliasManager:
                     if alias_lower in variation:
                         # Use the actual matched length from the variation
                         match_length = len(alias_lower)
-                        matches.append((provider, alias, target, match_length))
+                        matches.append((provider_name, alias, target, match_length))
                         logger.debug(
                             f"      ✓ Match found! Alias '{alias}' found in variation "
                             f"'{variation}' (length: {match_length})"
@@ -305,7 +326,9 @@ class AliasManager:
         match_type = "exact" if is_exact else "substring"
 
         # Return with provider prefix
-        resolved_model = f"{best_provider}:{best_target}"
+        # Use explicit provider if present, otherwise normalize provider name to lowercase
+        result_provider = explicit_provider if explicit_provider else best_provider.lower()
+        resolved_model = f"{result_provider}:{best_target}"
 
         logger.info(
             "[AliasManager] %s: '%s' matches '%s:%s' -> '%s'",
