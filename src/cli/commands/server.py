@@ -25,7 +25,7 @@ def start(
 ) -> None:
     """Start the proxy server."""
     # Configure logging FIRST before any console output
-    from src.core.logging import configure_logging
+    from src.core.logging.configuration import configure_root_logging
 
     # Override config if provided
     server_host = host or config.host
@@ -34,10 +34,10 @@ def start(
     # When using systemd, configure logging immediately and suppress all console output
     console = None  # Initialize console to None
     if systemd:
-        configure_logging(use_systemd=True)
+        configure_root_logging(use_systemd=True)
         # No console output when using systemd - everything goes to syslog
     else:
-        configure_logging(use_systemd=False)
+        configure_root_logging(use_systemd=False)
         console = Console()
 
         # Show configuration only when not using systemd
@@ -46,6 +46,7 @@ def start(
         table.add_column("Value", style="green")
 
         table.add_row("Server URL", f"http://{server_host}:{server_port}")
+        table.add_row("Default Provider", config.default_provider)
         table.add_row(f"{config.default_provider.title()} Base URL", config.base_url)
         table.add_row(f"{config.default_provider.title()} API Key", config.api_key_hash)
 
@@ -53,6 +54,10 @@ def start(
 
         # Show provider summary
         config.provider_manager.print_provider_summary()
+
+        # Show common model mappings
+        if config.alias_manager:
+            config.alias_manager.print_common_model_mappings(config.default_provider)
 
     if daemon:
         _start_daemon(server_host, server_port, pid_file)

@@ -78,6 +78,9 @@ class Config:
         self.host = os.environ.get("HOST", "0.0.0.0")
         self.port = int(os.environ.get("PORT", "8082"))
         self.log_level = os.environ.get("LOG_LEVEL", "INFO")
+
+        # Metrics
+        self.log_request_metrics = os.environ.get("LOG_REQUEST_METRICS", "true").lower() == "true"
         self.max_tokens_limit = int(os.environ.get("MAX_TOKENS_LIMIT", "4096"))
         self.min_tokens_limit = int(os.environ.get("MIN_TOKENS_LIMIT", "100"))
 

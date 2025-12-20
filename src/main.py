@@ -7,8 +7,13 @@ from src import __version__
 from src.api.endpoints import router as api_router
 from src.api.metrics import metrics_router
 from src.core.config import config
+from src.core.metrics import create_request_tracker
 
 app = FastAPI(title="Vandamme Proxy", version=__version__)
+
+# Process-local metrics tracking is owned by the FastAPI app instance.
+# This avoids module-level singletons and keeps imports side-effect free.
+app.state.request_tracker = create_request_tracker()
 
 app.include_router(api_router)
 app.include_router(metrics_router, prefix="/metrics", tags=["metrics"])

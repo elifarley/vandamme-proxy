@@ -1,18 +1,17 @@
 import pytest
 
-from src.core.logging import RequestMetrics, request_tracker
+from src.core.metrics import RequestMetrics, create_request_tracker
 
 
 @pytest.mark.unit
-def test_running_totals_hierarchical_includes_rollup_models_and_streaming_split():
+@pytest.mark.asyncio
+async def test_running_totals_hierarchical_includes_rollup_models_and_streaming_split():
     """Ensure running totals output is unambiguous and schema-consistent.
 
     We only assert on the presence/shape of the data structure. End-to-end YAML assertions
     live in integration tests.
     """
-    # Reset state for test isolation
-    request_tracker.summary_metrics.provider_model_metrics.clear()
-    request_tracker.active_requests.clear()
+    request_tracker = create_request_tracker(summary_interval=999999)
 
     # Simulate one completed request by directly constructing ProviderModelMetrics
     pm = request_tracker.summary_metrics.provider_model_metrics["openai:gpt-4o"]
@@ -49,7 +48,7 @@ def test_running_totals_hierarchical_includes_rollup_models_and_streaming_split(
     pm.non_streaming_errors = 0
     pm.non_streaming_duration_ms = 40.0
 
-    data = request_tracker.get_running_totals_hierarchical()
+    data = await request_tracker.get_running_totals_hierarchical()
 
     assert "providers" in data
     assert "openai" in data["providers"]
@@ -81,10 +80,9 @@ def test_running_totals_hierarchical_includes_rollup_models_and_streaming_split(
 
 
 @pytest.mark.unit
-def test_running_totals_active_request_contributes_to_rollup_and_model():
-    # Reset state
-    request_tracker.summary_metrics.provider_model_metrics.clear()
-    request_tracker.active_requests.clear()
+@pytest.mark.asyncio
+async def test_running_totals_active_request_contributes_to_rollup_and_model():
+    request_tracker = create_request_tracker(summary_interval=999999)
 
     metrics = RequestMetrics(
         request_id="r1",
@@ -102,7 +100,7 @@ def test_running_totals_active_request_contributes_to_rollup_and_model():
     )
     request_tracker.active_requests["r1"] = metrics
 
-    data = request_tracker.get_running_totals_hierarchical()
+    data = await request_tracker.get_running_totals_hierarchical()
     provider = data["providers"]["openai"]
 
     assert provider["rollup"]["total"]["requests"] == 1

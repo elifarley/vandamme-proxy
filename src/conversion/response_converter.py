@@ -1,13 +1,20 @@
 import json
+import logging
 import uuid
 from collections.abc import AsyncGenerator
 from typing import Any
 
 from fastapi import HTTPException, Request
 
+from src.core.config import config
 from src.core.constants import Constants
-from src.core.logging import LOG_REQUEST_METRICS, conversation_logger, request_tracker
+from src.core.logging import ConversationLogger
+from src.core.metrics.runtime import get_request_tracker
 from src.models.claude import ClaudeMessagesRequest
+
+LOG_REQUEST_METRICS = config.log_request_metrics
+conversation_logger = ConversationLogger.get_logger()
+logger = logging.getLogger(__name__)
 
 
 def convert_openai_to_claude_response(
@@ -254,7 +261,10 @@ async def convert_openai_streaming_to_claude_with_cancellation(
     message_id = f"msg_{uuid.uuid4().hex[:24]}"
 
     # Get request metrics for updating
-    metrics = request_tracker.get_request(request_id) if LOG_REQUEST_METRICS else None
+    metrics = None
+    if LOG_REQUEST_METRICS:
+        tracker = get_request_tracker(http_request)
+        metrics = await tracker.get_request(request_id)
 
     # Initialize tracking variables
     input_tokens = 0

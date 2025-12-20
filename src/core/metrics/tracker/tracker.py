@@ -1,0 +1,282 @@
+"""RequestTracker: in-memory request metrics aggregation.
+
+Educational overview
+--------------------
+The tracker has two kinds of state:
+
+1) **Active requests** (in-flight)
+   - stored in `active_requests`
+   - updated as streaming responses progress
+
+2) **Completed requests**
+   - aggregated into `summary_metrics`
+   - also reflected in hierarchical rollups for reporting
+
+The tracker is intentionally process-local. In production, this means metrics are
+per-process (and reset on restart). This matches the existing behavior.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import time
+from typing import Any, cast
+
+from src.core.logging import ConversationLogger
+
+from ..calculations.hierarchical import (
+    accumulate_pm_into_provider_and_model,
+    add_active_request_to_split,
+    finalize_running_totals,
+    matches_pattern,
+    new_model_entry,
+    new_provider_entry,
+)
+from ..models.request import RequestMetrics
+from ..models.summary import RunningTotals, SummaryMetrics
+from ..types import HierarchicalData
+
+
+class RequestTracker:
+    """Track request metrics within a single process."""
+
+    def __init__(self, *, summary_interval: int) -> None:
+        self._lock = asyncio.Lock()
+
+        self.active_requests: dict[str, RequestMetrics] = {}
+        self.summary_metrics = SummaryMetrics()
+        self.summary_interval = summary_interval
+
+        self.request_count = 0
+        self.total_completed_requests = 0
+
+        # last_accessed timestamps are emitted by providers/models and updated
+        # when activity is observed.
+        self.last_accessed_timestamps: dict[str, dict[str, str] | str | None] = {
+            "models": {},
+            "providers": {},
+            "top": None,
+        }
+
+        self._logger = ConversationLogger.get_logger()
+
+    async def start_request(
+        self, request_id: str, claude_model: str, is_streaming: bool = False
+    ) -> RequestMetrics:
+        """Register a new active request."""
+
+        metrics = RequestMetrics(
+            request_id=request_id,
+            start_time=time.time(),
+            claude_model=claude_model,
+            is_streaming=is_streaming,
+        )
+        async with self._lock:
+            self.active_requests[request_id] = metrics
+        return metrics
+
+    async def end_request(self, request_id: str, **kwargs: Any) -> None:
+        """Finalize a request and aggregate it into completed metrics."""
+
+        async with self._lock:
+            metrics = self.active_requests.get(request_id)
+            if metrics is None:
+                return
+
+            metrics.end_time = time.time()
+
+            for key, value in kwargs.items():
+                if hasattr(metrics, key):
+                    setattr(metrics, key, value)
+
+            self.summary_metrics.add_request(metrics)
+            self.request_count += 1
+            self.total_completed_requests += 1
+
+            if self.request_count % self.summary_interval == 0:
+                self._emit_summary_locked()
+
+            del self.active_requests[request_id]
+
+    async def get_request(self, request_id: str) -> RequestMetrics | None:
+        async with self._lock:
+            return self.active_requests.get(request_id)
+
+    async def update_last_accessed(self, provider: str, model: str, timestamp: str) -> None:
+        """Update last_accessed timestamps for provider, model, and top level."""
+
+        if not timestamp or timestamp in ("N/A", "Invalid timestamp", None):
+            return
+
+        async with self._lock:
+            model_key = f"{provider}:{model}"
+            models_dict = cast(dict[str, str], self.last_accessed_timestamps["models"])
+            models_dict[model_key] = timestamp
+
+            providers_dict = cast(dict[str, str], self.last_accessed_timestamps["providers"])
+            if provider in providers_dict:
+                providers_dict[provider] = max(providers_dict[provider], timestamp)
+            else:
+                providers_dict[provider] = timestamp
+
+            top_timestamp = cast(str | None, self.last_accessed_timestamps["top"])
+            if top_timestamp:
+                self.last_accessed_timestamps["top"] = max(top_timestamp, timestamp)
+            else:
+                self.last_accessed_timestamps["top"] = timestamp
+
+    async def get_running_totals_hierarchical(
+        self, *, provider_filter: str | None = None, model_filter: str | None = None
+    ) -> HierarchicalData:
+        """Return hierarchical provider->models metrics, including in-flight requests."""
+
+        async with self._lock:
+            all_completed = self.summary_metrics
+            last_accessed_value = self.last_accessed_timestamps.get("top")
+
+            if last_accessed_value is not None:
+                running_totals = RunningTotals(
+                    last_accessed={"top": str(last_accessed_value)},
+                    active_requests=len(self.active_requests),
+                )
+            else:
+                running_totals = RunningTotals(active_requests=len(self.active_requests))
+
+            # Completed requests
+            for provider_model_key, pm in all_completed.provider_model_metrics.items():
+                provider, model = (
+                    provider_model_key.split(":", 1)
+                    if ":" in provider_model_key
+                    else (provider_model_key, None)
+                )
+
+                # Normalize provider strings written in as "provider:model".
+                # In completed metrics we store provider+model as a single key, but the
+                # hierarchical view expects provider -> models nesting.
+                if model and ":" in model:
+                    provider, model = model.split(":", 1)
+
+                # If a provider filter is applied, it should still match the resolved provider.
+
+                if provider_filter and not matches_pattern(provider, provider_filter):
+                    continue
+                if model_filter and model and not matches_pattern(model, model_filter):
+                    continue
+
+                provider_entry = running_totals.providers.get(provider)
+                if provider_entry is None:
+                    provider_entry = new_provider_entry(
+                        cast(dict[str, str], self.last_accessed_timestamps["providers"]).get(
+                            provider
+                        )
+                    )
+                    running_totals.providers[provider] = provider_entry
+
+                if model is None:
+                    # Provider-level traffic without a model attributed to rollup only.
+                    rollup = cast(dict[str, dict[str, float | int]], provider_entry["rollup"])
+                    for kind in ("total", "streaming", "non_streaming"):
+                        from src.core.metrics.calculations.accumulation import (
+                            accumulate_from_provider_metrics,
+                        )
+
+                        accumulate_from_provider_metrics(rollup[kind], pm, kind=kind)  # type: ignore[arg-type]
+                else:
+                    models = cast(dict[str, Any], provider_entry["models"])
+                    if model not in models:
+                        models[model] = new_model_entry(
+                            cast(dict[str, str], self.last_accessed_timestamps["models"]).get(
+                                f"{provider}:{model}"
+                            )
+                        )
+                    model_entry = cast(dict[str, Any], models[model])
+                    accumulate_pm_into_provider_and_model(provider_entry, model_entry, pm)
+
+            # Active requests
+            for metrics in list(self.active_requests.values()):
+                provider = metrics.provider or "unknown"
+                if metrics.claude_model and ":" in metrics.claude_model:
+                    _, model = metrics.claude_model.split(":", 1)
+                else:
+                    model = metrics.claude_model or "unknown"
+
+                if provider_filter and not matches_pattern(provider, provider_filter):
+                    continue
+                if model_filter and model != "unknown" and not matches_pattern(model, model_filter):
+                    continue
+
+                running_totals.total_requests += 1
+                running_totals.total_input_tokens += int(metrics.input_tokens or 0)
+                running_totals.total_output_tokens += int(metrics.output_tokens or 0)
+                running_totals.total_cache_read_tokens += int(metrics.cache_read_tokens or 0)
+                running_totals.total_cache_creation_tokens += int(
+                    metrics.cache_creation_tokens or 0
+                )
+                running_totals.total_tool_uses += int(metrics.tool_use_count or 0)
+                running_totals.total_tool_results += int(metrics.tool_result_count or 0)
+                running_totals.total_tool_calls += int(metrics.tool_call_count or 0)
+                if metrics.error:
+                    running_totals.total_errors += 1
+
+                provider_entry = running_totals.providers.get(provider)
+                if provider_entry is None:
+                    provider_entry = new_provider_entry(
+                        cast(dict[str, str], self.last_accessed_timestamps["providers"]).get(
+                            provider
+                        )
+                    )
+                    running_totals.providers[provider] = provider_entry
+
+                rollup = cast(dict[str, dict[str, float | int]], provider_entry["rollup"])
+                add_active_request_to_split(rollup, metrics)
+
+                if model != "unknown":
+                    models = cast(dict[str, Any], provider_entry["models"])
+                    if model not in models:
+                        models[model] = new_model_entry(
+                            cast(dict[str, str], self.last_accessed_timestamps["models"]).get(
+                                f"{provider}:{model}"
+                            )
+                        )
+                    add_active_request_to_split(
+                        cast(dict[str, dict[str, float | int]], models[model]), metrics
+                    )
+
+            return finalize_running_totals(running_totals)
+
+        raise RuntimeError("RequestTracker lock acquisition failed")
+
+    def _emit_summary_locked(self) -> None:
+        total_requests = max(1, self.summary_metrics.total_requests)
+        avg_duration = self.summary_metrics.total_duration_ms / total_requests
+
+        self._logger.info(
+            " SUMMARY (last %s requests) | Total: %s | Errors: %s | Avg Duration: %.0fms | "
+            "Input Tokens: %s | Output Tokens: %s | Cache Hits: %s | Cache Creation: %s | "
+            "Tool Uses: %s | Tool Results: %s | Tool Calls: %s",
+            self.summary_interval,
+            self.summary_metrics.total_requests,
+            self.summary_metrics.total_errors,
+            avg_duration,
+            f"{self.summary_metrics.total_input_tokens:,}",
+            f"{self.summary_metrics.total_output_tokens:,}",
+            f"{self.summary_metrics.total_cache_read_tokens:,}",
+            f"{self.summary_metrics.total_cache_creation_tokens:,}",
+            self.summary_metrics.total_tool_uses,
+            self.summary_metrics.total_tool_results,
+            self.summary_metrics.total_tool_calls,
+        )
+
+        if self.summary_metrics.model_counts:
+            model_dist = " | ".join(
+                [f"{m}: {c}" for m, c in self.summary_metrics.model_counts.items()]
+            )
+            self._logger.info(" MODELS | %s", model_dist)
+
+        if self.summary_metrics.error_counts:
+            error_dist = " | ".join(
+                [f"{e}: {c}" for e, c in self.summary_metrics.error_counts.items()]
+            )
+            self._logger.warning(" ERRORS | %s", error_dist)
+
+        self.summary_metrics = SummaryMetrics()

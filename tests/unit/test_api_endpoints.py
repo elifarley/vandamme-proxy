@@ -208,10 +208,11 @@ class TestFilteredRunningTotals:
     @pytest.fixture
     def mock_request_tracker(self):
         """Create a mock request tracker with test data."""
-        from src.core.logging import ProviderModelMetrics, RequestTracker, SummaryMetrics
+        from src.core.metrics.models.provider import ProviderModelMetrics
+        from src.core.metrics.models.summary import SummaryMetrics
+        from src.core.metrics.tracker.tracker import RequestTracker
 
-        tracker = RequestTracker()
-        tracker.initialized = True
+        tracker = RequestTracker(summary_interval=999999)
         tracker.total_completed_requests = 10
 
         # Setup summary metrics with provider/model data
@@ -271,7 +272,9 @@ class TestFilteredRunningTotals:
 
     def test_get_filtered_running_totals_no_filters(self, mock_request_tracker):
         """Test getting running totals without any filters."""
-        totals = mock_request_tracker.get_filtered_running_totals()
+        totals = mock_request_tracker.summary_metrics.get_running_totals(
+            provider_filter=None, model_filter=None
+        )
 
         assert totals["total_requests"] == 10
         assert totals["total_input_tokens"] == 5000
@@ -286,7 +289,9 @@ class TestFilteredRunningTotals:
 
     def test_get_filtered_running_totals_by_provider(self, mock_request_tracker):
         """Test filtering running totals by provider."""
-        totals = mock_request_tracker.get_filtered_running_totals(provider_filter="openai")
+        totals = mock_request_tracker.summary_metrics.get_running_totals(
+            provider_filter="openai", model_filter=None
+        )
 
         # Should only include openai models (gpt-4 and gpt-3.5-turbo)
         assert totals["total_requests"] == 7  # 5 + 2
@@ -301,7 +306,9 @@ class TestFilteredRunningTotals:
 
     def test_get_filtered_running_totals_by_model(self, mock_request_tracker):
         """Test filtering running totals by model."""
-        totals = mock_request_tracker.get_filtered_running_totals(model_filter="gpt-4")
+        totals = mock_request_tracker.summary_metrics.get_running_totals(
+            provider_filter=None, model_filter="gpt-4"
+        )
 
         # Should only include gpt-4
         assert totals["total_requests"] == 5
@@ -316,7 +323,7 @@ class TestFilteredRunningTotals:
 
     def test_get_filtered_running_totals_by_provider_and_model(self, mock_request_tracker):
         """Test filtering running totals by both provider and model."""
-        totals = mock_request_tracker.get_filtered_running_totals(
+        totals = mock_request_tracker.summary_metrics.get_running_totals(
             provider_filter="openai", model_filter="gpt-4"
         )
 
@@ -333,7 +340,9 @@ class TestFilteredRunningTotals:
 
     def test_get_filtered_running_totals_no_matches(self, mock_request_tracker):
         """Test filtering with no matching results."""
-        totals = mock_request_tracker.get_filtered_running_totals(provider_filter="nonexistent")
+        totals = mock_request_tracker.summary_metrics.get_running_totals(
+            provider_filter="nonexistent", model_filter=None
+        )
 
         assert totals["total_requests"] == 0
         assert totals["total_input_tokens"] == 0

@@ -60,6 +60,7 @@ class BaseWrapper:
                 cmd.extend(["--settings", settings_file])
 
             logger.info(f"Running command: {' '.join(cmd)}")
+            logger.info("To follow Vandamme logs, run:\n  `journalctl -t vandamme-proxy -f`")
 
             # Run the command
             process = subprocess.Popen(

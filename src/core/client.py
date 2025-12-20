@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import json
+import logging
 import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import Any, cast
@@ -9,7 +10,12 @@ from fastapi import HTTPException
 from openai import AsyncAzureOpenAI, AsyncOpenAI
 from openai._exceptions import APIError, AuthenticationError, BadRequestError, RateLimitError
 
-from src.core.logging import LOG_REQUEST_METRICS, conversation_logger, request_tracker
+from src.core.config import config
+from src.core.logging import ConversationLogger
+
+LOG_REQUEST_METRICS = config.log_request_metrics
+conversation_logger = ConversationLogger.get_logger()
+logger = logging.getLogger(__name__)
 
 NextApiKey = Callable[[set[str]], Awaitable[str]]
 
@@ -91,9 +97,8 @@ class OpenAIClient:
         api_start = time.time()
 
         # Get request metrics for updating
-        metrics = (
-            request_tracker.get_request(request_id) if LOG_REQUEST_METRICS and request_id else None
-        )
+        # Metrics are updated in request-scoped layers (API endpoints / converters).
+        metrics = None
 
         async def attempt_with_key(effective_api_key: str) -> dict[str, Any]:
             # Get client for this specific API key

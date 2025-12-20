@@ -49,7 +49,7 @@ class ModelManager:
                 alias_target = self.alias_manager.resolve_alias(model)
 
             if alias_target:
-                logger.info(f"[ModelManager] Alias resolved: '{model}' -> '{alias_target}'")
+                logger.debug(f"[ModelManager] Alias resolved: '{model}' -> '{alias_target}'")
                 resolved_model = alias_target
             else:
                 logger.debug(f"No alias match found for '{model}', using original model name")
@@ -63,7 +63,7 @@ class ModelManager:
 
         # Log the final resolution result
         if resolved_model != model:
-            logger.info(
+            logger.debug(
                 f"[ModelManager] Resolved: '{model}' -> "
                 f"'{provider_name}:{actual_model}' (via alias)"
             )

@@ -357,7 +357,7 @@ class AliasManager:
         resolved_model = f"{result_provider}:{best_target}"
 
         logger.info(
-            "[AliasManager] %s: '%s' matches '%s:%s' -> '%s'",
+            "[AliasManager] (%s match for '%s') '%s:%s' -> '%s'",
             match_type,
             model,
             best_provider,
@@ -426,6 +426,44 @@ class AliasManager:
             Number of aliases across all providers
         """
         return sum(len(aliases) for aliases in self.aliases.values())
+
+    def print_common_model_mappings(self, default_provider: str) -> None:
+        """Print resolved mappings for common Claude model names.
+
+        Args:
+            default_provider: The default provider name to use for resolution
+        """
+        common_models = ["haiku", "sonnet", "opus"]
+
+        # Store all mappings first to prevent log lines from appearing between header and rows
+        mappings = []
+
+        for model in common_models:
+            # Resolve using default provider
+            resolved = self.resolve_alias(model, provider=default_provider)
+            if resolved and ":" in resolved:
+                provider, actual_model = resolved.split(":", 1)
+                # If the resolved provider is different from default_provider, show it
+                display_provider = provider if provider != default_provider else default_provider
+                mappings.append((model, display_provider, actual_model))
+            else:
+                # No alias found, check if it's a literal model name
+                if model in self.aliases.get(default_provider, {}):
+                    # Alias exists but resolution failed, show as configured but unresolved
+                    mappings.append(
+                        (model, default_provider, self.aliases[default_provider][model])
+                    )
+                else:
+                    # No alias configured for this model
+                    mappings.append((model, "N/A", "Not configured"))
+
+        # Now print everything at once
+        print("\n📝 Common Model Mappings (using default provider):")
+        print(f"   {'Alias':<20} {'Actual Model'}")
+        print(f"   {'-' * 20} {'-' * 50}")
+
+        for model, provider, actual_model in mappings:
+            print(f"   {provider + ':' + model:<20} {actual_model}")
 
     def _print_alias_summary(self) -> None:
         """Print an elegant summary of loaded model aliases grouped by provider"""

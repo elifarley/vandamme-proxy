@@ -10,7 +10,7 @@ import typer
 from src.cli.wrap.proxy_manager import ProxyManager
 from src.cli.wrap.wrappers import BaseWrapper, get_wrapper
 from src.core.config import config
-from src.core.logging import configure_logging
+from src.core.logging.configuration import configure_root_logging
 
 
 def wrap(
@@ -45,7 +45,7 @@ def execute_wrap(
 ) -> None:
     """Execute the wrap logic."""
     # Configure logging
-    configure_logging(use_systemd=False)
+    configure_root_logging(use_systemd=False)
     logger = logging.getLogger(__name__)
 
     # Get host and port from args or config

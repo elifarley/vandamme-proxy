@@ -1,17 +1,23 @@
+import logging
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import PlainTextResponse
 
 from src.api.endpoints import validate_api_key
 from src.api.utils.yaml_formatter import create_hierarchical_structure, format_running_totals_yaml
-from src.core.logging import LOG_REQUEST_METRICS, logger, request_tracker
+from src.core.config import config
+from src.core.metrics.runtime import get_request_tracker
+
+LOG_REQUEST_METRICS = config.log_request_metrics
+logger = logging.getLogger(__name__)
 
 metrics_router = APIRouter()
 
 
 @metrics_router.get("/running-totals")
 async def get_running_totals(
+    http_request: Request,
     provider: str | None = Query(
         None, description="Filter by provider (case-insensitive, supports * and ? wildcards)"
     ),
@@ -43,9 +49,12 @@ async def get_running_totals(
             )
             return PlainTextResponse(content=yaml_data, media_type="text/yaml; charset=utf-8")
 
+        tracker = get_request_tracker(http_request)
+
         # Get hierarchical data with filtering
-        data = request_tracker.get_running_totals_hierarchical(
-            provider_filter=provider, model_filter=model
+        data = await tracker.get_running_totals_hierarchical(
+            provider_filter=provider,
+            model_filter=model,
         )
 
         # Create YAML structure - data now has flattened structure

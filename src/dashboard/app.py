@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any
 
 import dash
 import dash_bootstrap_components as dbc  # type: ignore[import-untyped]
 from dash import Input, Output, State, dcc, html
 
-from src.core.logging import logger
 from src.dashboard.components.ui import (
     alias_table,
     empty_state,
@@ -37,6 +37,8 @@ from src.dashboard.pages import (
     providers_table,
     token_composition_chart,
 )
+
+logger = logging.getLogger(__name__)
 
 # NOTE: AG-Grid JS helpers are imported inside create_dashboard when building index_string.
 # Keeping this import out of module scope avoids scoping pitfalls.

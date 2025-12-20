@@ -13,7 +13,11 @@ from typing import Any
 import httpx
 from fastapi import HTTPException
 
-from src.core.logging import LOG_REQUEST_METRICS, conversation_logger
+from src.core.config import config
+from src.core.logging import ConversationLogger
+
+LOG_REQUEST_METRICS = config.log_request_metrics
+conversation_logger = ConversationLogger.get_logger()
 
 NextApiKey = Callable[[set[str]], Awaitable[str]]
 

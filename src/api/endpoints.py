@@ -1,4 +1,5 @@
 import json
+import logging
 import time
 import uuid
 from collections.abc import AsyncGenerator
@@ -16,19 +17,15 @@ from src.conversion.response_converter import (
     convert_openai_to_claude_response,
 )
 from src.core.config import config
-from src.core.logging import (
-    LOG_REQUEST_METRICS,
-    ConversationLogger,
-    conversation_logger,
-    logger,
-    request_tracker,
-)
+from src.core.logging import ConversationLogger
+from src.core.metrics.runtime import get_request_tracker
 from src.core.model_manager import model_manager
 from src.middleware import RequestContext, ResponseContext
-from src.models.claude import (
-    ClaudeMessagesRequest,
-    ClaudeTokenCountRequest,
-)
+from src.models.claude import ClaudeMessagesRequest, ClaudeTokenCountRequest
+
+LOG_REQUEST_METRICS = config.log_request_metrics
+logger = logging.getLogger(__name__)
+conversation_logger = ConversationLogger.get_logger()
 
 router = APIRouter()
 
@@ -122,8 +119,11 @@ async def create_message(  # type: ignore[no-untyped-def]
 
     # Start request tracking if metrics are enabled
     if LOG_REQUEST_METRICS:
-        metrics = request_tracker.start_request(
-            request_id=request_id, claude_model=request.model, is_streaming=request.stream or False
+        tracker = get_request_tracker(http_request)
+        metrics = await tracker.start_request(
+            request_id=request_id,
+            claude_model=request.model,
+            is_streaming=request.stream or False,
         )
 
         # Calculate request size
@@ -227,8 +227,10 @@ async def create_message(  # type: ignore[no-untyped-def]
                 metrics.provider = provider_name  # type: ignore[assignment]
 
                 # Update last_accessed timestamp
-                request_tracker.update_last_accessed(
-                    provider=provider_name, model=openai_model, timestamp=metrics.start_time_iso
+                await tracker.update_last_accessed(
+                    provider=provider_name,
+                    model=openai_model,
+                    timestamp=metrics.start_time_iso,
                 )
 
             # Check if client disconnected before processing
@@ -236,7 +238,7 @@ async def create_message(  # type: ignore[no-untyped-def]
                 if LOG_REQUEST_METRICS and metrics:
                     metrics.error = "Client disconnected before processing"
                     metrics.error_type = "client_disconnect"
-                    request_tracker.end_request(request_id)
+                    await tracker.end_request(request_id)
                 raise HTTPException(status_code=499, detail="Client disconnected")
 
             if request.stream:
@@ -300,7 +302,7 @@ async def create_message(  # type: ignore[no-untyped-def]
                             finally:
                                 # End request tracking after streaming
                                 if LOG_REQUEST_METRICS:
-                                    request_tracker.end_request(request_id)
+                                    await tracker.end_request(request_id)
 
                         return StreamingResponse(
                             streaming_with_metrics(),
@@ -318,7 +320,7 @@ async def create_message(  # type: ignore[no-untyped-def]
                             metrics.error = e.detail
                             metrics.error_type = "api_error"
                             metrics.end_time = time.time()
-                            request_tracker.end_request(request_id)
+                            await tracker.end_request(request_id)
 
                         logger.error(f"Streaming error: {e.detail}")
                         import traceback
@@ -385,7 +387,7 @@ async def create_message(  # type: ignore[no-untyped-def]
                             finally:
                                 # End request tracking after streaming
                                 if LOG_REQUEST_METRICS:
-                                    request_tracker.end_request(request_id)
+                                    await tracker.end_request(request_id)
 
                         return StreamingResponse(
                             streaming_with_metrics(),
@@ -403,7 +405,7 @@ async def create_message(  # type: ignore[no-untyped-def]
                             metrics.error = e.detail
                             metrics.error_type = "api_error"
                             metrics.end_time = time.time()
-                            request_tracker.end_request(request_id)
+                            await tracker.end_request(request_id)
 
                         logger.error(f"Streaming error: {e.detail}")
                         import traceback
@@ -641,7 +643,7 @@ async def create_message(  # type: ignore[no-untyped-def]
 
                 # End request tracking
                 if LOG_REQUEST_METRICS:
-                    request_tracker.end_request(request_id)
+                    await tracker.end_request(request_id)
 
                 return JSONResponse(status_code=200, content=claude_response)
 
@@ -651,7 +653,7 @@ async def create_message(  # type: ignore[no-untyped-def]
                 metrics.error = "HTTP exception"
                 metrics.error_type = "http_error"
                 metrics.end_time = time.time()
-                request_tracker.end_request(request_id)
+                await tracker.end_request(request_id)
             raise
         except Exception as e:
             import traceback
@@ -685,7 +687,7 @@ async def create_message(  # type: ignore[no-untyped-def]
 
             # End request tracking
             if LOG_REQUEST_METRICS:
-                request_tracker.end_request(request_id)
+                await tracker.end_request(request_id)
 
             raise HTTPException(status_code=500, detail=error_message) from e
 

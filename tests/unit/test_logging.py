@@ -3,12 +3,9 @@ from io import StringIO
 
 import pytest
 
-from src.core.logging import (
-    NOISY_HTTP_LOGGERS,
-    CorrelationFormatter,
-    HttpRequestLogDowngradeFilter,
-    set_noisy_http_logger_levels,
-)
+from src.core.logging.configuration import NOISY_HTTP_LOGGERS, set_noisy_http_logger_levels
+from src.core.logging.filters.http import HttpRequestLogDowngradeFilter
+from src.core.logging.formatters.correlation import CorrelationFormatter
 
 
 @pytest.mark.unit
