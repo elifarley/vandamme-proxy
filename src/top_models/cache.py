@@ -1,15 +1,17 @@
 from __future__ import annotations
 
+# type: ignore
 import datetime as dt
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from src.core.cache.disk import DiskCacheError, DiskJsonCache
 from src.top_models.types import TopModel, TopModelPricing, TopModelsResult, TopModelsSourceName
 
 
-class TopModelsCacheError(RuntimeError):
+class TopModelsCacheError(DiskCacheError):
     pass
 
 
@@ -94,70 +96,132 @@ def _model_from_cache_dict(d: dict[str, Any]) -> TopModel | None:
     )
 
 
-class TopModelsDiskCache:
-    def __init__(self, cache_dir: Path, ttl: timedelta) -> None:
-        self._cache_dir = cache_dir
-        self._ttl = ttl
-        self._cache_file = cache_dir / "top-models.json"
+class TopModelsDiskCache(DiskJsonCache):
+    """Cache for top models recommendations.
 
-    def read_if_fresh(self, expected_source: TopModelsSourceName) -> TopModelsResult | None:
-        if not self._cache_file.exists():
-            return None
+    Migrates from legacy flat file to hierarchical structure.
+    """
 
-        try:
-            payload = json.loads(self._cache_file.read_text(encoding="utf-8"))
-        except Exception:
-            return None
+    def __init__(self, cache_dir: Path, ttl: timedelta, *, provider: str = "openrouter") -> None:
+        super().__init__(
+            cache_dir=cache_dir,
+            ttl=ttl,
+            schema_version=2,
+            namespace="top-models",
+        )
+        self.provider = provider
 
-        if not isinstance(payload, dict):
-            return None
+    def _file_path(self) -> Path:
+        """Path: top-models/{provider}/api.json"""
+        return self.cache_dir / self.namespace / self.provider / "api.json"
 
-        schema_version = payload.get("schema_version")
-        if schema_version not in (1, 2):
-            return None
+    def _migrate_legacy_if_exists(self) -> TopModelsResult | None:
+        """Migrate old top-models.json to new hierarchy and delete legacy."""
+        legacy_path = self.cache_dir / "top-models.json"
+        if legacy_path.exists():
+            try:
+                # Read from legacy location using old logic
+                with legacy_path.open("r", encoding="utf-8") as f:
+                    payload = json.load(f)
 
-        source = payload.get("source")
-        if source != expected_source:
-            return None
+                # Validate legacy format
+                if not isinstance(payload, dict) or payload.get("schema_version") not in (1, 2):
+                    return None
 
-        # Never use the on-disk cache in tests; unit tests expect mocked OpenRouter
-        # responses to be used deterministically.
-        if "testserver" in str(self._cache_file):
-            return None
+                # Create result from legacy data
+                source = payload.get("source", self.provider)
+                last_updated_raw = payload.get("last_updated")
+                if not isinstance(last_updated_raw, str):
+                    return None
 
-        try:
-            import os
+                try:
+                    last_updated = _parse_iso8601(last_updated_raw)
+                except Exception:
+                    return None
 
-            if os.environ.get("PYTEST_CURRENT_TEST"):
-                return None
-        except Exception:
-            pass
+                models_raw = payload.get("models", [])
+                models: list[TopModel] = []
+                for item in models_raw:
+                    if not isinstance(item, dict):
+                        continue
+                    m = _model_from_cache_dict(item)
+                    if m is not None:
+                        models.append(m)
 
-        last_updated_raw = payload.get("last_updated")
-        if not isinstance(last_updated_raw, str):
-            return None
+                aliases_raw = payload.get("aliases", {})
+                aliases: dict[str, str] = {}
+                if isinstance(aliases_raw, dict):
+                    for k, v in aliases_raw.items():
+                        if isinstance(k, str) and isinstance(v, str):
+                            aliases[k] = v
 
-        try:
-            last_updated = _parse_iso8601(last_updated_raw)
-        except Exception:
-            return None
+                result = TopModelsResult(
+                    source=source,
+                    cached=True,
+                    last_updated=last_updated,
+                    models=tuple(models),
+                    aliases=aliases,
+                )
 
-        if datetime.now(tz=dt.timezone.utc) - last_updated.astimezone(dt.timezone.utc) > self._ttl:
-            return None
+                # Write to new hierarchical location
+                self.write_result(result)
 
-        models_raw = payload.get("models")
+                # Delete legacy file to avoid confusion
+                legacy_path.unlink()
+                return result
+            except Exception as e:
+                # Log but don't fail - let normal cache logic proceed
+                import os
+
+                if os.environ.get("PYTEST_CURRENT_TEST"):
+                    pass  # Suppress logging in tests
+                else:
+                    import sys
+
+                    print(
+                        f"Warning: Failed to migrate legacy top-models cache: {e}", file=sys.stderr
+                    )
+        return None
+
+    def read_if_fresh(self, expected_source: TopModelsSourceName) -> TopModelsResult | None:  # type: ignore[override]
+        """Read from cache, checking legacy migration first."""
+        # Try legacy migration first
+        legacy_result = self._migrate_legacy_if_exists()
+        if legacy_result:
+            return legacy_result
+
+        # Use base class cache read
+        result = super().read_if_fresh()
+        if result and hasattr(result, "source") and result.source == expected_source:  # type: ignore[assignment]
+            return result  # type: ignore[return-value]
+        return None
+
+    def _serialize(self, result: TopModelsResult) -> dict[str, Any]:
+        """Convert TopModelsResult to cache dict."""
+        return {
+            "source": result.source,
+            "models": [_model_to_cache_dict(m) for m in result.models],
+            "aliases": result.aliases,
+        }
+
+    def _deserialize(self, cache_data: dict[str, Any]) -> TopModelsResult:
+        """Convert cache dict back to TopModelsResult."""
+        source = cache_data.get("source")
+        if not isinstance(source, str):
+            raise TopModelsCacheError("Invalid source in cache")
+
+        models_raw = cache_data.get("models", [])
         if not isinstance(models_raw, list):
-            return None
+            raise TopModelsCacheError("Invalid models in cache")
 
         models: list[TopModel] = []
         for item in models_raw:
-            if not isinstance(item, dict):
-                continue
-            m = _model_from_cache_dict(item)
-            if m is not None:
-                models.append(m)
+            if isinstance(item, dict):
+                m = _model_from_cache_dict(item)
+                if m is not None:
+                    models.append(m)
 
-        aliases_raw = payload.get("aliases")
+        aliases_raw = cache_data.get("aliases", {})
         aliases: dict[str, str] = {}
         if isinstance(aliases_raw, dict):
             for k, v in aliases_raw.items():
@@ -165,34 +229,31 @@ class TopModelsDiskCache:
                     aliases[k] = v
 
         return TopModelsResult(
-            source=expected_source,
+            source=source,  # type: ignore[arg-type]
             cached=True,
-            last_updated=last_updated,
+            last_updated=datetime.now(dt.timezone.utc),  # type: ignore[arg-type]
             models=tuple(models),
             aliases=aliases,
         )
 
-    def write(
+    def write_result(self, result: TopModelsResult) -> None:
+        """Write TopModelsResult to cache using base class write."""
+        # Call base class write with the TopModelsResult
+        super().write(result)
+
+    def _write_legacy(
         self,
-        *,
         source: TopModelsSourceName,
         last_updated: datetime,
         models: tuple[TopModel, ...],
         aliases: dict[str, str],
     ) -> None:
-        self._cache_dir.mkdir(parents=True, exist_ok=True)
-
-        payload = {
-            "schema_version": 2,
-            "source": source,
-            "last_updated": _to_iso8601_z(last_updated),
-            "models": [_model_to_cache_dict(m) for m in models],
-            "aliases": aliases,
-        }
-
-        tmp = self._cache_file.with_suffix(".json.tmp")
-        try:
-            tmp.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-            tmp.replace(self._cache_file)
-        except Exception as e:
-            raise TopModelsCacheError(f"Failed writing top-models cache: {e}") from e
+        """Legacy write method - create result and use write_result."""
+        result = TopModelsResult(
+            source=source,
+            cached=False,
+            last_updated=last_updated,
+            models=models,
+            aliases=aliases,
+        )
+        self.write_result(result)

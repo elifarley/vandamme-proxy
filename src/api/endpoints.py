@@ -1,9 +1,11 @@
 import json
 import logging
+import os
 import time
 import uuid
 from collections.abc import AsyncGenerator
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -21,6 +23,7 @@ from src.core.logging import ConversationLogger
 from src.core.metrics.runtime import get_request_tracker
 from src.core.model_manager import model_manager
 from src.middleware import RequestContext, ResponseContext
+from src.models.cache import ModelsDiskCache
 from src.models.claude import ClaudeMessagesRequest, ClaudeTokenCountRequest
 
 LOG_REQUEST_METRICS = config.log_request_metrics
@@ -28,6 +31,14 @@ logger = logging.getLogger(__name__)
 conversation_logger = ConversationLogger.get_logger()
 
 router = APIRouter()
+
+# Initialize models cache if enabled
+models_cache = None
+if config.models_cache_enabled and not os.environ.get("PYTEST_CURRENT_TEST"):
+    models_cache = ModelsDiskCache(
+        cache_dir=Path(config.top_models_cache_dir),
+        ttl_hours=config.models_cache_ttl_hours,
+    )
 
 # Custom headers are now handled per provider
 
@@ -1022,32 +1033,49 @@ async def list_models(
                 ],
             }
         else:
-            # OpenAI format - use unauthenticated HTTP client for all providers
-            try:
-                # Use unauthenticated HTTP client (no provider requires auth for /models)
-                openai_models = await fetch_models_unauthenticated(
-                    default_client.base_url,
-                    provider_config.custom_headers if provider_config else {},
+            # OpenAI format - try cache first, then fetch from provider
+            base_url = default_client.base_url
+            custom_headers = provider_config.custom_headers if provider_config else {}
+
+            openai_models = None
+
+            # Try cache first if available
+            if models_cache:
+                cached_models = models_cache.read_models_if_fresh(
+                    provider=provider_name,
+                    base_url=base_url,
+                    custom_headers=custom_headers,
                 )
+                if cached_models is not None:
+                    openai_models = {"data": cached_models}
+                    logger.debug(f"Using cached models for {provider_name}")
 
-                # Transform OpenAI models format to Claude format
-                openai_models_response: dict[str, Any] = {"object": "list", "data": []}
-                models_list: list[dict[str, Any]] = openai_models_response["data"]  # type: ignore[assignment]
+            # Fetch from provider if cache miss
+            if openai_models is None:
+                try:
+                    # Use unauthenticated HTTP client (no provider requires auth for /models)
+                    openai_models = await fetch_models_unauthenticated(
+                        base_url,
+                        custom_headers,
+                    )
 
-                for model in openai_models.get("data", []):
-                    # Create a Claude-compatible model entry
-                    claude_model = {
-                        "id": model.get("id", ""),
-                        "object": "model",
-                        "created": model.get("created", 0),
-                        "display_name": model.get("id", "").replace("-", " ").title(),
-                    }
-                    models_list.append(claude_model)
-                models = openai_models_response
+                    # Cache the successful response
+                    if (
+                        models_cache
+                        and openai_models
+                        and isinstance(openai_models.get("data"), list)
+                    ):
+                        models_cache.write_models(
+                            provider=provider_name,
+                            base_url=base_url,
+                            custom_headers=custom_headers,
+                            models=openai_models.get("data", []),
+                        )
+                        logger.debug(f"Cached models for {provider_name}")
 
-            except Exception as e:
-                # Log the error and fall back to common models if provider doesn't support /models
-                logger.warning(f"Failed to fetch models from {provider_name}: {e}")
+                except Exception as e:
+                    # Log error and fall back to common models if provider doesn't support /models
+                    logger.warning(f"Failed to fetch models from {provider_name}: {e}")
 
                 # Fallback to common models
                 models = {

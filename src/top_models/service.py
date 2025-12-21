@@ -148,7 +148,7 @@ class TopModelsService:
         models = _apply_exclusions(models, self._cfg.exclude)
         aliases = _suggest_aliases(models)
 
-        self._cache.write(
+        self._cache._write_legacy(
             source=self._cfg.source,
             last_updated=last_updated,
             models=models,

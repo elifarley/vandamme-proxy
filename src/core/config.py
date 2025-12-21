@@ -99,6 +99,10 @@ class Config:
         )
         # Note: per-provider exclusions can be added later without breaking API.
 
+        # Models cache settings
+        self.models_cache_enabled = os.environ.get("MODELS_CACHE_ENABLED", "true").lower() == "true"
+        self.models_cache_ttl_hours = int(os.environ.get("MODELS_CACHE_TTL_HOURS", "1"))
+
         # Thought signature middleware settings
         self.gemini_thought_signatures_enabled = (
             os.environ.get("GEMINI_THOUGHT_SIGNATURES_ENABLED", "true").lower() == "true"
