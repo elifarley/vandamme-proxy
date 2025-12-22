@@ -11,6 +11,7 @@ This module provides:
 - Minimal performance overhead
 """
 
+import json
 import logging
 from collections.abc import AsyncGenerator
 from typing import Any
@@ -211,11 +212,15 @@ async def cleanup_middleware_processor() -> None:
 
 
 class MiddlewareStreamingWrapper:
-    """
-    Elegant wrapper for streaming responses that applies middleware.
+    """Wrapper for streaming responses that applies middleware.
 
-    Wraps an existing async generator to apply middleware to each chunk
-    without the streaming endpoint needing to know about middleware.
+    This wrapper parses server-sent events (SSE) and extracts JSON payloads to
+    feed middleware via `process_stream_chunk()`. Chunks that are not JSON SSE
+    events are passed through unchanged.
+
+    Important: middleware operates on OpenAI-style deltas (tool_calls,
+    reasoning_details). For the proxy's OpenAI-mode streaming flow, upstream
+    emits OpenAI chat.completion.chunk SSE lines.
     """
 
     def __init__(
@@ -230,16 +235,60 @@ class MiddlewareStreamingWrapper:
         self.accumulated_metadata: dict[str, Any] = {}
         self.logger = logging.getLogger(f"{__name__}.MiddlewareStreamingWrapper")
 
+    def _extract_openai_delta(self, sse_chunk: str) -> dict[str, Any] | None:
+        """Extract OpenAI delta dict from an SSE chunk string.
+
+        Expected formats:
+        - "data: {...}\n\n" (OpenAI JSON)
+        - "data: [DONE]\n\n" (terminator)
+
+        Returns:
+        - dict delta if found (may be empty)
+        - None if not parseable or not a JSON data event
+        """
+        if not (sse_chunk and sse_chunk.startswith("data: ")):
+            return None
+
+        payload = sse_chunk[6:].strip()
+        if payload == "[DONE]":
+            return None
+
+        try:
+            parsed = json.loads(payload)
+        except Exception:
+            return None
+
+        if not isinstance(parsed, dict):
+            return None
+
+        choices = parsed.get("choices")
+        if not (isinstance(choices, list) and choices):
+            return None
+
+        choice0 = choices[0]
+        if not isinstance(choice0, dict):
+            return None
+
+        delta = choice0.get("delta")
+        if not isinstance(delta, dict):
+            return None
+
+        return delta
+
     async def __aiter__(self) -> AsyncGenerator[str, None]:
         """Iterate over streaming chunks with middleware applied."""
         try:
             async for chunk in self.original_stream:
-                # For now, we just pass through the chunk
-                # Full middleware integration would require parsing SSE format
-                # and extracting JSON deltas for processing
+                delta = self._extract_openai_delta(chunk)
+                if delta is not None:
+                    # Allow middleware to accumulate streaming metadata.
+                    await self.processor.process_stream_chunk(
+                        chunk=delta,
+                        request_context=self.request_context,
+                        accumulated_metadata=self.accumulated_metadata,
+                    )
                 yield chunk
 
-            # Finalize stream processing
             await self.processor.finalize_stream(self.request_context, self.accumulated_metadata)
 
         except Exception as e:

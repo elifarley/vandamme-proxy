@@ -407,9 +407,17 @@ async def test_multimodal():
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_conversation_with_tool_use():
-    """Test a complete conversation with tool use and results."""
+    """Test a complete conversation with tool use and results.
+
+    This test relies on a real upstream call and will timeout if the local proxy
+    is configured with a non-OpenAI default provider.
+    """
     if not os.getenv("OPENAI_API_KEY"):
         pytest.skip("OPENAI_API_KEY not set")
+    if os.getenv("VDM_DEFAULT_PROVIDER") not in ("openai", "OPENAI"):
+        pytest.skip("VDM_DEFAULT_PROVIDER is not openai")
+    if os.getenv("OPENAI_BASE_URL"):
+        pytest.skip("OPENAI_BASE_URL override set; this test expects direct OpenAI")
 
     async with httpx.AsyncClient(timeout=60.0) as client:
         # First message with tool call

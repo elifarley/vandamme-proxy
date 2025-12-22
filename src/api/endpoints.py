@@ -546,9 +546,7 @@ async def create_message(
                         # Wrap streaming to capture metrics
                         async def streaming_with_metrics() -> AsyncGenerator[str, None]:
                             try:
-                                async for (
-                                    chunk
-                                ) in convert_openai_streaming_to_claude_with_cancellation(
+                                async for chunk in convert_openai_streaming_to_claude_with_cancellation(
                                     openai_stream,
                                     request,
                                     logger,
@@ -562,6 +560,40 @@ async def create_message(
                                 # End request tracking after streaming
                                 if LOG_REQUEST_METRICS:
                                     await tracker.end_request(request_id)
+
+                        # Apply middleware to streaming deltas (e.g., capture thought signatures)
+                        if hasattr(config.provider_manager, "middleware_chain"):
+                            from src.api.middleware_integration import (
+                                MiddlewareAwareRequestProcessor,
+                                MiddlewareStreamingWrapper,
+                            )
+
+                            processor = MiddlewareAwareRequestProcessor()
+                            processor.middleware_chain = config.provider_manager.middleware_chain
+
+                            wrapped_stream = MiddlewareStreamingWrapper(
+                                original_stream=streaming_with_metrics(),
+                                request_context=RequestContext(
+                                    messages=openai_request.get("messages", []),
+                                    provider=provider_name,
+                                    model=request.model,
+                                    request_id=request_id,
+                                    conversation_id=None,
+                                    client_api_key=client_api_key,
+                                ),
+                                processor=processor,
+                            )
+
+                            return StreamingResponse(
+                                wrapped_stream,
+                                media_type="text/event-stream",
+                                headers={
+                                    "Cache-Control": "no-cache",
+                                    "Connection": "keep-alive",
+                                    "Access-Control-Allow-Origin": "*",
+                                    "Access-Control-Allow-Headers": "*",
+                                },
+                            )
 
                         return StreamingResponse(
                             streaming_with_metrics(),

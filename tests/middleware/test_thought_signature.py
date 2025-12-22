@@ -67,15 +67,20 @@ class TestThoughtSignatureStore:
         # Store the entry
         await mock_store.store(entry)
 
-        # Retrieve by tool call IDs
-        retrieved = await mock_store.retrieve_by_tool_calls(tool_call_ids)
+        # Retrieve by tool call IDs (conversation-scoped)
+        retrieved = await mock_store.retrieve_by_tool_calls(tool_call_ids, conversation_id="conv_1")
         assert retrieved is not None
         assert len(retrieved) == 2
         assert retrieved[0]["thought_signature"] == "signature_1"
 
-        # Retrieve partial match (should return None)
-        partial = await mock_store.retrieve_by_tool_calls({"tool_3"})
+        # Retrieve partial match on missing tool id (should return None)
+        partial = await mock_store.retrieve_by_tool_calls({"tool_3"}, conversation_id="conv_1")
         assert partial is None
+
+        # Retrieve incremental/partial set (should succeed)
+        partial_ok = await mock_store.retrieve_by_tool_calls({"tool_1"}, conversation_id="conv_1")
+        assert partial_ok is not None
+        assert partial_ok[0]["thought_signature"] == "signature_1"
 
     @pytest.mark.asyncio
     async def test_retrieve_by_conversation(self, mock_store):
