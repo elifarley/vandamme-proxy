@@ -37,7 +37,35 @@ async def test_fetch_models_requests_openai_format(monkeypatch: pytest.MonkeyPat
     assert captured["params"].get("format") == "openai"
 
 
-def test_models_ag_grid_extracts_openai_metadata_fields() -> None:
+@pytest.mark.parametrize(
+    ("model_patch", "expected_url"),
+    [
+        # OpenAI-style nested metadata.
+        (
+            {"metadata": {"image": {"url": "https://example.com/icon.jpeg"}}},
+            "https://example.com/icon.jpeg",
+        ),
+        # Flattened metadata variants.
+        (
+            {"metadata": {"image_url": "https://example.com/icon-flat.jpeg"}},
+            "https://example.com/icon-flat.jpeg",
+        ),
+        (
+            {"metadata": {"image": "https://example.com/icon-str.jpeg"}},
+            "https://example.com/icon-str.jpeg",
+        ),
+        (
+            {"metadata": {"icon": {"url": "https://example.com/icon-alt.jpeg"}}},
+            "https://example.com/icon-alt.jpeg",
+        ),
+        # Top-level fallback.
+        ({"image_url": "https://example.com/icon-top.jpeg"}, "https://example.com/icon-top.jpeg"),
+    ],
+)
+def test_models_ag_grid_extracts_model_icon_url_variants(
+    model_patch: dict[str, object],
+    expected_url: str,
+) -> None:
     models = [
         {
             "id": "Claude-Sonnet-4.5",
@@ -47,11 +75,7 @@ def test_models_ag_grid_extracts_openai_metadata_fields() -> None:
             "architecture": {"modality": "text,image->text"},
             "context_window": {"context_length": 128000, "max_output_tokens": 16384},
             "pricing": {"prompt": "0.0000026", "completion": "0.000013"},
-            "metadata": {
-                "image": {
-                    "url": "https://example.com/icon.jpeg",
-                }
-            },
+            **model_patch,
         }
     ]
 
@@ -67,7 +91,7 @@ def test_models_ag_grid_extracts_openai_metadata_fields() -> None:
     assert row["context_length"] == 128000
     assert row["max_output_tokens"] == 16384
 
-    assert row["model_icon_url"] == "https://example.com/icon.jpeg"
+    assert row["model_icon_url"] == expected_url
 
     # pricing is in USD/token; table shows USD per million tokens
     assert row["pricing_prompt_per_million"] == "2.60"
@@ -76,3 +100,21 @@ def test_models_ag_grid_extracts_openai_metadata_fields() -> None:
     # created is in ms; should be normalized to seconds as int
     assert isinstance(row["created"], int)
     assert row["created"] == 1758868894
+
+
+def test_models_ag_grid_rejects_unsafe_icon_urls() -> None:
+    models = [
+        {
+            "id": "Claude-Sonnet-4.5",
+            "created": 1758868894776,
+            "owned_by": "Anthropic",
+            "metadata": {"image": {"url": "javascript:alert(1)"}},
+        }
+    ]
+
+    grid = models_ag_grid(models)
+    row = grid.rowData[0]
+
+    assert row["model_icon_url"] is None
+    # Ensure we still render the row and ID.
+    assert row["id"] == "Claude-Sonnet-4.5"

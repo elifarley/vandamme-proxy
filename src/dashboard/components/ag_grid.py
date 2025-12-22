@@ -7,7 +7,10 @@ from typing import Any
 import dash_ag_grid as dag  # type: ignore[import-untyped]
 
 from src.core.alias_config import AliasConfigLoader
-from src.dashboard.components.ui import format_model_created_timestamp, format_timestamp, provider_badge
+from src.dashboard.components.ui import (
+    format_model_created_timestamp,
+    format_timestamp,
+)
 
 # Module-level cache for provider configs
 _alias_config_loader = None
@@ -216,6 +219,60 @@ def top_models_ag_grid(
 # --- Models AG Grid ---
 
 
+def _safe_http_url(value: object) -> str | None:
+    """Return a safe http(s) URL string or None.
+
+    The dashboard renders some URLs in the browser (e.g., model icons).
+    Restricting to http(s) prevents accidentally emitting `javascript:` URLs.
+    """
+    if not isinstance(value, str) or not value:
+        return None
+
+    parsed = urllib.parse.urlparse(value)
+    if parsed.scheme not in {"http", "https"}:
+        return None
+
+    return value
+
+
+def _extract_model_icon_url(model: dict[str, Any]) -> str | None:
+    """Extract a normalized model icon URL from a provider model payload.
+
+    Contract: the JS cell renderer `vdmModelIdWithIconRenderer` reads
+    `row.model_icon_url`. This helper is the canonical place that guarantees the
+    value is either `None` or a validated http(s) URL, even if upstream providers
+    change the metadata shape.
+    """
+    metadata = model.get("metadata")
+    if isinstance(metadata, dict):
+        # Common OpenAI-style shape.
+        image = metadata.get("image")
+        if isinstance(image, dict):
+            url = _safe_http_url(image.get("url"))
+            if url:
+                return url
+
+        # Flattened variants.
+        url = _safe_http_url(metadata.get("image_url"))
+        if url:
+            return url
+
+        # Some sources store the URL directly in "image".
+        url = _safe_http_url(image)
+        if url:
+            return url
+
+        # Alternate naming.
+        icon = metadata.get("icon")
+        if isinstance(icon, dict):
+            url = _safe_http_url(icon.get("url"))
+            if url:
+                return url
+
+    # Final fallback: top-level key.
+    return _safe_http_url(model.get("image_url"))
+
+
 def models_row_data(models: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Build AG-Grid rowData for the Models page.
 
@@ -301,14 +358,7 @@ def models_row_data(models: list[dict[str, Any]]) -> list[dict[str, Any]]:
             preview = description_text[:40]
             description_preview = preview + "..." if len(description_text) > 40 else preview
 
-        metadata = model.get("metadata")
-        image_url = None
-        if isinstance(metadata, dict):
-            image = metadata.get("image")
-            if isinstance(image, dict):
-                url = image.get("url")
-                if isinstance(url, str):
-                    image_url = url
+        image_url = _extract_model_icon_url(model)
 
         row_data.append(
             {
@@ -335,7 +385,7 @@ def models_row_data(models: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def models_ag_grid(
     models: list[dict[str, Any]],
-    grid_id: str = "models-grid",
+    grid_id: str = "vdm-models-grid",
 ) -> dag.AgGrid:
     """Create an AG-Grid table for models with dark theme and advanced features.
 
@@ -453,8 +503,6 @@ def models_ag_grid(
         },
     ]
 
-    row_data = models_row_data(models)
-
     # Custom CSS for dark theme
     # NOTE: Using a viewport-based height avoids the common "100% of an auto-height parent"
     # trap where AG-Grid renders but no rows are visible.
@@ -527,6 +575,8 @@ console.info('[vdm] CELL_RENDERER_SCRIPTS loaded');
 
 
 // Render model id with optional icon.
+// Contract: Python row shaping (`models_row_data`) must provide `model_icon_url`
+// as either null/undefined or a safe http(s) URL string.
 window.vdmModelIdWithIconRenderer = function(params) {
     const id = params && params.value ? String(params.value) : '';
     const url = params && params.data && params.data.model_icon_url;
@@ -843,10 +893,13 @@ window.vdmDateComparator = function(dateA, dateB) {
 };
 
 
-# Render provider name as a Bootstrap badge
+// Render provider name as a Bootstrap badge
 window.vdmProviderBadgeRenderer = function(params) {
     const provider = params && params.value ? String(params.value) : '';
-    const color = params && params.data && params.data.provider_color ? String(params.data.provider_color) : 'secondary';
+    const color =
+        params && params.data && params.data.provider_color
+            ? String(params.data.provider_color)
+            : 'secondary';
 
     if (!provider) {
         return React.createElement('span', null, '');
@@ -1141,6 +1194,7 @@ def logs_errors_row_data(errors: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if isinstance(ts, (int, float)):
             try:
                 from datetime import datetime
+
                 dt = datetime.fromtimestamp(float(ts))
                 time_iso = dt.isoformat()
                 time_relative = format_timestamp(time_iso)
@@ -1154,7 +1208,7 @@ def logs_errors_row_data(errors: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
         if provider:
             # Use provider_badge logic to determine color
-            from src.dashboard.components.ui import provider_badge
+
             # provider_badge returns a dbc.Badge, we need to extract the color
             # We'll replicate the color logic here
             key = provider.lower()
@@ -1166,19 +1220,21 @@ def logs_errors_row_data(errors: list[dict[str, Any]]) -> list[dict[str, Any]]:
             }
             provider_color = fixed_colors.get(key, "secondary")
 
-        row_data.append({
-            "seq": error.get("seq"),
-            "ts": ts,
-            "time_formatted": time_formatted,
-            "time_relative": time_relative,
-            "time_iso": time_iso,
-            "provider": provider,
-            "provider_color": provider_color,
-            "model": str(error.get("model") or ""),
-            "error_type": str(error.get("error_type") or ""),
-            "error": str(error.get("error") or ""),
-            "request_id": str(error.get("request_id") or ""),
-        })
+        row_data.append(
+            {
+                "seq": error.get("seq"),
+                "ts": ts,
+                "time_formatted": time_formatted,
+                "time_relative": time_relative,
+                "time_iso": time_iso,
+                "provider": provider,
+                "provider_color": provider_color,
+                "model": str(error.get("model") or ""),
+                "error_type": str(error.get("error_type") or ""),
+                "error": str(error.get("error") or ""),
+                "request_id": str(error.get("request_id") or ""),
+            }
+        )
 
     return row_data
 
@@ -1203,6 +1259,7 @@ def logs_traces_row_data(traces: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if isinstance(ts, (int, float)):
             try:
                 from datetime import datetime
+
                 dt = datetime.fromtimestamp(float(ts))
                 time_iso = dt.isoformat()
                 time_relative = format_timestamp(time_iso)
@@ -1239,31 +1296,33 @@ def logs_traces_row_data(traces: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 return f"{int(value):,}"
             return "0"
 
-        row_data.append({
-            "seq": trace.get("seq"),
-            "ts": ts,
-            "time_formatted": time_formatted,
-            "time_relative": time_relative,
-            "time_iso": time_iso,
-            "provider": provider,
-            "provider_color": provider_color,
-            "model": str(trace.get("model") or ""),
-            "status": str(trace.get("status") or ""),
-            "duration_ms": duration_ms,
-            "duration_formatted": duration_formatted,
-            "input_tokens": format_number(trace.get("input_tokens") or 0),
-            "output_tokens": format_number(trace.get("output_tokens") or 0),
-            "cache_read_tokens": format_number(trace.get("cache_read_tokens") or 0),
-            "cache_creation_tokens": format_number(trace.get("cache_creation_tokens") or 0),
-            "tool_use_count": format_number(trace.get("tool_use_count") or 0),
-            # Keep raw numeric values for sorting
-            "input_tokens_raw": int(trace.get("input_tokens") or 0),
-            "output_tokens_raw": int(trace.get("output_tokens") or 0),
-            "cache_read_tokens_raw": int(trace.get("cache_read_tokens") or 0),
-            "cache_creation_tokens_raw": int(trace.get("cache_creation_tokens") or 0),
-            "request_id": str(trace.get("request_id") or ""),
-            "is_streaming": bool(trace.get("is_streaming") or False),
-        })
+        row_data.append(
+            {
+                "seq": trace.get("seq"),
+                "ts": ts,
+                "time_formatted": time_formatted,
+                "time_relative": time_relative,
+                "time_iso": time_iso,
+                "provider": provider,
+                "provider_color": provider_color,
+                "model": str(trace.get("model") or ""),
+                "status": str(trace.get("status") or ""),
+                "duration_ms": duration_ms,
+                "duration_formatted": duration_formatted,
+                "input_tokens": format_number(trace.get("input_tokens") or 0),
+                "output_tokens": format_number(trace.get("output_tokens") or 0),
+                "cache_read_tokens": format_number(trace.get("cache_read_tokens") or 0),
+                "cache_creation_tokens": format_number(trace.get("cache_creation_tokens") or 0),
+                "tool_use_count": format_number(trace.get("tool_use_count") or 0),
+                # Keep raw numeric values for sorting
+                "input_tokens_raw": int(trace.get("input_tokens") or 0),
+                "output_tokens_raw": int(trace.get("output_tokens") or 0),
+                "cache_read_tokens_raw": int(trace.get("cache_read_tokens") or 0),
+                "cache_creation_tokens_raw": int(trace.get("cache_creation_tokens") or 0),
+                "request_id": str(trace.get("request_id") or ""),
+                "is_streaming": bool(trace.get("is_streaming") or False),
+            }
+        )
 
     return row_data
 
@@ -1542,8 +1601,10 @@ def logs_traces_ag_grid(
 
 
 def get_ag_grid_clientside_callback() -> dict[str, dict[str, str]]:
-    """Return the clientside callback for AG-Grid cell renderers."""
-    # Note: the keys must match the Dash component id(s) of the AgGrid instances.
+    """Return the clientside callback for AG-Grid cell renderers.
+
+    Note: the keys must match the Dash component id(s) of the AgGrid instances.
+    """
     return {
         "vdm-models-grid": {"javascript": CELL_RENDERER_SCRIPTS},
         "vdm-top-models-grid": {"javascript": CELL_RENDERER_SCRIPTS},
