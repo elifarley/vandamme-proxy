@@ -2,7 +2,8 @@ import json
 import logging
 from typing import Any, cast
 
-from src.conversion.tool_name_sanitizer import build_tool_name_maps
+from src.conversion.conversion_metrics import collect_request_metrics, log_request_metrics
+from src.conversion.tool_schema import build_tool_name_maps_if_enabled, collect_all_tool_names
 from src.core.config import config
 from src.core.constants import Constants
 from src.core.logging import ConversationLogger
@@ -31,67 +32,9 @@ def convert_claude_to_openai(
     # Resolve provider and model
     provider_name, openai_model = model_manager.resolve_model(claude_request.model)
 
-    # Log model mapping and calculate metrics if enabled
     if LOG_REQUEST_METRICS:
-        # Determine model category
-        model_category = "unknown"
-        model_lower = claude_request.model.lower()
-        if "haiku" in model_lower:
-            model_category = "small"
-        elif "sonnet" in model_lower:
-            model_category = "medium"
-        elif "opus" in model_lower:
-            model_category = "large"
-        elif claude_request.model.startswith(("gpt-", "o1-")):
-            model_category = "openai-native"
-        elif claude_request.model.startswith(("ep-", "doubao-", "deepseek-")):
-            model_category = "third-party"
-
-        # Count characters for token estimation
-        total_chars = 0
-        message_count = len(claude_request.messages)
-
-        # Count system message characters
-        if claude_request.system:
-            message_count += 1
-            if isinstance(claude_request.system, str):
-                total_chars += len(claude_request.system)
-            elif isinstance(claude_request.system, list):
-                for block in claude_request.system:  # type: ignore[arg-type, assignment]
-                    if hasattr(block, "text"):
-                        total_chars += len(block.text)
-                    elif isinstance(block, dict) and block.get("text"):
-                        total_chars += len(block["text"])
-
-        # Count message content characters
-        for message in claude_request.messages:
-            if isinstance(message.content, str):
-                total_chars += len(message.content)
-            elif isinstance(message.content, list):
-                for block in message.content:  # type: ignore[arg-type, assignment]
-                    if hasattr(block, "text") and block.text:
-                        total_chars += len(block.text)
-                    elif isinstance(block, dict) and block.get("text"):
-                        total_chars += len(block["text"])
-                    elif isinstance(block, dict) and block.get("type") == "tool_use":
-                        # Tool use blocks - count name + input
-                        total_chars += len(block.get("name", ""))
-                        total_chars += len(json.dumps(block.get("input", {})))
-                    elif isinstance(block, dict) and block.get("type") == "tool_result":
-                        # Tool result blocks - count content
-                        content = block.get("content", "")
-                        if isinstance(content, str):
-                            total_chars += len(content)
-                        else:
-                            total_chars += len(json.dumps(content))
-
-        estimated_tokens = total_chars // 4  # Rough estimate: 4 chars per token
-
-        conversation_logger.debug(
-            f"📊 REQUEST METRICS | Provider: {provider_name} | Model: {claude_request.model} "
-            f"({model_category}) | Messages: {message_count} | "
-            f"Chars: {total_chars:,} | Est Tokens: {estimated_tokens:,}"
-        )
+        metrics = collect_request_metrics(claude_request, provider_name=provider_name)
+        log_request_metrics(conversation_logger, metrics)
 
     # Delegate conversion to the existing implementation below.
     # Keeping a single conversion path avoids divergent behaviors.
@@ -107,79 +50,19 @@ def _convert_claude_to_openai_impl(
     tool result sequencing, and provider metadata fields.
     """
 
-    # Log high-level conversion metadata
-    if LOG_REQUEST_METRICS:
-        model_category = "unknown"
-        model_lower = claude_request.model.lower()
-        if "haiku" in model_lower:
-            model_category = "small"
-        elif "sonnet" in model_lower:
-            model_category = "medium"
-        elif "opus" in model_lower:
-            model_category = "large"
-        elif claude_request.model.startswith(("gpt-", "o1-")):
-            model_category = "openai-native"
-        elif claude_request.model.startswith(("ep-", "doubao-", "deepseek-")):
-            model_category = "third-party"
-
-        total_chars = 0
-        message_count = len(claude_request.messages)
-        if claude_request.system:
-            message_count += 1
-            if isinstance(claude_request.system, str):
-                total_chars += len(claude_request.system)
-            elif isinstance(claude_request.system, list):
-                for block in claude_request.system:  # type: ignore[arg-type, assignment]
-                    if hasattr(block, "text"):
-                        total_chars += len(block.text)
-                    elif isinstance(block, dict) and block.get("text"):
-                        total_chars += len(block["text"])
-
-        for msg in claude_request.messages:
-            if msg.content is None:
-                continue
-            if isinstance(msg.content, str):
-                total_chars += len(msg.content)
-            elif isinstance(msg.content, list):
-                for block in msg.content:  # type: ignore[arg-type, assignment]
-                    if hasattr(block, "text") and block.text is not None:
-                        total_chars += len(block.text)
-                    elif isinstance(block, dict) and block.get("text"):
-                        total_chars += len(block["text"])
-
-        estimated_tokens = max(1, total_chars // 4)
-        tool_count = len(claude_request.tools) if claude_request.tools else 0
-        conversation_logger.debug(
-            f"\u001f\u001f CONVERT | Category: {model_category} | Messages: {message_count} | "
-            f"Est. Tokens: {estimated_tokens:,} | Tools: {tool_count}"
-        )
-
     provider_name, openai_model = model_manager.resolve_model(claude_request.model)
 
+    if LOG_REQUEST_METRICS:
+        # Keep a single implementation of request metrics to avoid drift.
+        metrics = collect_request_metrics(claude_request, provider_name=provider_name)
+        log_request_metrics(conversation_logger, metrics)
+
     provider_config = config.provider_manager.get_provider_config(provider_name)
-    tool_name_map: dict[str, str] = {}
-    tool_name_map_inverse: dict[str, str] = {}
-    if provider_config and provider_config.tool_name_sanitization:
-        all_tool_names: list[str] = []
 
-        if claude_request.tools:
-            all_tool_names.extend([t.name for t in claude_request.tools if t.name])
-
-        if claude_request.tool_choice and claude_request.tool_choice.get("type") == "tool":
-            choice_name = claude_request.tool_choice.get("name")
-            if isinstance(choice_name, str) and choice_name:
-                all_tool_names.append(choice_name)
-
-        for msg in claude_request.messages:
-            if msg.role != Constants.ROLE_ASSISTANT or not isinstance(msg.content, list):
-                continue
-            for content_block in msg.content:
-                if content_block.type == Constants.CONTENT_TOOL_USE:
-                    tool_block = cast(ClaudeContentBlockToolUse, content_block)
-                    if tool_block.name:
-                        all_tool_names.append(tool_block.name)
-
-        tool_name_map, tool_name_map_inverse = build_tool_name_maps(all_tool_names)
+    tool_name_map, tool_name_map_inverse = build_tool_name_maps_if_enabled(
+        enabled=bool(provider_config and provider_config.tool_name_sanitization),
+        tool_names=collect_all_tool_names(claude_request),
+    )
 
     openai_messages = []
 

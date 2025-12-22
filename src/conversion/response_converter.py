@@ -6,6 +6,7 @@ from typing import Any
 
 from fastapi import HTTPException, Request
 
+from src.conversion.errors import ConversionError, SSEParseError
 from src.conversion.tool_call_delta import (
     ToolCallArgsAssembler,
     ToolCallIdAllocator,
@@ -147,8 +148,10 @@ async def convert_openai_streaming_to_claude(
                     if not choices:
                         continue
                 except json.JSONDecodeError as e:
-                    logger.warning(f"Failed to parse chunk: {chunk_data}, error: {e}")
-                    continue
+                    raise SSEParseError(
+                        "Failed to parse OpenAI streaming chunk as JSON",
+                        context={"chunk_data": chunk_data, "json_error": str(e)},
+                    ) from e
 
                 choice = choices[0]
                 delta = choice.get("delta", {})
@@ -227,12 +230,15 @@ async def convert_openai_streaming_to_claude(
                         final_stop_reason = Constants.STOP_END_TURN
                     break
 
-    except Exception as e:
-        # Handle any streaming errors gracefully
-        logger.error(f"Streaming error: {e}")
-        import traceback
+    except ConversionError as e:
+        logger.error("Streaming conversion error: %s", e)
+        error_event = {"type": "error", "error": {"type": e.error_type, "message": e.message}}
+        yield f"event: error\ndata: {json.dumps(error_event, ensure_ascii=False)}\n\n"
+        return
 
-        logger.error(traceback.format_exc())
+    except Exception as e:
+        # Unexpected streaming errors: keep client-visible shape stable.
+        logger.exception("Streaming error")
         error_event = {
             "type": "error",
             "error": {"type": "api_error", "message": f"Streaming error: {str(e)}"},
@@ -346,8 +352,10 @@ async def convert_openai_streaming_to_claude_with_cancellation(
                             f"Tokens so far: {input_tokens:,}→{output_tokens:,}"
                         )
                 except json.JSONDecodeError as e:
-                    logger.warning(f"Failed to parse chunk: {chunk_data}, error: {e}")
-                    continue
+                    raise SSEParseError(
+                        "Failed to parse OpenAI streaming chunk as JSON",
+                        context={"chunk_data": chunk_data, "json_error": str(e)},
+                    ) from e
 
                 choice = choices[0]
                 delta = choice.get("delta", {})
@@ -426,7 +434,7 @@ async def convert_openai_streaming_to_claude_with_cancellation(
                         final_stop_reason = Constants.STOP_END_TURN
 
     except HTTPException as e:
-        # Handle cancellation
+        # Preserve existing cancellation behavior.
         if e.status_code == 499:
             if LOG_REQUEST_METRICS and metrics:
                 metrics.error = "Request cancelled by client"
@@ -434,27 +442,31 @@ async def convert_openai_streaming_to_claude_with_cancellation(
             logger.info(f"Request {request_id} was cancelled")
             error_event = {
                 "type": "error",
-                "error": {
-                    "type": "cancelled",
-                    "message": "Request was cancelled by client",
-                },
+                "error": {"type": "cancelled", "message": "Request was cancelled by client"},
             }
             yield f"event: error\ndata: {json.dumps(error_event, ensure_ascii=False)}\n\n"
             return
-        else:
-            if LOG_REQUEST_METRICS and metrics:
-                metrics.error = f"HTTP exception: {e.detail}"
-                metrics.error_type = "http_error"
-            raise
+
+        if LOG_REQUEST_METRICS and metrics:
+            metrics.error = f"HTTP exception: {e.detail}"
+            metrics.error_type = "http_error"
+        raise
+
+    except ConversionError as e:
+        if LOG_REQUEST_METRICS and metrics:
+            metrics.error = e.message
+            metrics.error_type = e.error_type
+        logger.error("Streaming conversion error: %s", e)
+        error_event = {"type": "error", "error": {"type": e.error_type, "message": e.message}}
+        yield f"event: error\ndata: {json.dumps(error_event, ensure_ascii=False)}\n\n"
+        return
+
     except Exception as e:
-        # Handle any streaming errors gracefully
+        # Unexpected streaming errors: keep client-visible shape stable.
         if LOG_REQUEST_METRICS and metrics:
             metrics.error = f"Streaming error: {str(e)}"
             metrics.error_type = "streaming_error"
-        logger.error(f"Streaming error: {e}")
-        import traceback
-
-        logger.error(traceback.format_exc())
+        logger.exception("Streaming error")
         error_event = {
             "type": "error",
             "error": {"type": "api_error", "message": f"Streaming error: {str(e)}"},
