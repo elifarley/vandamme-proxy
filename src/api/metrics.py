@@ -7,12 +7,42 @@ from fastapi.responses import PlainTextResponse
 from src.api.endpoints import validate_api_key
 from src.api.utils.yaml_formatter import create_hierarchical_structure, format_running_totals_yaml
 from src.core.config import config
+from src.core.logging.configuration import get_logging_mode
 from src.core.metrics.runtime import get_request_tracker
 
 LOG_REQUEST_METRICS = config.log_request_metrics
 logger = logging.getLogger(__name__)
 
 metrics_router = APIRouter()
+
+
+@metrics_router.get("/logs")
+async def get_logs(
+    http_request: Request,
+    limit_errors: int = Query(100, ge=1, le=1000),
+    limit_traces: int = Query(200, ge=1, le=2000),
+    _: None = Depends(validate_api_key),
+) -> dict[str, object]:
+    """Get recent errors and request traces for the dashboard.
+
+    This is intentionally process-local (in-memory ring buffers).
+    """
+
+    tracker = get_request_tracker(http_request)
+    logging_mode = get_logging_mode()
+
+    errors = await tracker.get_recent_errors(limit=limit_errors)
+    traces = await tracker.get_recent_traces(limit=limit_traces)
+
+    return {
+        "systemd": {
+            "requested": logging_mode["requested_systemd"],
+            "effective": logging_mode["effective_systemd"],
+            "handler": logging_mode["effective_handler"],
+        },
+        "errors": errors,
+        "traces": traces,
+    }
 
 
 @metrics_router.get("/running-totals")

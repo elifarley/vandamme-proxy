@@ -22,6 +22,7 @@ from src.dashboard.data_sources import (
     fetch_aliases,
     fetch_all_providers,
     fetch_health,
+    fetch_logs,
     fetch_models,
     fetch_running_totals,
     fetch_test_connection,
@@ -36,6 +37,7 @@ from src.dashboard.pages import (
     compute_metrics_views,
     health_banner,
     kpis_grid,
+    logs_layout,
     metrics_disabled_callout,
     metrics_layout,
     model_breakdown_table,
@@ -96,6 +98,7 @@ def create_dashboard(*, cfg: DashboardConfigProtocol) -> dash.Dash:
                                 dbc.NavLink(
                                     "Token Counter", href="/dashboard/token-counter", active="exact"
                                 ),
+                                dbc.NavLink("Logs", href="/dashboard/logs", active="exact"),
                             ],
                             pills=True,
                             className="me-3",
@@ -139,6 +142,8 @@ def create_dashboard(*, cfg: DashboardConfigProtocol) -> dash.Dash:
             from src.dashboard.pages import token_counter_layout
 
             return token_counter_layout()
+        if pathname in ("/dashboard/logs", "/dashboard/logs/"):
+            return logs_layout()
         return dbc.Container(
             dbc.Alert(
                 [html.Div("Not found"), html.Div(dcc.Link("Back", href="/dashboard/"))],
@@ -163,6 +168,20 @@ def create_dashboard(*, cfg: DashboardConfigProtocol) -> dash.Dash:
         "function(pathname){return pathname;}",
         Output("vdm-models-grid", "id"),
         Input("vdm-url", "pathname"),
+        prevent_initial_call=True,
+    )
+
+    # No-op callbacks for logs grids (prevents grid recreation on updates)
+    app.clientside_callback(
+        "function(){return arguments[0];}",
+        Output("vdm-logs-errors-grid", "id"),
+        Input("vdm-logs-poll", "n_intervals"),
+        prevent_initial_call=True,
+    )
+    app.clientside_callback(
+        "function(){return arguments[0];}",
+        Output("vdm-logs-traces-grid", "id"),
+        Input("vdm-logs-poll", "n_intervals"),
         prevent_initial_call=True,
     )
 
@@ -950,6 +969,58 @@ def create_dashboard(*, cfg: DashboardConfigProtocol) -> dash.Dash:
 
         except Exception as e:
             return dbc.Alert(f"Failed to load aliases: {e}", color="danger")
+
+    # -------------------- Logs callbacks --------------------
+
+    @app.callback(
+        Output("vdm-logs-disabled-callout", "children"),
+        Output("vdm-logs-errors-grid", "rowData"),
+        Output("vdm-logs-traces-grid", "rowData"),
+        Input("vdm-logs-poll", "n_intervals"),
+        prevent_initial_call=False,
+    )
+    def refresh_logs(_n: int) -> tuple[Any, list[dict[str, Any]], list[dict[str, Any]]]:
+        """Refresh logs and update grid rowData only (avoids grid recreation/blinking)."""
+        try:
+            payload = _run(fetch_logs(cfg=cfg))
+            systemd = payload.get("systemd")
+            if not isinstance(systemd, dict):
+                systemd = {}
+
+            effective = bool(systemd.get("effective"))
+            handler = str(systemd.get("handler") or "")
+
+            if not effective:
+                msg = (
+                    "Logs are disabled. Start the server with --systemd "
+                    "(and ensure /dev/log is available)."
+                )
+                disabled = dbc.Alert(msg, color="secondary")
+                return disabled, [], []
+
+            errors = payload.get("errors")
+            if not isinstance(errors, list):
+                errors = []
+
+            traces = payload.get("traces")
+            if not isinstance(traces, list):
+                traces = []
+
+            disabled = dbc.Alert(f"systemd active (handler={handler})", color="dark")
+
+            # Transform data for grids (returns only rowData, not full grid components)
+            from src.dashboard.components.ag_grid import logs_errors_row_data, logs_traces_row_data
+
+            errors_rowdata = logs_errors_row_data(errors)
+            traces_rowdata = logs_traces_row_data(traces)
+
+            return disabled, errors_rowdata, traces_rowdata
+        except Exception as e:  # noqa: BLE001
+            return (
+                dbc.Alert(f"Failed to load logs: {e}", color="danger"),
+                [],
+                [],
+            )
 
     # -------------------- Token Counter callbacks --------------------
 

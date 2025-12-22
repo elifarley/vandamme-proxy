@@ -67,6 +67,24 @@ def _resolve_formatter() -> logging.Formatter:
     )
 
 
+LOGGING_MODE_REQUESTED_SYSTEMD: bool = False
+LOGGING_MODE_EFFECTIVE_HANDLER_NAME: str | None = None
+
+
+def get_logging_mode() -> dict[str, object]:
+    """Return the effective logging mode for UI/diagnostics.
+
+    We expose this so the dashboard can decide whether to enable features that
+    depend on journald/syslog integration.
+    """
+
+    return {
+        "requested_systemd": LOGGING_MODE_REQUESTED_SYSTEMD,
+        "effective_handler": LOGGING_MODE_EFFECTIVE_HANDLER_NAME,
+        "effective_systemd": LOGGING_MODE_EFFECTIVE_HANDLER_NAME == "syslog",
+    }
+
+
 def configure_root_logging(*, use_systemd: bool = False) -> None:
     """Configure root and uvicorn loggers.
 
@@ -91,6 +109,11 @@ def configure_root_logging(*, use_systemd: bool = False) -> None:
 
     uvicorn_loggers = ("uvicorn", "uvicorn.access", "uvicorn.error", "uvicorn.server")
 
+    global LOGGING_MODE_REQUESTED_SYSTEMD
+    global LOGGING_MODE_EFFECTIVE_HANDLER_NAME
+
+    LOGGING_MODE_REQUESTED_SYSTEMD = use_systemd
+
     if use_systemd:
         handler = _build_syslog_handler()
         if not handler:
@@ -98,6 +121,8 @@ def configure_root_logging(*, use_systemd: bool = False) -> None:
             handler = _build_console_handler(_resolve_formatter())
     else:
         handler = _build_console_handler(_resolve_formatter())
+
+    LOGGING_MODE_EFFECTIVE_HANDLER_NAME = handler.get_name()
 
     # Root logger
     root_logger = logging.getLogger()

@@ -5,6 +5,43 @@ from src.core.metrics import RequestMetrics, create_request_tracker
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+async def test_recent_traces_and_errors_buffers_capture_completed_requests():
+    request_tracker = create_request_tracker(summary_interval=999999)
+
+    await request_tracker.start_request("r1", claude_model="openai:gpt-4o", is_streaming=False)
+    await request_tracker.end_request(
+        "r1",
+        provider="openai",
+        openai_model="gpt-4o",
+        input_tokens=10,
+        output_tokens=20,
+    )
+
+    await request_tracker.start_request("r2", claude_model="openai:gpt-4o", is_streaming=True)
+    await request_tracker.end_request(
+        "r2",
+        provider="openai",
+        openai_model="gpt-4o",
+        input_tokens=1,
+        output_tokens=2,
+        error="boom",
+        error_type="UpstreamError",
+    )
+
+    traces = await request_tracker.get_recent_traces(limit=10)
+    errors = await request_tracker.get_recent_errors(limit=10)
+
+    assert len(traces) >= 2
+    assert traces[0]["request_id"] == "r2"
+    assert traces[0]["status"] == "error"
+
+    assert len(errors) == 1
+    assert errors[0]["request_id"] == "r2"
+    assert errors[0]["error_type"] == "UpstreamError"
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 async def test_running_totals_hierarchical_includes_rollup_models_and_streaming_split():
     """Ensure running totals output is unambiguous and schema-consistent.
 

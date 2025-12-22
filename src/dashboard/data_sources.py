@@ -166,6 +166,35 @@ async def fetch_aliases(*, cfg: DashboardConfigProtocol) -> dict[str, Any]:
     return data
 
 
+async def fetch_logs(
+    *,
+    cfg: DashboardConfigProtocol,
+    limit_errors: int = 100,
+    limit_traces: int = 200,
+) -> dict[str, Any]:
+    url = f"{cfg.api_base_url}/metrics/logs"
+    params: dict[str, int] = {
+        "limit_errors": limit_errors,
+        "limit_traces": limit_traces,
+    }
+
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.get(url, params=params)
+
+    if resp.status_code != 200:
+        raise DashboardDataError(f"Failed to fetch logs from {url}: HTTP {resp.status_code}")
+
+    try:
+        data = resp.json()
+    except Exception as e:  # noqa: BLE001
+        _log_and_raise("Failed to parse JSON", url, e)
+
+    if not isinstance(data, dict):
+        raise DashboardDataError(f"Unexpected /metrics/logs JSON shape from {url}: {type(data)}")
+
+    return data
+
+
 async def fetch_top_models(
     *,
     cfg: DashboardConfigProtocol,

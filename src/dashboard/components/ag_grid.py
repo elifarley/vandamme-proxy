@@ -7,7 +7,7 @@ from typing import Any
 import dash_ag_grid as dag  # type: ignore[import-untyped]
 
 from src.core.alias_config import AliasConfigLoader
-from src.dashboard.components.ui import format_model_created_timestamp, format_timestamp
+from src.dashboard.components.ui import format_model_created_timestamp, format_timestamp, provider_badge
 
 # Module-level cache for provider configs
 _alias_config_loader = None
@@ -843,6 +843,103 @@ window.vdmDateComparator = function(dateA, dateB) {
 };
 
 
+# Render provider name as a Bootstrap badge
+window.vdmProviderBadgeRenderer = function(params) {
+    const provider = params && params.value ? String(params.value) : '';
+    const color = params && params.data && params.data.provider_color ? String(params.data.provider_color) : 'secondary';
+
+    if (!provider) {
+        return React.createElement('span', null, '');
+    }
+
+    // Map color names to Bootstrap classes
+    const colorMap = {
+        'primary': 'bg-primary',
+        'success': 'bg-success',
+        'info': 'bg-info',
+        'warning': 'bg-warning',
+        'danger': 'bg-danger',
+        'secondary': 'bg-secondary'
+    };
+
+    const badgeClass = colorMap[color] || 'bg-secondary';
+
+    return React.createElement(
+        'span',
+        {
+            className: `badge ${badgeClass} rounded-pill me-2`,
+            style: { fontSize: '0.8em' }
+        },
+        provider
+    );
+};
+
+// Register provider badge renderer
+window.dashAgGridFunctions.vdmProviderBadgeRenderer = window.vdmProviderBadgeRenderer;
+window.dashAgGridComponentFunctions.vdmProviderBadgeRenderer = window.vdmProviderBadgeRenderer;
+window.__vdmProviderBadgeRenderer = window.vdmProviderBadgeRenderer;
+window.dashAgGridFunctions.vdmProviderBadgeRenderer.suppressHtmlEscaping = true;
+window.dashAgGridComponentFunctions.vdmProviderBadgeRenderer.suppressHtmlEscaping = true;
+window.__vdmProviderBadgeRenderer.suppressHtmlEscaping = true;
+
+// Render status as a badge
+window.vdmStatusBadgeRenderer = function(params) {
+    const status = params && params.value ? String(params.value).toLowerCase() : '';
+    const color = status === 'error' ? 'bg-danger' : 'bg-success';
+
+    return React.createElement(
+        'span',
+        {
+            className: `badge ${color} rounded-pill`,
+            style: { fontSize: '0.8em' }
+        },
+        status || 'unknown'
+    );
+};
+
+// Register status badge renderer
+window.dashAgGridFunctions.vdmStatusBadgeRenderer = window.vdmStatusBadgeRenderer;
+window.dashAgGridComponentFunctions.vdmStatusBadgeRenderer = window.vdmStatusBadgeRenderer;
+window.__vdmStatusBadgeRenderer = window.vdmStatusBadgeRenderer;
+window.dashAgGridFunctions.vdmStatusBadgeRenderer.suppressHtmlEscaping = true;
+window.dashAgGridComponentFunctions.vdmStatusBadgeRenderer.suppressHtmlEscaping = true;
+window.__vdmStatusBadgeRenderer.suppressHtmlEscaping = true;
+
+// Render formatted numbers with thousand separators
+window.vdmFormattedNumberRenderer = function(params) {
+    const value = params && params.value ? parseInt(params.value, 10) : 0;
+
+    // Format with thousand separators
+    const formatted = value.toLocaleString();
+
+    return React.createElement(
+        'span',
+        {
+            style: { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas' }
+        },
+        formatted
+    );
+};
+
+// Register formatted number renderer
+window.dashAgGridFunctions.vdmFormattedNumberRenderer = window.vdmFormattedNumberRenderer;
+window.dashAgGridComponentFunctions.vdmFormattedNumberRenderer = window.vdmFormattedNumberRenderer;
+window.__vdmFormattedNumberRenderer = window.vdmFormattedNumberRenderer;
+window.dashAgGridFunctions.vdmFormattedNumberRenderer.suppressHtmlEscaping = true;
+window.dashAgGridComponentFunctions.vdmFormattedNumberRenderer.suppressHtmlEscaping = true;
+window.__vdmFormattedNumberRenderer.suppressHtmlEscaping = true;
+
+// Numeric comparator for proper sorting
+window.vdmNumericComparator = function(valueA, valueB) {
+    const a = parseFloat(valueA) || 0;
+    const b = parseFloat(valueB) || 0;
+    return a - b;
+};
+
+// Register numeric comparator
+window.dashAgGridFunctions.vdmNumericComparator = window.vdmNumericComparator;
+window.dashAgGridComponentFunctions.vdmNumericComparator = window.vdmNumericComparator;
+
 // Copy selected model IDs to clipboard (newline-separated)
 window.vdmCopySelectedModelIds = async function(gridId) {
     console.debug('[vdm][copy] invoking vdmCopySelectedModelIds', {gridId});
@@ -1021,10 +1118,435 @@ window.escapeHtml = function(text) {
 """
 
 
+# --- Logs AG Grid Functions ---
+
+
+def logs_errors_row_data(errors: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Build AG-Grid rowData for the logs errors page.
+
+    Transforms error log entries into grid-friendly format with provider badge colors.
+    """
+    row_data: list[dict[str, Any]] = []
+
+    for error in errors:
+        if not isinstance(error, dict):
+            continue
+
+        # Convert timestamp
+        ts = error.get("ts")
+        time_iso = None
+        time_relative = None
+        time_formatted = ""
+
+        if isinstance(ts, (int, float)):
+            try:
+                from datetime import datetime
+                dt = datetime.fromtimestamp(float(ts))
+                time_iso = dt.isoformat()
+                time_relative = format_timestamp(time_iso)
+                time_formatted = dt.strftime("%H:%M:%S")
+            except Exception:
+                time_formatted = ""
+
+        # Get provider and compute badge color
+        provider = str(error.get("provider") or "")
+        provider_color = "secondary"  # default
+
+        if provider:
+            # Use provider_badge logic to determine color
+            from src.dashboard.components.ui import provider_badge
+            # provider_badge returns a dbc.Badge, we need to extract the color
+            # We'll replicate the color logic here
+            key = provider.lower()
+            fixed_colors = {
+                "openai": "primary",
+                "openrouter": "info",
+                "anthropic": "danger",
+                "poe": "success",
+            }
+            provider_color = fixed_colors.get(key, "secondary")
+
+        row_data.append({
+            "seq": error.get("seq"),
+            "ts": ts,
+            "time_formatted": time_formatted,
+            "time_relative": time_relative,
+            "time_iso": time_iso,
+            "provider": provider,
+            "provider_color": provider_color,
+            "model": str(error.get("model") or ""),
+            "error_type": str(error.get("error_type") or ""),
+            "error": str(error.get("error") or ""),
+            "request_id": str(error.get("request_id") or ""),
+        })
+
+    return row_data
+
+
+def logs_traces_row_data(traces: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Build AG-Grid rowData for the logs traces page.
+
+    Transforms trace log entries into grid-friendly format with provider badge colors.
+    """
+    row_data: list[dict[str, Any]] = []
+
+    for trace in traces:
+        if not isinstance(trace, dict):
+            continue
+
+        # Convert timestamp
+        ts = trace.get("ts")
+        time_iso = None
+        time_relative = None
+        time_formatted = ""
+
+        if isinstance(ts, (int, float)):
+            try:
+                from datetime import datetime
+                dt = datetime.fromtimestamp(float(ts))
+                time_iso = dt.isoformat()
+                time_relative = format_timestamp(time_iso)
+                time_formatted = dt.strftime("%H:%M:%S")
+            except Exception:
+                time_formatted = ""
+
+        # Get provider and compute badge color
+        provider = str(trace.get("provider") or "")
+        provider_color = "secondary"  # default
+
+        if provider:
+            # Use provider_badge logic to determine color
+            key = provider.lower()
+            fixed_colors = {
+                "openai": "primary",
+                "openrouter": "info",
+                "anthropic": "danger",
+                "poe": "success",
+            }
+            provider_color = fixed_colors.get(key, "secondary")
+
+        # Format duration as fractional seconds
+        duration_ms = trace.get("duration_ms", 0)
+        if isinstance(duration_ms, (int, float)):
+            duration_s = float(duration_ms) / 1000
+            duration_formatted = f"{duration_s:.2f}s"
+        else:
+            duration_formatted = "0.00s"
+
+        # Format numeric values with thousand separators
+        def format_number(value: int | float) -> str:
+            if isinstance(value, (int, float)):
+                return f"{int(value):,}"
+            return "0"
+
+        row_data.append({
+            "seq": trace.get("seq"),
+            "ts": ts,
+            "time_formatted": time_formatted,
+            "time_relative": time_relative,
+            "time_iso": time_iso,
+            "provider": provider,
+            "provider_color": provider_color,
+            "model": str(trace.get("model") or ""),
+            "status": str(trace.get("status") or ""),
+            "duration_ms": duration_ms,
+            "duration_formatted": duration_formatted,
+            "input_tokens": format_number(trace.get("input_tokens") or 0),
+            "output_tokens": format_number(trace.get("output_tokens") or 0),
+            "cache_read_tokens": format_number(trace.get("cache_read_tokens") or 0),
+            "cache_creation_tokens": format_number(trace.get("cache_creation_tokens") or 0),
+            "tool_use_count": format_number(trace.get("tool_use_count") or 0),
+            # Keep raw numeric values for sorting
+            "input_tokens_raw": int(trace.get("input_tokens") or 0),
+            "output_tokens_raw": int(trace.get("output_tokens") or 0),
+            "cache_read_tokens_raw": int(trace.get("cache_read_tokens") or 0),
+            "cache_creation_tokens_raw": int(trace.get("cache_creation_tokens") or 0),
+            "request_id": str(trace.get("request_id") or ""),
+            "is_streaming": bool(trace.get("is_streaming") or False),
+        })
+
+    return row_data
+
+
+def logs_errors_ag_grid(
+    errors: list[dict[str, Any]],
+    grid_id: str = "vdm-logs-errors-grid",
+) -> dag.AgGrid:
+    """Create an AG-Grid table for error logs with dark theme and provider badges.
+
+    Args:
+        errors: List of error log dictionaries
+        grid_id: Unique ID for the grid component
+
+    Returns:
+        AG-Grid component with error logs data
+    """
+    row_data = logs_errors_row_data(errors)
+
+    # Define column definitions for errors
+    column_defs = [
+        {
+            "headerName": "Time",
+            "field": "time_formatted",
+            "sortable": True,
+            "filter": True,
+            "resizable": True,
+            "width": 100,
+            "suppressSizeToFit": True,
+            "tooltipField": "time_relative",
+            "sort": "desc",  # Default sort by time (newest first)
+        },
+        {
+            "headerName": "Provider",
+            "field": "provider",
+            "sortable": True,
+            "filter": True,
+            "resizable": True,
+            "width": 130,
+            "suppressSizeToFit": True,
+            "cellRenderer": "vdmProviderBadgeRenderer",
+        },
+        {
+            "headerName": "Model",
+            "field": "model",
+            "sortable": True,
+            "filter": True,
+            "resizable": True,
+            "flex": 1,
+            "minWidth": 200,
+            "cellStyle": {"fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas"},
+        },
+        {
+            "headerName": "Error Type",
+            "field": "error_type",
+            "sortable": True,
+            "filter": True,
+            "resizable": True,
+            "width": 160,
+            "suppressSizeToFit": True,
+        },
+        {
+            "headerName": "Error Message",
+            "field": "error",
+            "sortable": True,
+            "filter": True,
+            "resizable": True,
+            "flex": 3,
+            "minWidth": 300,
+            "cellStyle": {"fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas"},
+            "tooltipField": "error",
+        },
+    ]
+
+    # Custom CSS for dark theme
+    custom_css = {
+        "height": "70vh",
+        "width": "100%",
+        "minHeight": "500px",
+    }
+
+    return dag.AgGrid(
+        id=grid_id,
+        className="ag-theme-alpine-dark",
+        style=custom_css,
+        columnDefs=column_defs,
+        rowData=row_data,
+        defaultColDef={
+            "sortable": True,
+            "resizable": True,
+            "filter": True,
+        },
+        dashGridOptions={
+            "animateRows": True,
+            "rowSelection": {"mode": "multiRow"},
+            "suppressDragLeaveHidesColumns": True,
+            "pagination": True,
+            "paginationPageSize": 50,
+            "paginationPageSizeSelector": [25, 50, 100, 200],
+            "domLayout": "normal",
+            "suppressContextMenu": False,
+            "enableCellTextSelection": True,
+            "ensureDomOrder": True,
+            "localeText": {
+                "page": "Page",
+                "to": "to",
+                "of": "of",
+                "first": "First",
+                "last": "Last",
+                "next": "Next",
+                "previous": "Previous",
+                "loadingOoo": "Loading...",
+                "noRowsToShow": "No errors found",
+                "filterOoo": "Filter...",
+            },
+        },
+        dangerously_allow_code=True,
+    )
+
+
+def logs_traces_ag_grid(
+    traces: list[dict[str, Any]],
+    grid_id: str = "vdm-logs-traces-grid",
+) -> dag.AgGrid:
+    """Create an AG-Grid table for trace logs with dark theme and provider badges.
+
+    Args:
+        traces: List of trace log dictionaries
+        grid_id: Unique ID for the grid component
+
+    Returns:
+        AG-Grid component with trace logs data
+    """
+    row_data = logs_traces_row_data(traces)
+
+    # Define column definitions for traces
+    column_defs = [
+        {
+            "headerName": "Time",
+            "field": "time_formatted",
+            "sortable": True,
+            "filter": True,
+            "resizable": True,
+            "width": 100,
+            "suppressSizeToFit": True,
+            "tooltipField": "time_relative",
+            "sort": "desc",  # Default sort by time (newest first)
+        },
+        {
+            "headerName": "Provider",
+            "field": "provider",
+            "sortable": True,
+            "filter": True,
+            "resizable": True,
+            "width": 130,
+            "suppressSizeToFit": True,
+            "cellRenderer": "vdmProviderBadgeRenderer",
+        },
+        {
+            "headerName": "Model",
+            "field": "model",
+            "sortable": True,
+            "filter": True,
+            "resizable": True,
+            "flex": 1,
+            "minWidth": 200,
+            "cellStyle": {"fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas"},
+        },
+        {
+            "headerName": "Status",
+            "field": "status",
+            "sortable": True,
+            "filter": True,
+            "resizable": True,
+            "width": 100,
+            "suppressSizeToFit": True,
+            "cellRenderer": "vdmStatusBadgeRenderer",
+        },
+        {
+            "headerName": "Duration",
+            "field": "duration_formatted",
+            "sortable": True,
+            "filter": True,
+            "resizable": True,
+            "width": 100,
+            "suppressSizeToFit": True,
+            "tooltipField": "duration_ms",
+            "sortComparator": {"function": "vdmNumericComparator"},
+        },
+        {
+            "headerName": "In Tokens",
+            "field": "input_tokens_raw",
+            "sortable": True,
+            "filter": True,
+            "resizable": True,
+            "width": 110,
+            "suppressSizeToFit": True,
+            "cellRenderer": "vdmFormattedNumberRenderer",
+        },
+        {
+            "headerName": "Out Tokens",
+            "field": "output_tokens_raw",
+            "sortable": True,
+            "filter": True,
+            "resizable": True,
+            "width": 110,
+            "suppressSizeToFit": True,
+            "cellRenderer": "vdmFormattedNumberRenderer",
+        },
+        {
+            "headerName": "Cache Read",
+            "field": "cache_read_tokens_raw",
+            "sortable": True,
+            "filter": True,
+            "resizable": True,
+            "width": 110,
+            "suppressSizeToFit": True,
+            "cellRenderer": "vdmFormattedNumberRenderer",
+        },
+        {
+            "headerName": "Cache Create",
+            "field": "cache_creation_tokens_raw",
+            "sortable": True,
+            "filter": True,
+            "resizable": True,
+            "width": 110,
+            "suppressSizeToFit": True,
+            "cellRenderer": "vdmFormattedNumberRenderer",
+        },
+    ]
+
+    # Custom CSS for dark theme
+    custom_css = {
+        "height": "70vh",
+        "width": "100%",
+        "minHeight": "500px",
+    }
+
+    return dag.AgGrid(
+        id=grid_id,
+        className="ag-theme-alpine-dark",
+        style=custom_css,
+        columnDefs=column_defs,
+        rowData=row_data,
+        defaultColDef={
+            "sortable": True,
+            "resizable": True,
+            "filter": True,
+        },
+        dashGridOptions={
+            "animateRows": True,
+            "rowSelection": {"mode": "multiRow"},
+            "suppressDragLeaveHidesColumns": True,
+            "pagination": True,
+            "paginationPageSize": 50,
+            "paginationPageSizeSelector": [25, 50, 100, 200],
+            "domLayout": "normal",
+            "suppressContextMenu": False,
+            "enableCellTextSelection": True,
+            "ensureDomOrder": True,
+            "localeText": {
+                "page": "Page",
+                "to": "to",
+                "of": "of",
+                "first": "First",
+                "last": "Last",
+                "next": "Next",
+                "previous": "Previous",
+                "loadingOoo": "Loading...",
+                "noRowsToShow": "No traces found",
+                "filterOoo": "Filter...",
+            },
+        },
+        dangerously_allow_code=True,
+    )
+
+
 def get_ag_grid_clientside_callback() -> dict[str, dict[str, str]]:
     """Return the clientside callback for AG-Grid cell renderers."""
     # Note: the keys must match the Dash component id(s) of the AgGrid instances.
     return {
         "vdm-models-grid": {"javascript": CELL_RENDERER_SCRIPTS},
         "vdm-top-models-grid": {"javascript": CELL_RENDERER_SCRIPTS},
+        "vdm-logs-errors-grid": {"javascript": CELL_RENDERER_SCRIPTS},
+        "vdm-logs-traces-grid": {"javascript": CELL_RENDERER_SCRIPTS},
     }

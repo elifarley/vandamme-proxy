@@ -74,6 +74,30 @@ async def test_models_endpoint():
 
 @pytest.mark.integration
 @pytest.mark.asyncio
+async def test_logs_endpoint():
+    """Test GET /metrics/logs endpoint."""
+    async with httpx.AsyncClient() as client:
+        response = await client.get(f"{BASE_URL}/metrics/logs")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert isinstance(data, dict)
+        assert "systemd" in data
+        assert "errors" in data
+        assert "traces" in data
+
+        systemd = data["systemd"]
+        assert isinstance(systemd, dict)
+        assert "requested" in systemd
+        assert "effective" in systemd
+        assert "handler" in systemd
+
+        assert isinstance(data["errors"], list)
+        assert isinstance(data["traces"], list)
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
 async def test_running_totals_endpoint():
     """Test GET /metrics/running-totals endpoint."""
     async with httpx.AsyncClient() as client:

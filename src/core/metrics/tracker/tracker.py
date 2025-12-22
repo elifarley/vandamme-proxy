@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections import deque
 from typing import Any, cast
 
 from src.core.logging import ConversationLogger
@@ -49,6 +50,16 @@ class RequestTracker:
 
         self.request_count = 0
         self.total_completed_requests = 0
+
+        # Dashboard-facing observability buffers (process-local).
+        self._recent_errors: deque[dict[str, object]] = deque(maxlen=100)
+        self._recent_traces: deque[dict[str, object]] = deque(maxlen=200)
+
+        self._trace_seq: int = 0
+        self._error_seq: int = 0
+
+        self._last_error_seen_seq: int = 0
+        self._last_trace_seen_seq: int = 0
 
         # last_accessed timestamps are emitted by providers/models and updated
         # when activity is observed.
@@ -90,6 +101,46 @@ class RequestTracker:
                     setattr(metrics, key, value)
 
             self.summary_metrics.add_request(metrics)
+
+            # Record dashboard-facing trace/error events.
+            provider = metrics.provider or "unknown"
+            model = metrics.openai_model or metrics.claude_model or "unknown"
+            if model and ":" in model:
+                # Strip provider prefix if present (provider:model).
+                _, model = model.split(":", 1)
+
+            self._trace_seq += 1
+            trace_entry: dict[str, object] = {
+                "seq": self._trace_seq,
+                "ts": metrics.end_time,
+                "request_id": metrics.request_id,
+                "provider": provider,
+                "model": model,
+                "is_streaming": metrics.is_streaming,
+                "duration_ms": metrics.duration_ms,
+                "input_tokens": metrics.input_tokens,
+                "output_tokens": metrics.output_tokens,
+                "cache_read_tokens": metrics.cache_read_tokens,
+                "cache_creation_tokens": metrics.cache_creation_tokens,
+                "tool_use_count": metrics.tool_use_count,
+                "tool_call_count": metrics.tool_call_count,
+                "tool_result_count": metrics.tool_result_count,
+                "status": "error" if metrics.error else "ok",
+                "error": metrics.error,
+                "error_type": metrics.error_type,
+            }
+            self._recent_traces.appendleft(trace_entry)
+            self._last_trace_seen_seq = self._trace_seq
+
+            if metrics.error:
+                self._error_seq += 1
+                error_entry = {
+                    **trace_entry,
+                    "seq": self._error_seq,
+                }
+                self._recent_errors.appendleft(error_entry)
+                self._last_error_seen_seq = self._error_seq
+
             self.request_count += 1
             self.total_completed_requests += 1
 
@@ -101,6 +152,14 @@ class RequestTracker:
     async def get_request(self, request_id: str) -> RequestMetrics | None:
         async with self._lock:
             return self.active_requests.get(request_id)
+
+    async def get_recent_errors(self, *, limit: int = 100) -> list[dict[str, object]]:
+        async with self._lock:
+            return list(self._recent_errors)[:limit]
+
+    async def get_recent_traces(self, *, limit: int = 200) -> list[dict[str, object]]:
+        async with self._lock:
+            return list(self._recent_traces)[:limit]
 
     async def update_last_accessed(self, provider: str, model: str, timestamp: str) -> None:
         """Update last_accessed timestamps for provider, model, and top level."""
