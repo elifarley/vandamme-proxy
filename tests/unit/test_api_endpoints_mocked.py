@@ -16,6 +16,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tests.config import TEST_HEADERS
+from tests.fixtures.anthropic_tool_stream import anthropic_tool_use_stream_events
 
 
 def _last_openai_chat_completion_request_json(mock_openai_api) -> dict:
@@ -177,6 +178,52 @@ def test_openai_chat_completions_anthropic_translation_stream(
 
     # Expect OpenAI-style chunks and termination
     assert b"chat.completion.chunk" in body
+    assert b"data: [DONE]" in body
+
+
+@pytest.mark.unit
+def test_openai_chat_completions_anthropic_translation_stream_tool_calls(
+    mock_anthropic_api,
+):
+    """Anthropic tool_use streaming -> OpenAI tool_calls streaming."""
+    from src.main import app
+
+    stream_body = b"".join(anthropic_tool_use_stream_events())
+    mock_anthropic_api.post("https://api.anthropic.com/v1/messages").mock(
+        return_value=httpx.Response(200, content=stream_body)
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "anthropic:claude-3-5-sonnet-20241022",
+                "messages": [{"role": "user", "content": "Compute 2+2"}],
+                "max_tokens": 10,
+                "stream": True,
+                "tools": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "calculator",
+                            "description": "Perform basic arithmetic",
+                            "parameters": {
+                                "type": "object",
+                                "properties": {"expression": {"type": "string"}},
+                                "required": ["expression"],
+                            },
+                        },
+                    }
+                ],
+            },
+            headers=TEST_HEADERS,
+        )
+
+        assert response.status_code == 200
+        body = b"".join(response.iter_bytes())
+
+    assert b"tool_calls" in body
+    assert b'"name": "calculator"' in body
     assert b"data: [DONE]" in body
 
 

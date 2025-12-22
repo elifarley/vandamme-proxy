@@ -51,8 +51,37 @@ def openai_chat_completions_to_anthropic_messages(
             continue
 
         if role in ("user", "assistant"):
+            tool_calls = msg.get("tool_calls")
+            if content is None and isinstance(tool_calls, list):
+                # Assistant tool call message -> Anthropic tool_use blocks.
+                blocks: list[dict[str, Any]] = []
+                for tc in tool_calls:
+                    if not isinstance(tc, dict) or tc.get("type") != "function":
+                        continue
+                    fn = tc.get("function") or {}
+                    if not isinstance(fn, dict):
+                        continue
+                    name = fn.get("name")
+                    args = fn.get("arguments")
+                    if not isinstance(name, str) or not name:
+                        continue
+                    try:
+                        input_obj = json.loads(args) if isinstance(args, str) and args else {}
+                    except Exception:
+                        input_obj = {}
+                    blocks.append(
+                        {
+                            "type": "tool_use",
+                            "id": tc.get("id") or f"call-{name}",
+                            "name": name,
+                            "input": input_obj,
+                        }
+                    )
+
+                messages_out.append({"role": role, "content": blocks})
+                continue
+
             if content is None:
-                # tool_calls messages are possible; ignore here (subset).
                 messages_out.append({"role": role, "content": []})
                 continue
             if isinstance(content, str):
