@@ -158,23 +158,32 @@ def test_models_endpoint_openai_format():
         assert response.status_code == 200
         data = response.json()
 
-        # Default format is Anthropic schema
-        assert "data" in data
-        assert isinstance(data["data"], list)
-        assert "first_id" in data
-        assert "last_id" in data
-        assert "has_more" in data
+        # Default format is OpenAI schema.
+        # Anthropic format requires format=anthropic or anthropic-version header.
+        assert data["object"] == "list"
+        assert isinstance(data.get("data"), list)
 
         model_ids = [model["id"] for model in data["data"]]
         assert "gpt-4o" in model_ids
         assert "gpt-4o-mini" in model_ids
 
-        # OpenAI format is also supported
+        # OpenAI format is also supported explicitly
         response_openai = client.get("/v1/models?format=openai", headers={"x-api-key": "test-key"})
         assert response_openai.status_code == 200
         data_openai = response_openai.json()
         assert data_openai["object"] == "list"
         assert isinstance(data_openai.get("data"), list)
+
+        # Anthropic format is also supported
+        response_anthropic = client.get(
+            "/v1/models?format=anthropic", headers={"x-api-key": "test-key"}
+        )
+        assert response_anthropic.status_code == 200
+        data_anthropic = response_anthropic.json()
+        assert "first_id" in data_anthropic
+        assert "last_id" in data_anthropic
+        assert "has_more" in data_anthropic
+        assert isinstance(data_anthropic.get("data"), list)
 
         # Raw format returns the exact upstream payload
         response_raw = client.get("/v1/models?format=raw", headers={"x-api-key": "test-key"})

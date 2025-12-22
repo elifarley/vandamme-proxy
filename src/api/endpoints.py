@@ -960,9 +960,12 @@ async def list_models(
         None,
         description="Provider name to fetch models from (defaults to configured default provider)",
     ),
-    format: str = Query(
-        "anthropic",
-        description="Response format: anthropic (default), openai, or raw",
+    format: str | None = Query(
+        None,
+        description=(
+            "Response format selector (takes precedence over headers): "
+            "anthropic, openai, or raw. If omitted, inferred from headers."
+        ),
     ),
     refresh: bool = Query(
         False,
@@ -972,6 +975,14 @@ async def list_models(
         None,
         alias="provider",
         description="Provider override (header takes precedence over query/default)",
+    ),
+    anthropic_version: str | None = Header(
+        None,
+        alias="anthropic-version",
+        description=(
+            "If present and no explicit format=... was provided, the response format may be "
+            "inferred as Anthropic for /v1/models compatibility"
+        ),
     ),
 ) -> JSONResponse:
     """List available models from the specified provider or default provider"""
@@ -995,6 +1006,12 @@ async def list_models(
                     f"Available providers: {available_providers}"
                 ),
             )
+
+        # If client didn't explicitly choose a format, allow header-based inference.
+        # Precedence rule: query param takes precedence over headers.
+        # Default should be OpenAI (OpenAI clients won't send `anthropic-version`).
+        if format is None:
+            format = "anthropic" if anthropic_version else "openai"
 
         if format not in {"anthropic", "openai", "raw"}:
             raise HTTPException(
