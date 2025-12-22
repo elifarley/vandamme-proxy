@@ -200,7 +200,12 @@ def ingest_openai_chunk(state: OpenAIToClaudeStreamState, chunk: dict[str, Any])
     return out
 
 
-def final_events(state: OpenAIToClaudeStreamState) -> list[str]:
+def final_events(
+    state: OpenAIToClaudeStreamState,
+    *,
+    usage: dict[str, Any] | None = None,
+    include_message_stop: bool = True,
+) -> list[str]:
     out: list[str] = []
 
     out.append(
@@ -222,7 +227,7 @@ def final_events(state: OpenAIToClaudeStreamState) -> list[str]:
                 )
             )
 
-    usage_data = {"input_tokens": 0, "output_tokens": 0}
+    usage_data = usage or {"input_tokens": 0, "output_tokens": 0}
     out.append(
         _sse(
             Constants.EVENT_MESSAGE_DELTA,
@@ -233,6 +238,7 @@ def final_events(state: OpenAIToClaudeStreamState) -> list[str]:
             },
         )
     )
-    out.append(_sse(Constants.EVENT_MESSAGE_STOP, {"type": Constants.EVENT_MESSAGE_STOP}))
+    if include_message_stop:
+        out.append(_sse(Constants.EVENT_MESSAGE_STOP, {"type": Constants.EVENT_MESSAGE_STOP}))
 
     return out

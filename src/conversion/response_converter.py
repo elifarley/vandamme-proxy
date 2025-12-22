@@ -161,7 +161,7 @@ async def convert_openai_streaming_to_claude(
         yield f"event: error\ndata: {json.dumps(error_event, ensure_ascii=False)}\n\n"
         return
 
-    for ev in final_events(state):
+    for ev in final_events(state, usage={"input_tokens": 0, "output_tokens": 0}):
         yield ev
 
 
@@ -201,7 +201,6 @@ async def convert_openai_streaming_to_claude_with_cancellation(
     )
 
     usage_data = {"input_tokens": 0, "output_tokens": 0}
-    final_stop_reason = Constants.STOP_END_TURN
 
     # The cancellation path historically used local counters and allocators. After refactoring,
     # the conversion state lives on `state`. Keep locals only where the cancellation path still
@@ -271,7 +270,6 @@ async def convert_openai_streaming_to_claude_with_cancellation(
 
             finish_reason = choices[0].get("finish_reason") if choices else None
             if finish_reason:
-                final_stop_reason = state.final_stop_reason
                 break
 
             # Continue streaming
@@ -319,15 +317,8 @@ async def convert_openai_streaming_to_claude_with_cancellation(
         return
 
     # Send final SSE events (reuse the shared state machine implementation).
-    # NOTE: `final_events(state)` includes a message_delta/message_stop for the non-cancellation
-    # path; in this cancellation-aware path we still emit our own message_delta to include usage.
-    for ev in final_events(state):
-        # Skip the default message_delta/message_stop emitted by final_events; we'll emit our own
-        # message_delta (with usage) below and then message_stop.
-        if ev.startswith(f"event: {Constants.EVENT_MESSAGE_DELTA}"):
-            continue
-        if ev.startswith(f"event: {Constants.EVENT_MESSAGE_STOP}"):
-            continue
+    # In the cancellation-aware path we include usage in message_delta.
+    for ev in final_events(state, usage=usage_data):
         yield ev
 
     # Log streaming completion
@@ -339,6 +330,3 @@ async def convert_openai_streaming_to_claude_with_cancellation(
             f"Tokens: {input_tokens:,}→{output_tokens:,} | "
             f"Cache: {cache_read_tokens:,}"
         )
-
-    yield f"event: {Constants.EVENT_MESSAGE_DELTA}\ndata: {json.dumps({'type': Constants.EVENT_MESSAGE_DELTA, 'delta': {'stop_reason': final_stop_reason, 'stop_sequence': None}, 'usage': usage_data}, ensure_ascii=False)}\n\n"  # noqa: E501
-    yield f"event: {Constants.EVENT_MESSAGE_STOP}\ndata: {json.dumps({'type': Constants.EVENT_MESSAGE_STOP}, ensure_ascii=False)}\n\n"  # noqa: E501
