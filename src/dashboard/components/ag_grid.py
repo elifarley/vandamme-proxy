@@ -4,8 +4,11 @@ from typing import Any
 
 import dash_ag_grid as dag  # type: ignore[import-untyped]
 
-from src.dashboard.ag_grid.transformers import models_row_data
-from src.dashboard.components.ui import format_timestamp
+from src.dashboard.ag_grid.transformers import (
+    logs_errors_row_data,
+    logs_traces_row_data,
+    models_row_data,
+)
 
 
 def top_models_ag_grid(
@@ -942,159 +945,6 @@ window.escapeHtml = function(text) {
 
 
 # --- Logs AG Grid Functions ---
-
-
-def logs_errors_row_data(errors: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Build AG-Grid rowData for the logs errors page.
-
-    Transforms error log entries into grid-friendly format with provider badge colors.
-    """
-    row_data: list[dict[str, Any]] = []
-
-    for error in errors:
-        if not isinstance(error, dict):
-            continue
-
-        # Convert timestamp
-        ts = error.get("ts")
-        time_iso = None
-        time_relative = None
-        time_formatted = ""
-
-        if isinstance(ts, (int, float)):
-            try:
-                from datetime import datetime
-
-                dt = datetime.fromtimestamp(float(ts))
-                time_iso = dt.isoformat()
-                time_relative = format_timestamp(time_iso)
-                time_formatted = dt.strftime("%H:%M:%S")
-            except Exception:
-                time_formatted = ""
-
-        # Get provider and compute badge color
-        provider = str(error.get("provider") or "")
-        provider_color = "secondary"  # default
-
-        if provider:
-            # Use provider_badge logic to determine color
-
-            # provider_badge returns a dbc.Badge, we need to extract the color
-            # We'll replicate the color logic here
-            key = provider.lower()
-            fixed_colors = {
-                "openai": "primary",
-                "openrouter": "info",
-                "anthropic": "danger",
-                "poe": "success",
-            }
-            provider_color = fixed_colors.get(key, "secondary")
-
-        row_data.append(
-            {
-                "seq": error.get("seq"),
-                "ts": ts,
-                "time_formatted": time_formatted,
-                "time_relative": time_relative,
-                "time_iso": time_iso,
-                "provider": provider,
-                "provider_color": provider_color,
-                "model": str(error.get("model") or ""),
-                "error_type": str(error.get("error_type") or ""),
-                "error": str(error.get("error") or ""),
-                "request_id": str(error.get("request_id") or ""),
-            }
-        )
-
-    return row_data
-
-
-def logs_traces_row_data(traces: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Build AG-Grid rowData for the logs traces page.
-
-    Transforms trace log entries into grid-friendly format with provider badge colors.
-    """
-    row_data: list[dict[str, Any]] = []
-
-    for trace in traces:
-        if not isinstance(trace, dict):
-            continue
-
-        # Convert timestamp
-        ts = trace.get("ts")
-        time_iso = None
-        time_relative = None
-        time_formatted = ""
-
-        if isinstance(ts, (int, float)):
-            try:
-                from datetime import datetime
-
-                dt = datetime.fromtimestamp(float(ts))
-                time_iso = dt.isoformat()
-                time_relative = format_timestamp(time_iso)
-                time_formatted = dt.strftime("%H:%M:%S")
-            except Exception:
-                time_formatted = ""
-
-        # Get provider and compute badge color
-        provider = str(trace.get("provider") or "")
-        provider_color = "secondary"  # default
-
-        if provider:
-            # Use provider_badge logic to determine color
-            key = provider.lower()
-            fixed_colors = {
-                "openai": "primary",
-                "openrouter": "info",
-                "anthropic": "danger",
-                "poe": "success",
-            }
-            provider_color = fixed_colors.get(key, "secondary")
-
-        # Format duration as fractional seconds
-        duration_ms = trace.get("duration_ms", 0)
-        if isinstance(duration_ms, (int, float)):
-            duration_s = float(duration_ms) / 1000
-            duration_formatted = f"{duration_s:.2f}s"
-        else:
-            duration_formatted = "0.00s"
-
-        # Format numeric values with thousand separators
-        def format_number(value: int | float) -> str:
-            if isinstance(value, (int, float)):
-                return f"{int(value):,}"
-            return "0"
-
-        row_data.append(
-            {
-                "seq": trace.get("seq"),
-                "ts": ts,
-                "time_formatted": time_formatted,
-                "time_relative": time_relative,
-                "time_iso": time_iso,
-                "provider": provider,
-                "provider_color": provider_color,
-                "model": str(trace.get("model") or ""),
-                "status": str(trace.get("status") or ""),
-                "duration_ms": duration_ms,
-                "duration_formatted": duration_formatted,
-                "input_tokens": format_number(trace.get("input_tokens") or 0),
-                "output_tokens": format_number(trace.get("output_tokens") or 0),
-                "cache_read_tokens": format_number(trace.get("cache_read_tokens") or 0),
-                "cache_creation_tokens": format_number(trace.get("cache_creation_tokens") or 0),
-                "tool_use_count": format_number(trace.get("tool_use_count") or 0),
-                # Keep raw numeric values for sorting
-                "input_tokens_raw": int(trace.get("input_tokens") or 0),
-                "output_tokens_raw": int(trace.get("output_tokens") or 0),
-                "cache_read_tokens_raw": int(trace.get("cache_read_tokens") or 0),
-                "cache_creation_tokens_raw": int(trace.get("cache_creation_tokens") or 0),
-                "request_id": str(trace.get("request_id") or ""),
-                "is_streaming": bool(trace.get("is_streaming") or False),
-            }
-        )
-
-    return row_data
 
 
 def logs_errors_ag_grid(

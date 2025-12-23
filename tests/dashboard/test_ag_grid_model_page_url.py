@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.dashboard.components.ag_grid import format_model_page_url
+from src.dashboard.ag_grid.transformers import format_model_page_url
 
 
 def test_format_model_page_url_poe_uses_hyphenated_display_name_slug() -> None:

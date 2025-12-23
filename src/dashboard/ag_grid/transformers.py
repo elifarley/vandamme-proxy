@@ -5,10 +5,127 @@ import urllib.parse
 from typing import Any
 
 from src.core.alias_config import AliasConfigLoader
-from src.dashboard.components.ui import format_model_created_timestamp, format_timestamp
+from src.dashboard.components.ui import (
+    format_model_created_timestamp,
+    format_timestamp,
+)
 
 # Module-level cache for provider configs
 _alias_config_loader = None
+
+
+def provider_badge_color(provider_name: str) -> str:
+    key = (provider_name or "").lower()
+    fixed_colors = {
+        "openai": "primary",
+        "openrouter": "info",
+        "anthropic": "danger",
+        "poe": "success",
+    }
+    return fixed_colors.get(key, "secondary")
+
+
+def _format_log_time(ts: object) -> tuple[str, str | None, str | None]:
+    time_iso = None
+    time_relative = None
+    time_formatted = ""
+
+    if isinstance(ts, (int, float)):
+        try:
+            from datetime import datetime
+
+            dt = datetime.fromtimestamp(float(ts))
+            time_iso = dt.isoformat()
+            time_relative = format_timestamp(time_iso)
+            time_formatted = dt.strftime("%H:%M:%S")
+        except Exception:  # noqa: BLE001
+            time_formatted = ""
+
+    return time_formatted, time_relative, time_iso
+
+
+def logs_errors_row_data(errors: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    row_data: list[dict[str, Any]] = []
+
+    for error in errors:
+        if not isinstance(error, dict):
+            continue
+
+        ts = error.get("ts")
+        time_formatted, time_relative, time_iso = _format_log_time(ts)
+
+        provider = str(error.get("provider") or "")
+        row_data.append(
+            {
+                "seq": error.get("seq"),
+                "ts": ts,
+                "time_formatted": time_formatted,
+                "time_relative": time_relative,
+                "time_iso": time_iso,
+                "provider": provider,
+                "provider_color": provider_badge_color(provider),
+                "model": str(error.get("model") or ""),
+                "error_type": str(error.get("error_type") or ""),
+                "error": str(error.get("error") or ""),
+                "request_id": str(error.get("request_id") or ""),
+            }
+        )
+
+    return row_data
+
+
+def logs_traces_row_data(traces: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    row_data: list[dict[str, Any]] = []
+
+    def format_number(value: int | float) -> str:
+        if isinstance(value, (int, float)):
+            return f"{int(value):,}"
+        return "0"
+
+    for trace in traces:
+        if not isinstance(trace, dict):
+            continue
+
+        ts = trace.get("ts")
+        time_formatted, time_relative, time_iso = _format_log_time(ts)
+
+        provider = str(trace.get("provider") or "")
+
+        duration_ms = trace.get("duration_ms", 0)
+        if isinstance(duration_ms, (int, float)):
+            duration_s = float(duration_ms) / 1000
+            duration_formatted = f"{duration_s:.2f}s"
+        else:
+            duration_formatted = "0.00s"
+
+        row_data.append(
+            {
+                "seq": trace.get("seq"),
+                "ts": ts,
+                "time_formatted": time_formatted,
+                "time_relative": time_relative,
+                "time_iso": time_iso,
+                "provider": provider,
+                "provider_color": provider_badge_color(provider),
+                "model": str(trace.get("model") or ""),
+                "status": str(trace.get("status") or ""),
+                "duration_ms": duration_ms,
+                "duration_formatted": duration_formatted,
+                "input_tokens": format_number(trace.get("input_tokens") or 0),
+                "output_tokens": format_number(trace.get("output_tokens") or 0),
+                "cache_read_tokens": format_number(trace.get("cache_read_tokens") or 0),
+                "cache_creation_tokens": format_number(trace.get("cache_creation_tokens") or 0),
+                "tool_use_count": format_number(trace.get("tool_use_count") or 0),
+                "input_tokens_raw": int(trace.get("input_tokens") or 0),
+                "output_tokens_raw": int(trace.get("output_tokens") or 0),
+                "cache_read_tokens_raw": int(trace.get("cache_read_tokens") or 0),
+                "cache_creation_tokens_raw": int(trace.get("cache_creation_tokens") or 0),
+                "request_id": str(trace.get("request_id") or ""),
+                "is_streaming": bool(trace.get("is_streaming") or False),
+            }
+        )
+
+    return row_data
 
 
 def get_model_page_template(provider_name: str) -> str | None:
