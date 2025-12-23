@@ -204,6 +204,33 @@ def _extract_model_icon_url(model: dict[str, Any]) -> str | None:
     return _safe_http_url(model.get("image_url"))
 
 
+def top_models_row_data(models: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Build AG-Grid rowData for the Top Models page."""
+
+    row_data: list[dict[str, Any]] = []
+    for m in models:
+        pricing = m.get("pricing") if isinstance(m.get("pricing"), dict) else {}
+        avg = pricing.get("average_per_million") if isinstance(pricing, dict) else None
+        avg_s = f"{avg:.3f}" if isinstance(avg, (int, float)) else ""
+
+        caps = m.get("capabilities")
+        caps_s = ", ".join(c for c in caps if isinstance(c, str)) if isinstance(caps, list) else ""
+
+        row_data.append(
+            {
+                "provider": m.get("provider") or "",
+                "sub_provider": m.get("sub_provider") or "",
+                "id": m.get("id") or "",
+                "name": m.get("name") or "",
+                "context_window": m.get("context_window") or "",
+                "avg_per_million": avg_s,
+                "capabilities": caps_s,
+            }
+        )
+
+    return row_data
+
+
 def models_row_data(models: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Build AG-Grid rowData for the Models page."""
 

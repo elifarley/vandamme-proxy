@@ -8,6 +8,7 @@ from src.dashboard.ag_grid.transformers import (
     logs_errors_row_data,
     logs_traces_row_data,
     models_row_data,
+    top_models_row_data,
 )
 
 
@@ -87,26 +88,7 @@ def top_models_ag_grid(
         },
     ]
 
-    row_data: list[dict[str, Any]] = []
-    for m in models:
-        pricing = m.get("pricing") if isinstance(m.get("pricing"), dict) else {}
-        avg = pricing.get("average_per_million") if isinstance(pricing, dict) else None
-        avg_s = f"{avg:.3f}" if isinstance(avg, (int, float)) else ""
-
-        caps = m.get("capabilities")
-        caps_s = ", ".join(c for c in caps if isinstance(c, str)) if isinstance(caps, list) else ""
-
-        row_data.append(
-            {
-                "provider": m.get("provider") or "",
-                "sub_provider": m.get("sub_provider") or "",
-                "id": m.get("id") or "",
-                "name": m.get("name") or "",
-                "context_window": m.get("context_window") or "",
-                "avg_per_million": avg_s,
-                "capabilities": caps_s,
-            }
-        )
+    row_data = top_models_row_data(models)
 
     custom_css = {
         "height": "70vh",
