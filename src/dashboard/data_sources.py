@@ -328,5 +328,9 @@ def top_models_suggested_aliases(payload: dict[str, Any]) -> dict[str, str]:
 async def fetch_all_providers(*, cfg: DashboardConfigProtocol) -> list[str]:
     """Extract list of all providers from health endpoint"""
     health_data = await fetch_health(cfg=cfg)
-    providers = health_data.get("providers", {})
-    return list(providers.keys())
+    providers = health_data.get("providers", [])
+
+    # Handle both dict (old format) and list (new format) for resilience
+    if isinstance(providers, dict):
+        return list(providers.keys())
+    return providers
