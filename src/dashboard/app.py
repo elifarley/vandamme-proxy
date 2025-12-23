@@ -17,7 +17,6 @@ from src.dashboard.components.ui import (
 )
 from src.dashboard.data_sources import (
     DashboardConfigProtocol,
-    fetch_models,
     fetch_test_connection,
 )
 from src.dashboard.pages import (
@@ -780,31 +779,13 @@ def create_dashboard(*, cfg: DashboardConfigProtocol) -> dash.Dash:
     )
     def load_token_counter_models(_pathname: str) -> list[dict[str, Any]]:
         """Load available models for the token counter."""
-        try:
-            models_data = _run(fetch_models(cfg=cfg))
-            models = models_data.get("data", [])
+        from src.dashboard.services.token_counter import (
+            TokenCounterModelsView,
+            build_token_counter_model_options,
+        )
 
-            # Extract unique model IDs with display names
-            model_options = []
-            seen = set()
-            for model in models:
-                model_id = model.get("id", "")
-                display_name = model.get("display_name", model_id)
-                if model_id and model_id not in seen:
-                    seen.add(model_id)
-                    label = f"{display_name} ({model_id})" if display_name != model_id else model_id
-                    model_options.append({"label": label, "value": model_id})
-
-            return sorted(model_options, key=lambda x: x["label"])
-
-        except Exception:
-            # Return some common defaults if API call fails
-            return [
-                {"label": "Claude 3.5 Sonnet", "value": "claude-3-5-sonnet-20241022"},
-                {"label": "Claude 3.5 Haiku", "value": "claude-3-5-haiku-20241022"},
-                {"label": "GPT-4o", "value": "gpt-4o"},
-                {"label": "GPT-4o Mini", "value": "gpt-4o-mini"},
-            ]
+        view: TokenCounterModelsView = _run(build_token_counter_model_options(cfg=cfg))
+        return view.as_options()
 
     @app.callback(
         Output("vdm-token-counter-result", "children"),
