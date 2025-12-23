@@ -14,6 +14,11 @@ from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 
 from src.api.services.key_rotation import make_next_provider_key_fn
 from src.api.services.provider_context import resolve_provider_context
+from src.api.services.streaming import (
+    sse_headers,
+    streaming_response,
+    with_streaming_metrics_finalizer,
+)
 from src.api.utils.yaml_formatter import format_health_yaml
 from src.conversion.anthropic_sse_to_openai import anthropic_sse_to_openai_chat_completions_sse
 from src.conversion.anthropic_to_openai import anthropic_message_to_openai_chat_completion
@@ -182,27 +187,21 @@ async def chat_completions(
                 )
 
                 async def anthropic_stream_as_openai() -> AsyncGenerator[str, None]:
-                    try:
-                        async for chunk in anthropic_sse_to_openai_chat_completions_sse(
-                            anthropic_sse_lines=anthropic_stream,
-                            model=resolved_model,
-                            completion_id=f"chatcmpl-{request_id}",
-                        ):
-                            yield chunk
-                    finally:
-                        if LOG_REQUEST_METRICS:
-                            tracker = get_request_tracker(http_request)
-                            await tracker.end_request(request_id)
+                    async for chunk in anthropic_sse_to_openai_chat_completions_sse(
+                        anthropic_sse_lines=anthropic_stream,
+                        model=resolved_model,
+                        completion_id=f"chatcmpl-{request_id}",
+                    ):
+                        yield chunk
 
-                return StreamingResponse(
-                    anthropic_stream_as_openai(),
-                    media_type="text/event-stream",
-                    headers={
-                        "Cache-Control": "no-cache",
-                        "Connection": "keep-alive",
-                        "Access-Control-Allow-Origin": "*",
-                        "Access-Control-Allow-Headers": "*",
-                    },
+                return streaming_response(
+                    stream=with_streaming_metrics_finalizer(
+                        original_stream=anthropic_stream_as_openai(),
+                        http_request=http_request,
+                        request_id=request_id,
+                        enabled=LOG_REQUEST_METRICS,
+                    ),
+                    headers=sse_headers(),
                 )
 
             anthropic_response = await openai_client.create_chat_completion(
@@ -227,25 +226,19 @@ async def chat_completions(
                 next_api_key=(None if provider_config.uses_passthrough else _next_provider_key),
             )
 
-            async def streaming_with_metrics() -> AsyncGenerator[str, None]:
-                try:
-                    async for chunk in openai_stream:
-                        # Ensure SSE lines end with newline for broad client compatibility.
-                        yield f"{chunk}\n"
-                finally:
-                    if LOG_REQUEST_METRICS:
-                        tracker = get_request_tracker(http_request)
-                        await tracker.end_request(request_id)
+            async def openai_stream_as_sse_lines() -> AsyncGenerator[str, None]:
+                async for chunk in openai_stream:
+                    # Ensure SSE lines end with newline for broad client compatibility.
+                    yield f"{chunk}\n"
 
-            return StreamingResponse(
-                streaming_with_metrics(),
-                media_type="text/event-stream",
-                headers={
-                    "Cache-Control": "no-cache",
-                    "Connection": "keep-alive",
-                    "Access-Control-Allow-Origin": "*",
-                    "Access-Control-Allow-Headers": "*",
-                },
+            return streaming_response(
+                stream=with_streaming_metrics_finalizer(
+                    original_stream=openai_stream_as_sse_lines(),
+                    http_request=http_request,
+                    request_id=request_id,
+                    enabled=LOG_REQUEST_METRICS,
+                ),
+                headers=sse_headers(),
             )
 
         openai_response = await openai_client.create_chat_completion(
@@ -452,26 +445,14 @@ async def create_message(
                             ),
                         )
 
-                        # Wrap streaming to capture metrics
-                        async def streaming_with_metrics() -> AsyncGenerator[str, None]:
-                            try:
-                                # Pass through SSE events directly
-                                async for chunk in anthropic_stream:
-                                    yield chunk
-                            finally:
-                                # End request tracking after streaming
-                                if LOG_REQUEST_METRICS:
-                                    await tracker.end_request(request_id)
-
-                        return StreamingResponse(
-                            streaming_with_metrics(),
-                            media_type="text/event-stream",
-                            headers={
-                                "Cache-Control": "no-cache",
-                                "Connection": "keep-alive",
-                                "Access-Control-Allow-Origin": "*",
-                                "Access-Control-Allow-Headers": "*",
-                            },
+                        return streaming_response(
+                            stream=with_streaming_metrics_finalizer(
+                                original_stream=anthropic_stream,
+                                http_request=http_request,
+                                request_id=request_id,
+                                enabled=LOG_REQUEST_METRICS,
+                            ),
+                            headers=sse_headers(),
                         )
                     except HTTPException as e:
                         # Convert to proper error response for streaming
@@ -528,25 +509,22 @@ async def create_message(
                             ),
                         )
 
-                        # Wrap streaming to capture metrics
-                        async def streaming_with_metrics() -> AsyncGenerator[str, None]:
-                            try:
-                                async for (
-                                    chunk
-                                ) in convert_openai_streaming_to_claude_with_cancellation(
-                                    openai_stream,
-                                    request,
-                                    logger,
-                                    http_request,
-                                    openai_client,
-                                    request_id,
-                                    tool_name_map_inverse=tool_name_map_inverse,
-                                ):
-                                    yield chunk
-                            finally:
-                                # End request tracking after streaming
-                                if LOG_REQUEST_METRICS:
-                                    await tracker.end_request(request_id)
+                        converted_stream = convert_openai_streaming_to_claude_with_cancellation(
+                            openai_stream,
+                            request,
+                            logger,
+                            http_request,
+                            openai_client,
+                            request_id,
+                            tool_name_map_inverse=tool_name_map_inverse,
+                        )
+
+                        stream_with_metrics = with_streaming_metrics_finalizer(
+                            original_stream=converted_stream,
+                            http_request=http_request,
+                            request_id=request_id,
+                            enabled=LOG_REQUEST_METRICS,
+                        )
 
                         # Apply middleware to streaming deltas (e.g., capture thought signatures)
                         if hasattr(config.provider_manager, "middleware_chain"):
@@ -559,7 +537,7 @@ async def create_message(
                             processor.middleware_chain = config.provider_manager.middleware_chain
 
                             wrapped_stream = MiddlewareStreamingWrapper(
-                                original_stream=streaming_with_metrics(),
+                                original_stream=stream_with_metrics,
                                 request_context=RequestContext(
                                     messages=openai_request.get("messages", []),
                                     provider=provider_name,
@@ -571,27 +549,9 @@ async def create_message(
                                 processor=processor,
                             )
 
-                            return StreamingResponse(
-                                wrapped_stream,
-                                media_type="text/event-stream",
-                                headers={
-                                    "Cache-Control": "no-cache",
-                                    "Connection": "keep-alive",
-                                    "Access-Control-Allow-Origin": "*",
-                                    "Access-Control-Allow-Headers": "*",
-                                },
-                            )
+                            return streaming_response(stream=wrapped_stream, headers=sse_headers())
 
-                        return StreamingResponse(
-                            streaming_with_metrics(),
-                            media_type="text/event-stream",
-                            headers={
-                                "Cache-Control": "no-cache",
-                                "Connection": "keep-alive",
-                                "Access-Control-Allow-Origin": "*",
-                                "Access-Control-Allow-Headers": "*",
-                            },
-                        )
+                        return streaming_response(stream=stream_with_metrics, headers=sse_headers())
                     except HTTPException as e:
                         # Convert to proper error response for streaming
                         if LOG_REQUEST_METRICS and metrics:
