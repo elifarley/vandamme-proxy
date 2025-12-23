@@ -35,18 +35,14 @@ from src.dashboard.data_sources import (
     top_models_suggested_aliases,
 )
 from src.dashboard.pages import (
-    compute_metrics_views,
     health_banner,
     kpis_grid,
     logs_layout,
     metrics_disabled_callout,
     metrics_layout,
-    model_breakdown_table,
     overview_layout,
     parse_totals_for_chart,
-    provider_breakdown_table,
     providers_table,
-    token_composition_chart,
     top_models_layout,
 )
 
@@ -331,40 +327,17 @@ def create_dashboard(*, cfg: DashboardConfigProtocol) -> dash.Dash:
             # Keep existing UI stable when polling is disabled.
             raise dash.exceptions.PreventUpdate
 
-        provider_filter = provider_value or None
-        model_filter = model_value.strip() or None
+        from src.dashboard.services.metrics import build_metrics_view
 
-        # Keep provider dropdown options stable even when provider filter is applied.
-        providers = _run(fetch_all_providers(cfg=cfg))
-
-        running = _run(fetch_running_totals(cfg=cfg, provider=provider_filter, model=model_filter))
-
-        if "# Message" in running:
-            totals = parse_totals_for_chart(running)
-            return (
-                dbc.Alert("Metrics are disabled. Set LOG_REQUEST_METRICS=true.", color="info"),
-                html.Div(),
-                html.Div(),
-                [{"label": "All", "value": ""}],
-            )
-
-        totals = parse_totals_for_chart(running)
-        prov_rows, model_rows = compute_metrics_views(running, provider_filter)
-
-        sorted_providers = sorted(p for p in providers if isinstance(p, str) and p)
-        options = [{"label": "All", "value": ""}] + [
-            {"label": p, "value": p} for p in sorted_providers
-        ]
-
-        token_chart = token_composition_chart(totals)
-        prov_table = provider_breakdown_table(prov_rows)
-        model_table = (
-            model_breakdown_table(model_rows)
-            if provider_filter
-            else dbc.Alert("Select a provider to see model breakdown.", color="secondary")
+        view = _run(
+            build_metrics_view(cfg=cfg, provider_value=provider_value, model_value=model_value)
         )
-
-        return token_chart, prov_table, model_table, options
+        return (
+            view.token_chart,
+            view.provider_breakdown,
+            view.model_breakdown,
+            view.provider_options,
+        )
 
     @app.callback(Output("vdm-metrics-poll", "interval"), Input("vdm-metrics-interval", "value"))
     def set_metrics_interval(ms: int) -> int:

@@ -5,10 +5,13 @@ from typing import Any
 import dash_bootstrap_components as dbc  # type: ignore[import-untyped]
 from dash import dcc, html
 
+from src.dashboard.components.breakdown_tables import (
+    model_breakdown_table_view,
+    provider_breakdown_table_view,
+)
 from src.dashboard.components.ui import (
     duration_color_class,
     format_duration,
-    format_timestamp,
     kpi_card,
     model_details_drawer,
     monospace,
@@ -491,171 +494,11 @@ def kpis_grid(totals: MetricTotals) -> dbc.Row:
 
 
 def provider_breakdown_table(rows: list[dict[str, Any]]) -> html.Div:
-    header = html.Thead(
-        html.Tr(
-            [
-                html.Th("Provider"),
-                html.Th("Requests", className="text-end"),
-                html.Th("Errors", className="text-end"),
-                html.Th("Error rate", className="text-end"),
-                html.Th("Input", className="text-end"),
-                html.Th("Output", className="text-end"),
-                html.Th("Tools", className="text-end"),
-                html.Th("Avg Duration", className="text-end"),
-                html.Th("Streaming Avg", className="text-end"),
-                html.Th("Non-Streaming Avg", className="text-end"),
-                html.Th("Last Accessed", className="text-end"),
-            ]
-        )
-    )
-
-    body = []
-    for r in rows:
-        body.append(
-            html.Tr(
-                [
-                    html.Td(monospace(r.get("provider"))),
-                    html.Td(f"{int(r.get('requests', 0)):,}", className="text-end"),
-                    html.Td(f"{int(r.get('errors', 0)):,}", className="text-end"),
-                    html.Td(
-                        f"{float(r.get('error_rate', 0.0)) * 100.0:.2f}%", className="text-end"
-                    ),
-                    html.Td(f"{int(r.get('input_tokens', 0)):,}", className="text-end"),
-                    html.Td(f"{int(r.get('output_tokens', 0)):,}", className="text-end"),
-                    html.Td(f"{int(r.get('tool_calls', 0)):,}", className="text-end"),
-                    html.Td(
-                        html.Span(
-                            format_duration(r.get("average_duration_ms", 0)),
-                            className=duration_color_class(r.get("average_duration_ms", 0)),
-                            title=f"{r.get('average_duration_ms', 0):.1f}ms",
-                        ),
-                        className="text-end",
-                    ),
-                    html.Td(
-                        html.Span(
-                            format_duration(r.get("streaming_average_duration_ms", 0)),
-                            className=duration_color_class(
-                                r.get("streaming_average_duration_ms", 0)
-                            ),
-                            title=f"{r.get('streaming_average_duration_ms', 0):.1f}ms",
-                        ),
-                        className="text-end",
-                    ),
-                    html.Td(
-                        html.Span(
-                            format_duration(r.get("non_streaming_average_duration_ms", 0)),
-                            className=duration_color_class(
-                                r.get("non_streaming_average_duration_ms", 0)
-                            ),
-                            title=f"{r.get('non_streaming_average_duration_ms', 0):.1f}ms",
-                        ),
-                        className="text-end",
-                    ),
-                    html.Td(
-                        monospace(format_timestamp(r.get("last_accessed"))),
-                        className="text-end",
-                    ),
-                ]
-            )
-        )
-
-    table = dbc.Table(
-        [header, html.Tbody(body)],
-        bordered=False,
-        hover=True,
-        responsive=True,
-        striped=True,
-        size="sm",
-    )
-
-    return html.Div(
-        [
-            table,
-            html.Div(
-                "💡 To view models for a specific provider, use the filter dropdown above",
-                className="text-muted small mt-2",
-            ),
-        ]
-    )
+    return provider_breakdown_table_view(rows)
 
 
 def model_breakdown_table(rows: list[dict[str, Any]]) -> dbc.Table:
-    header = html.Thead(
-        html.Tr(
-            [
-                html.Th("Model"),
-                html.Th("Requests", className="text-end"),
-                html.Th("Errors", className="text-end"),
-                html.Th("Error rate", className="text-end"),
-                html.Th("Input", className="text-end"),
-                html.Th("Output", className="text-end"),
-                html.Th("Tools", className="text-end"),
-                html.Th("Avg Duration", className="text-end"),
-                html.Th("Streaming Avg", className="text-end"),
-                html.Th("Non-Streaming Avg", className="text-end"),
-                html.Th("Last Accessed", className="text-end"),
-            ]
-        )
-    )
-
-    body = []
-    for r in rows:
-        body.append(
-            html.Tr(
-                [
-                    html.Td(monospace(r.get("model"))),
-                    html.Td(f"{int(r.get('requests', 0)):,}", className="text-end"),
-                    html.Td(f"{int(r.get('errors', 0)):,}", className="text-end"),
-                    html.Td(
-                        f"{float(r.get('error_rate', 0.0)) * 100.0:.2f}%", className="text-end"
-                    ),
-                    html.Td(f"{int(r.get('input_tokens', 0)):,}", className="text-end"),
-                    html.Td(f"{int(r.get('output_tokens', 0)):,}", className="text-end"),
-                    html.Td(f"{int(r.get('tool_calls', 0)):,}", className="text-end"),
-                    html.Td(
-                        html.Span(
-                            format_duration(r.get("average_duration_ms", 0)),
-                            className=duration_color_class(r.get("average_duration_ms", 0)),
-                            title=f"{r.get('average_duration_ms', 0):.1f}ms",
-                        ),
-                        className="text-end",
-                    ),
-                    html.Td(
-                        html.Span(
-                            format_duration(r.get("streaming_average_duration_ms", 0)),
-                            className=duration_color_class(
-                                r.get("streaming_average_duration_ms", 0)
-                            ),
-                            title=f"{r.get('streaming_average_duration_ms', 0):.1f}ms",
-                        ),
-                        className="text-end",
-                    ),
-                    html.Td(
-                        html.Span(
-                            format_duration(r.get("non_streaming_average_duration_ms", 0)),
-                            className=duration_color_class(
-                                r.get("non_streaming_average_duration_ms", 0)
-                            ),
-                            title=f"{r.get('non_streaming_average_duration_ms', 0):.1f}ms",
-                        ),
-                        className="text-end",
-                    ),
-                    html.Td(
-                        monospace(format_timestamp(r.get("last_accessed"))),
-                        className="text-end",
-                    ),
-                ]
-            )
-        )
-
-    return dbc.Table(
-        [header, html.Tbody(body)],
-        bordered=False,
-        hover=True,
-        responsive=True,
-        striped=True,
-        size="sm",
-    )
+    return model_breakdown_table_view(rows)
 
 
 def token_composition_chart(totals: MetricTotals) -> dcc.Graph:
