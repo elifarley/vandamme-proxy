@@ -4,8 +4,8 @@ import uvicorn
 from fastapi import FastAPI
 
 from src import __version__
-from src.api.endpoints import router as api_router
 from src.api.metrics import metrics_router
+from src.api.routers.v1 import router as api_router
 from src.core.config import config
 from src.core.metrics import create_request_tracker
 
