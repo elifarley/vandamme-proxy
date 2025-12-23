@@ -10,7 +10,6 @@ import dash
 import dash_bootstrap_components as dbc  # type: ignore[import-untyped]
 from dash import Input, Output, State, dcc, html
 
-from src.dashboard.components.ag_grid import models_row_data
 from src.dashboard.components.ui import (
     alias_table,
     empty_state,
@@ -21,9 +20,7 @@ from src.dashboard.components.ui import (
 from src.dashboard.data_sources import (
     DashboardConfigProtocol,
     fetch_aliases,
-    fetch_all_providers,
     fetch_health,
-    fetch_logs,
     fetch_models,
     fetch_running_totals,
     fetch_test_connection,
@@ -366,72 +363,10 @@ def create_dashboard(*, cfg: DashboardConfigProtocol) -> dash.Dash:
         pre-selected and labeled in the dropdown.
         """
         try:
-            # Provider dropdown options come from /health.
-            health = _run(fetch_health(cfg=cfg))
-            providers = _run(fetch_all_providers(cfg=cfg))
-            default_provider = health.get("default_provider")
-            if not isinstance(default_provider, str):
-                default_provider = ""
+            from src.dashboard.services.models import build_models_view
 
-            sorted_providers = sorted(providers)
-
-            selected_provider = provider_value.strip() if provider_value else ""
-            if not selected_provider:
-                if default_provider:
-                    selected_provider = default_provider
-                elif sorted_providers:
-                    selected_provider = sorted_providers[0]
-
-            # Build dropdown options: real providers only, with default pinned + labeled.
-            provider_options: list[dict[str, str]] = []
-            if default_provider and default_provider in sorted_providers:
-                provider_options.append(
-                    {
-                        "label": f"{default_provider} (default)",
-                        "value": default_provider,
-                    }
-                )
-
-            provider_options.extend(
-                [{"label": p, "value": p} for p in sorted_providers if p != default_provider]
-            )
-
-            hint = [
-                html.Span("Listing models for "),
-                provider_badge(selected_provider)
-                if selected_provider
-                else html.Span("(no providers)", className="text-muted"),
-            ]
-
-            # Fetch models (filtered by provider; sorting handled in-grid)
-            models_data = _run(fetch_models(cfg=cfg, provider=selected_provider or None))
-            models = models_data.get("data", [])
-
-            provider = selected_provider or None
-            provider_value = selected_provider or None
-
-            logger.debug(
-                "dashboard.models: fetched models",
-                extra={
-                    "model_count": len(models),
-                    "first_model_id": (models[0].get("id") if models else None),
-                    "provider": provider or "<unknown>",
-                },
-            )
-
-            # Provider is not always encoded per model when fetching without a provider filter.
-            # Keep a consistent value for display.
-            inferred_provider = provider or default_provider or "multiple"
-            for model in models:
-                if not model.get("provider"):
-                    model["provider"] = inferred_provider
-
-            if not models:
-                return [], provider_options, provider_value, hint
-
-            # IMPORTANT: The grid's columns expect the *derived* row schema
-            # (created_iso, created_relative, architecture_modality, pricing_*).
-            return models_row_data(models), provider_options, provider_value, hint
+            view = _run(build_models_view(cfg=cfg, provider_value=provider_value))
+            return view.row_data, view.provider_options, view.provider_value, view.hint
 
         except Exception:
             logger.exception("dashboard.models: refresh failed")
@@ -990,39 +925,11 @@ def create_dashboard(*, cfg: DashboardConfigProtocol) -> dash.Dash:
     def refresh_logs(_n: int) -> tuple[Any, list[dict[str, Any]], list[dict[str, Any]]]:
         """Refresh logs and update grid rowData only (avoids grid recreation/blinking)."""
         try:
-            payload = _run(fetch_logs(cfg=cfg))
-            systemd = payload.get("systemd")
-            if not isinstance(systemd, dict):
-                systemd = {}
+            from src.dashboard.services.logs import build_logs_view
 
-            effective = bool(systemd.get("effective"))
-            handler = str(systemd.get("handler") or "")
+            view = _run(build_logs_view(cfg=cfg))
+            return view.disabled_callout, view.errors_row_data, view.traces_row_data
 
-            if not effective:
-                msg = (
-                    "Logs are disabled. Start the server with --systemd "
-                    "(and ensure /dev/log is available)."
-                )
-                disabled = dbc.Alert(msg, color="secondary")
-                return disabled, [], []
-
-            errors = payload.get("errors")
-            if not isinstance(errors, list):
-                errors = []
-
-            traces = payload.get("traces")
-            if not isinstance(traces, list):
-                traces = []
-
-            disabled = dbc.Alert(f"systemd active (handler={handler})", color="dark")
-
-            # Transform data for grids (returns only rowData, not full grid components)
-            from src.dashboard.components.ag_grid import logs_errors_row_data, logs_traces_row_data
-
-            errors_rowdata = logs_errors_row_data(errors)
-            traces_rowdata = logs_traces_row_data(traces)
-
-            return disabled, errors_rowdata, traces_rowdata
         except Exception as e:  # noqa: BLE001
             return (
                 dbc.Alert(f"Failed to load logs: {e}", color="danger"),
