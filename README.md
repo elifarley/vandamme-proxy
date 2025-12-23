@@ -1,3 +1,4 @@
+
 # Vandamme Proxy
 
 **The LLM Gateway for Multi-Provider AI Development**
@@ -9,28 +10,29 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-> **Transform Claude Code (or any Anthropic API client) into a multi-provider client for OpenAI, Anthropic, Poe, Azure, Gemini, and other compatible APIs.**
-
----
+|||
+|-|-|
+|![Vandamme Proxy Logo](assets/vandamme-128px.png)| **Transform Claude Code (or any Anthropic API client) into a multi-provider client for OpenAI, Anthropic, Poe, Azure, Gemini, and other compatible APIs.** |
 
 ## 🚀 Why Vandamme Proxy?
 
 ### For Claude Code Users
-Route requests to any LLM provider with simple model prefixes
+Route requests to any LLM provider with simple model prefixes.
+
+First of all, [install `uv`](https://docs.astral.sh/uv/getting-started/installation/#installation-methods) if you don't have it. Then:
 
 ```shell
-# Install and setup in seconds
-pip install vandamme-proxy
+# Install in seconds
+uv tool install vandamme-proxy
 
-# Configure multiple API keys for production resilience
-export OPENAI_API_KEY="sk-key1 sk-key2 sk-key3"
+# Configure 1 or multiple API keys for production resilience
+export POE_API_KEY="sk-key1 sk-key2 sk-key3"
 
-# Start the server
-vdm server start
+# Run Claude Code CLI wrapped by Vandamme
+claude.vdm
 
-# Open dashboard for monitoring
+# Open dashboard page for monitoring
 open http://localhost:8082/dashboard/
-
 ```
 
 ```shell
