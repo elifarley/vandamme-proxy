@@ -133,7 +133,7 @@ def create_dashboard(*, cfg: DashboardConfigProtocol) -> dash.Dash:
                                     [
                                         dbc.NavLink(
                                             "API Docs",
-                                            href="/redoc",
+                                            href="/docs",
                                             target="_blank",
                                             external_link=True,
                                         ),

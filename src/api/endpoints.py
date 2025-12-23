@@ -21,7 +21,7 @@ from src.conversion.response_converter import (
 from src.core.config import config
 from src.core.logging import ConversationLogger
 from src.core.metrics.runtime import get_request_tracker
-from src.core.model_manager import model_manager
+from src.core.model_manager import get_model_manager
 from src.middleware import RequestContext, ResponseContext
 from src.models.cache import ModelsDiskCache
 from src.models.claude import ClaudeMessagesRequest, ClaudeTokenCountRequest
@@ -186,7 +186,7 @@ async def create_message(  # type: ignore[no-untyped-def]
 
         try:
             # Convert Claude request to OpenAI format
-            openai_request = convert_claude_to_openai(request, model_manager)
+            openai_request = convert_claude_to_openai(request, get_model_manager())
 
             # Extract provider from request
             provider_name = openai_request.pop("_provider", "openai")
@@ -261,7 +261,7 @@ async def create_message(  # type: ignore[no-untyped-def]
                     # Passthrough streaming for Anthropic-compatible APIs
                     # Convert request to dict directly (no format conversion)
                     # Get the actual model name without provider prefix
-                    provider_name_for_model, resolved_model = model_manager.resolve_model(
+                    provider_name_for_model, resolved_model = get_model_manager().resolve_model(
                         request.model
                     )
                     claude_request_dict = request.model_dump(exclude_none=True)
@@ -438,7 +438,7 @@ async def create_message(  # type: ignore[no-untyped-def]
                     # Passthrough mode for Anthropic-compatible APIs
                     # Convert request to dict directly (no format conversion)
                     # Get the actual model name without provider prefix
-                    provider_name_for_model, resolved_model = model_manager.resolve_model(
+                    provider_name_for_model, resolved_model = get_model_manager().resolve_model(
                         request.model
                     )
                     claude_request_dict = request.model_dump(exclude_none=True)
@@ -709,9 +709,7 @@ async def count_tokens(
 ) -> JSONResponse:
     try:
         # Get provider and model
-        from src.core.model_manager import model_manager
-
-        provider_name, actual_model = model_manager.resolve_model(request.model)
+        provider_name, actual_model = get_model_manager().resolve_model(request.model)
         provider_config = config.provider_manager.get_provider_config(provider_name)
 
         if provider_config and provider_config.is_anthropic_format:

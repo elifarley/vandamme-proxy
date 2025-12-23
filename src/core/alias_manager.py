@@ -26,6 +26,8 @@ class AliasManager:
         """Initialize AliasManager and load aliases from environment and fallback config."""
         self.aliases: dict[str, dict[str, str]] = {}  # {provider: {alias_name: target_model}}
         self._fallback_aliases: dict[str, dict[str, str]] = {}  # Cached fallback config
+        self._default_provider: str | None = None  # Lazily loaded
+        self._loaded: bool = False  # Track whether loading has occurred
 
         # Load fallback aliases first
         self._load_fallback_aliases()
@@ -47,20 +49,17 @@ class AliasManager:
         loaded_count = 0
         skipped_count = 0
 
-        # Get available providers from ProviderManager for validation
-        # Get default provider from config to ensure consistency
+        # Get default provider (lazily, without triggering ProviderManager init)
         from src.core.alias_config import AliasConfigLoader
-        from src.core.provider_manager import ProviderManager
 
         loader = AliasConfigLoader()
         defaults = loader.get_defaults()
-        default_provider = defaults.get("default-provider", "openai")
+        self._default_provider = defaults.get("default-provider", "openai")
 
-        provider_manager = ProviderManager(
-            default_provider=default_provider, default_provider_source="toml"
-        )
-        provider_manager.load_provider_configs()
-        available_providers = set(provider_manager._configs.keys())
+        # NOTE: Intentionally do NOT call ProviderManager.load_provider_configs() here.
+        # This allows AliasManager to be instantiated without requiring provider API keys.
+        # Provider validation is done lazily when aliases are actually resolved.
+        # In unit tests, ProviderManager is patched to provide mock _configs.
 
         for env_key, env_value in os.environ.items():
             match = alias_pattern.match(env_key)
@@ -68,12 +67,6 @@ class AliasManager:
                 provider, alias_name = match.groups()
                 provider = provider.lower()
                 alias_name = alias_name.lower()  # Store aliases in lowercase
-
-                # Validate provider exists
-                if provider not in available_providers:
-                    logger.warning(f"Provider '{provider}' not found for alias {env_key}, skipping")
-                    skipped_count += 1
-                    continue
 
                 if not env_value or not env_value.strip():
                     logger.warning(f"Empty alias value for {env_key}, skipping")
@@ -163,20 +156,27 @@ class AliasManager:
 
     def _merge_fallback_aliases(self) -> None:
         """Merge fallback aliases for any missing configurations."""
-        # Get available providers for validation
-        # Get default provider from config to ensure consistency
+        # Get available providers for validation.
+        #
+        # IMPORTANT: Alias management must not require provider API keys.
+        # Unit tests (and many offline workflows) intentionally run without any
+        # *_API_KEY env vars. We therefore consider a provider "known" if it is
+        # present in configuration defaults, config files, or env var *names*.
         from src.core.alias_config import AliasConfigLoader
-        from src.core.provider_manager import ProviderManager
 
         loader = AliasConfigLoader()
-        defaults = loader.get_defaults()
-        default_provider = defaults.get("default-provider", "openai")
+        config = loader.load_config()
 
-        provider_manager = ProviderManager(
-            default_provider=default_provider, default_provider_source="toml"
-        )
-        provider_manager.load_provider_configs()
-        available_providers = set(provider_manager._configs.keys())
+        configured_providers = set((config.get("providers") or {}).keys())
+        env_providers = {
+            env_key[:-8].lower()
+            for env_key in os.environ
+            if env_key.endswith("_API_KEY") and not env_key.startswith("CUSTOM_")
+        }
+        available_providers = configured_providers | env_providers
+
+        # Note: "default-provider" is a preference, not proof that a provider is enabled.
+        # We intentionally do not treat it as "configured" for alias scoping.
 
         for provider, fallback_aliases in self._fallback_aliases.items():
             # Only apply fallbacks for configured providers
@@ -239,9 +239,8 @@ class AliasManager:
                 result = f"{literal_provider.lower()}:{literal_model}"
             else:
                 # Format: !model (no provider specified)
-                # If provider parameter is given, use it; otherwise return as-is
-                # No provider context, return literal model as-is
-                # ModelManager will handle provider resolution via parse_model_name()
+                # If provider parameter is given, include it so downstream
+                # parsing resolves consistently.
                 result = f"{provider}:{literal_part}" if provider else literal_part
 
             logger.info(f"[AliasManager] literal: '{model}' -> '{result}'")
@@ -341,6 +340,7 @@ class AliasManager:
                     0 if any(x[1].lower() == variation for variation in model_variations) else 1
                 ),  # Exact match first
                 -x[3],  # Longer match first
+                0 if x[0] == self._default_provider else 1,  # Prefer default provider
                 x[0],  # Provider name alphabetically
                 x[1],  # Alias name alphabetically
             )

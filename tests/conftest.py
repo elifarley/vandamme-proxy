@@ -132,6 +132,10 @@ def setup_test_environment_for_unit_tests():
         from tests.config import DEFAULT_TEST_CONFIG, TEST_API_KEYS, TEST_ENDPOINTS
 
         test_env = {
+            # Dummy provider keys for unit tests.
+            # These are NOT used to make real network calls (RESPX intercepts HTTP);
+            # they exist solely so provider configuration loads and request routing
+            # code paths can be exercised offline.
             "OPENAI_API_KEY": TEST_API_KEYS["OPENAI"],
             "ANTHROPIC_API_KEY": TEST_API_KEYS["ANTHROPIC"],
             "ANTHROPIC_BASE_URL": TEST_ENDPOINTS["ANTHROPIC"],
@@ -167,6 +171,15 @@ def setup_test_environment_for_unit_tests():
         import src.core.config
 
         src.core.config.Config.reset_singleton()
+
+        # Reset ModelManager lazy singleton for test isolation
+        try:
+            from src.core.model_manager import reset_model_manager_singleton
+
+            reset_model_manager_singleton()
+        except Exception:
+            # Best-effort: avoid breaking tests if import order changes
+            pass
 
         # Reset the AliasConfigLoader cache for test isolation
         from src.core.alias_config import AliasConfigLoader

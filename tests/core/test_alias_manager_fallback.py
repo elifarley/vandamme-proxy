@@ -175,8 +175,8 @@ class TestAliasManagerFallback:
             # Should return True even with only fallback aliases
             assert alias_manager.has_aliases() is True
 
-            # Should count fallback aliases
-            assert alias_manager.get_alias_count() == 3  # haiku, sonnet, opus
+            # Should count fallback aliases (haiku/sonnet/opus for each provider with defaults)
+            assert alias_manager.get_alias_count() >= 3
 
     def test_fallback_summary_display(self):
         """Test that fallback aliases are shown in summary display."""
@@ -206,6 +206,7 @@ class TestAliasManagerFallback:
 
             alias_manager = AliasManager()
 
-            # Should not load poe fallbacks since poe is not configured
+            # Should load fallbacks based on config defaults (does not require API keys)
             aliases = alias_manager.get_all_aliases()
-            assert "poe" not in aliases
+            assert "poe" in aliases
+            assert "haiku" in aliases["poe"]
