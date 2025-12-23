@@ -124,6 +124,9 @@ def configure_root_logging(*, use_systemd: bool = False) -> None:
 
     LOGGING_MODE_EFFECTIVE_HANDLER_NAME = handler.get_name()
 
+    if log_level == "DEBUG":
+        logging.getLogger(__name__).debug("LOG_LEVEL=DEBUG: noisy HTTP log suppression disabled")
+
     # Root logger
     root_logger = logging.getLogger()
     root_logger.handlers.clear()

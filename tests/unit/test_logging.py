@@ -3,7 +3,12 @@ from io import StringIO
 
 import pytest
 
-from src.core.logging.configuration import NOISY_HTTP_LOGGERS, set_noisy_http_logger_levels
+from src.core.logging.configuration import (
+    NOISY_HTTP_LOGGERS,
+    configure_root_logging,
+    set_noisy_http_logger_levels,
+)
+from src.core.config import config
 from src.core.logging.filters.http import HttpRequestLogDowngradeFilter
 from src.core.logging.formatters.correlation import CorrelationFormatter
 
@@ -67,3 +72,35 @@ class TestCorrelationFormatter:
 
         formatted = formatter.format(record)
         assert formatted.startswith("[12345678] hello")
+
+
+@pytest.mark.unit
+class TestConfigureRootLogging:
+    def test_emits_debug_startup_line_when_log_level_debug(self, monkeypatch, caplog):
+        monkeypatch.setattr(config, "log_level", "DEBUG")
+        caplog.set_level(logging.DEBUG)
+
+        configure_root_logging(use_systemd=False)
+
+        assert "LOG_LEVEL=DEBUG: noisy HTTP log suppression disabled" in caplog.text
+
+    def test_does_not_emit_debug_startup_line_when_log_level_info(self, monkeypatch, caplog):
+        monkeypatch.setattr(config, "log_level", "INFO")
+        caplog.set_level(logging.DEBUG)
+
+        configure_root_logging(use_systemd=False)
+
+        assert "LOG_LEVEL=DEBUG: noisy HTTP log suppression disabled" not in caplog.text
+
+    def teardown_method(self):
+        # Avoid cross-test leakage since configure_root_logging mutates global logging.
+        logging.getLogger().handlers.clear()
+        for logger_name in ("uvicorn", "uvicorn.access", "uvicorn.error", "uvicorn.server"):
+            logging.getLogger(logger_name).handlers.clear()
+        for name in NOISY_HTTP_LOGGERS:
+            logging.getLogger(name).setLevel(logging.NOTSET)
+        logging.getLogger("src.core.logging.configuration").handlers.clear()
+        logging.getLogger("src.core.logging.configuration").setLevel(logging.NOTSET)
+        logging.getLogger("src.core.logging.configuration").propagate = True
+
+        config.log_level = "INFO"

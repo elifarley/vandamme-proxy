@@ -61,6 +61,12 @@ def main() -> None:
         print("  vdm health check - Check API connectivity")
         sys.exit(0)
 
+    # Configure logging FIRST before any console output
+    # This suppresses noisy HTTP client logs (openai, httpx, httpcore) unless DEBUG
+    from src.core.logging.configuration import configure_root_logging
+
+    configure_root_logging(use_systemd=False)
+
     # Configuration summary
     print("🚀 Vandamme Proxy v1.0.0")
     print("✅ Configuration loaded successfully")
@@ -83,15 +89,13 @@ def main() -> None:
     if log_level not in valid_levels:
         log_level = "info"
 
-    access_log = log_level == "debug"
-
     # Start server
     uvicorn.run(
         "src.main:app",
         host=config.host,
         port=config.port,
         log_level=log_level,
-        access_log=access_log,
+        access_log=(log_level == "debug"),  # Only show access logs at DEBUG level
         reload=False,
     )
 
