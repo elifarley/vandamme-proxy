@@ -17,20 +17,13 @@ from src.dashboard.components.ui import (
 )
 from src.dashboard.data_sources import (
     DashboardConfigProtocol,
-    fetch_health,
     fetch_models,
-    fetch_running_totals,
     fetch_test_connection,
 )
 from src.dashboard.pages import (
-    health_banner,
-    kpis_grid,
     logs_layout,
-    metrics_disabled_callout,
     metrics_layout,
     overview_layout,
-    parse_totals_for_chart,
-    providers_table,
     top_models_layout,
 )
 
@@ -216,26 +209,16 @@ def create_dashboard(*, cfg: DashboardConfigProtocol) -> dash.Dash:
         prevent_initial_call=False,
     )
     def refresh_overview(_n: int, _clicks: int | None) -> tuple[Any, Any, Any, Any, str]:
-        try:
-            health = _run(fetch_health(cfg=cfg))
-            running = _run(fetch_running_totals(cfg=cfg))
+        from src.dashboard.services.overview import build_overview_view
 
-            banner = health_banner(health)
-            prov_table = providers_table(health)
-
-            callout = metrics_disabled_callout(running)
-            totals = parse_totals_for_chart(running)
-            kpis = kpis_grid(totals)
-
-            return banner, prov_table, kpis, callout, ""
-        except Exception as e:  # noqa: BLE001
-            return (
-                dbc.Alert(f"Failed to refresh: {e}", color="danger"),
-                html.Div(),
-                html.Div(),
-                None,
-                str(e),
-            )
+        view = _run(build_overview_view(cfg=cfg))
+        return (
+            view.banner,
+            view.providers_table,
+            view.kpis,
+            view.metrics_disabled_callout,
+            view.global_error,
+        )
 
     @app.callback(
         Output("vdm-test-connection-result", "children"),
