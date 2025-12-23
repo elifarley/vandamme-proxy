@@ -12,6 +12,8 @@ import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 
+from src.api.services.key_rotation import make_next_provider_key_fn
+from src.api.services.provider_context import resolve_provider_context
 from src.api.utils.yaml_formatter import format_health_yaml
 from src.conversion.anthropic_sse_to_openai import anthropic_sse_to_openai_chat_completions_sse
 from src.conversion.anthropic_to_openai import anthropic_message_to_openai_chat_completion
@@ -142,42 +144,25 @@ async def chat_completions(
     with ConversationLogger.correlation_context(request_id):
         start_time = time.time()
 
-        # Resolve provider + model via alias/prefix machinery.
-        provider_name, resolved_model = model_manager.resolve_model(request.model)
+        provider_ctx = await resolve_provider_context(
+            model=request.model,
+            client_api_key=client_api_key,
+        )
+        provider_name = provider_ctx.provider_name
+        resolved_model = provider_ctx.resolved_model
+        provider_config = provider_ctx.provider_config
 
         # Build upstream request dict and attach resolved model.
         openai_request: dict[str, Any] = request.model_dump(exclude_none=True)
         openai_request["model"] = resolved_model
 
-        provider_config = config.provider_manager.get_provider_config(provider_name)
-        if provider_config is None:
-            raise HTTPException(status_code=404, detail=f"Provider '{provider_name}' not found")
-
         openai_client = config.provider_manager.get_client(provider_name, client_api_key)
 
-        provider_api_key: str | None = None
-        if not provider_config.uses_passthrough:
-            provider_api_key = await config.provider_manager.get_next_provider_api_key(
-                provider_name
-            )
-
-        async def _next_provider_key(exclude: set[str]) -> str:
-            keys = provider_config.get_api_keys()
-            if len(exclude) >= len(keys):
-                raise HTTPException(status_code=429, detail="All provider API keys exhausted")
-            while True:
-                k = await config.provider_manager.get_next_provider_api_key(provider_name)
-                if k not in exclude:
-                    return k
-
-        if provider_config.uses_passthrough and not client_api_key:
-            raise HTTPException(
-                status_code=401,
-                detail=(
-                    f"Provider '{provider_name}' requires API key passthrough, "
-                    "but no client API key was provided"
-                ),
-            )
+        provider_api_key = provider_ctx.provider_api_key
+        _next_provider_key = make_next_provider_key_fn(
+            provider_name=provider_name,
+            api_keys=provider_config.get_api_keys(),
+        )
 
         if provider_config.is_anthropic_format:
             # Translate OpenAI Chat Completions -> Anthropic Messages request.
