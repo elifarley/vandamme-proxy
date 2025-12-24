@@ -305,7 +305,17 @@ def timestamp_with_recency_dot(
 
     hover_text = iso_string if iso_string else "No timestamp available"
     dot = recency_dot_with_data_attrs(iso_string)
-    text = html.Span(format_timestamp(iso_string), className="vdm-recency-text")
+
+    # Place the tooltip on the actual hover targets. Some environments may not
+    # reliably surface the wrapper `title`.
+    text = html.Span(
+        format_timestamp(iso_string),
+        className="vdm-recency-text",
+        title=hover_text,
+    )
+
+    # Recreate the dot with the same styling, but ensure it also has `title`.
+    dot = recency_dot_with_data_attrs(iso_string)
 
     return html.Span(
         [dot, text],
