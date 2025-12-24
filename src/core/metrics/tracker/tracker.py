@@ -191,8 +191,19 @@ class RequestTracker:
                     {
                         "request_id": m.request_id,
                         "provider": provider or "unknown",
+                        "model": requested_model.split(":", 1)[1]
+                        if ":" in requested_model
+                        else requested_model,
                         "requested_model": requested_model,
                         "resolved_model": resolved_model,
+                        "resolved_model_stripped": resolved_model.split(":", 1)[1]
+                        if ":" in resolved_model
+                        else resolved_model,
+                        "qualified_model": (
+                            requested_model
+                            if ":" in requested_model
+                            else (f"{provider}:{requested_model}" if provider else requested_model)
+                        ),
                         "is_streaming": bool(m.is_streaming),
                         "start_time": float(m.start_time),
                         "duration_ms": duration_ms,

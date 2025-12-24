@@ -29,47 +29,8 @@ def metrics_active_requests_ag_grid(
     if not isinstance(active_requests, list):
         active_requests = []
 
-    # Keep columns focused on performance + debuggability.
+    # Keep columns consistent with the model breakdown grid.
     column_defs = [
-        {
-            "headerName": "Streaming",
-            "field": "is_streaming",
-            "sortable": True,
-            "filter": True,
-            "resizable": True,
-            "width": 110,
-            "suppressSizeToFit": True,
-        },
-        {
-            "headerName": "Provider",
-            "field": "provider",
-            "sortable": True,
-            "filter": True,
-            "resizable": True,
-            "width": 140,
-            "suppressSizeToFit": True,
-            "cellRenderer": "vdmProviderBadgeRenderer",
-        },
-        {
-            "headerName": "Requested model",
-            "field": "requested_model",
-            "sortable": True,
-            "filter": True,
-            "resizable": True,
-            "flex": 2,
-            "minWidth": 260,
-            "cellStyle": {"fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas"},
-        },
-        {
-            "headerName": "Resolved model",
-            "field": "resolved_model",
-            "sortable": True,
-            "filter": True,
-            "resizable": True,
-            "flex": 2,
-            "minWidth": 260,
-            "cellStyle": {"fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas"},
-        },
         {
             "headerName": "Duration",
             "field": "duration_ms",
@@ -80,6 +41,39 @@ def metrics_active_requests_ag_grid(
             "suppressSizeToFit": True,
             "valueGetter": {"function": "vdmFormatDurationValue(params.data.duration_ms)"},
             "tooltipValueGetter": {"function": "vdmFormatDurationTooltip(params.data.duration_ms)"},
+            "sort": "desc",
+        },
+        {
+            "headerName": "Model",
+            "field": "qualified_model",
+            "sortable": True,
+            "filter": True,
+            "resizable": True,
+            "flex": 2,
+            "width": 280,
+            "cellRenderer": "vdmQualifiedModelRenderer",
+            "cellStyle": {"fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas"},
+            "tooltipField": "qualified_model",
+        },
+        {
+            "headerName": "Resolved",
+            "field": "resolved_model_stripped",
+            "sortable": True,
+            "filter": True,
+            "resizable": True,
+            "flex": 2,
+            "minWidth": 260,
+            "cellStyle": {"fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas"},
+            "tooltipField": "resolved_model_stripped",
+        },
+        {
+            "headerName": "Streaming",
+            "field": "is_streaming",
+            "sortable": True,
+            "filter": True,
+            "resizable": True,
+            "width": 110,
+            "suppressSizeToFit": True,
         },
         {
             "headerName": "In",
