@@ -60,7 +60,9 @@ def _kpi_col(title: str, value: Any, *, subtitle: str | None = None, raw: bool =
     )
 
     display = (
-        timestamp_with_recency_dot(value) if raw and title == "Last activity" else monospace(value)
+        timestamp_with_recency_dot(value, id_override="vdm-overview-last-activity")
+        if raw and title == "Last activity"
+        else monospace(value)
     )
 
     return dbc.Col(

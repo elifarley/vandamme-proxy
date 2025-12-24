@@ -19,14 +19,17 @@ def register_metrics_callbacks(
         Output("vdm-provider-breakdown", "children"),
         Output("vdm-model-breakdown", "children"),
         Input("vdm-metrics-poll", "n_intervals"),
+        Input("vdm-metrics-refresh", "n_clicks"),
         State("vdm-metrics-poll-toggle", "value"),
         prevent_initial_call=False,
     )
     def refresh_metrics(
         n: int,
+        refresh_clicks: int | None,
         polling: bool,
     ) -> tuple[Any, Any, Any]:
-        if not polling and n:
+        # Manual refresh should always work. Polling can be disabled.
+        if not refresh_clicks and (not polling) and n:
             raise dash.exceptions.PreventUpdate
 
         from src.dashboard.services.metrics import build_metrics_view

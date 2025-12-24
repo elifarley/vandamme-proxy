@@ -201,29 +201,28 @@ window.vdmQualifiedModelRenderer = function(params) {
 };
 
 
-// Render a recency dot + the existing relative time string.
-// Contract: row data must include `last_accessed_age_s` (seconds) and `last_accessed` (text).
-window.vdmRecencyDotRenderer = function(params) {
-    const data = (params && params.data) || {};
-    const age = Number(data.last_accessed_age_s);
-    const text = params && params.value ? String(params.value) : '';
+// ---- Recency rendering + live updates (Metrics) ----
 
-    function clamp(x, lo, hi) {
-        return Math.max(lo, Math.min(hi, x));
-    }
+function vdmClamp(x, lo, hi) {
+    return Math.max(lo, Math.min(hi, x));
+}
 
-    // Anchors (seconds -> rgb)
-    const anchors = [
-        [0,    [255, 0, 0]],       // red
-        [5,    [255, 165, 0]],     // orange
-        [20,   [255, 255, 0]],     // yellow
-        [120,  [0, 255, 0]],       // green
-        [600,  [255, 255, 255]],   // white
-        [1800, [0, 128, 255]],     // blue
-        [3600, [0, 0, 0]],         // black
+function vdmRecencyAnchors() {
+    // seconds -> rgb
+    return [
+        [0, [255, 0, 0]], // red
+        [5, [255, 165, 0]], // orange
+        [20, [255, 255, 0]], // yellow
+        [120, [0, 255, 0]], // green
+        [600, [255, 255, 255]], // white
+        [1800, [0, 128, 255]], // blue
+        [3600, [0, 0, 0]], // black
     ];
+}
 
-    const t = clamp(isFinite(age) ? age : 3600, 0, 3600);
+function vdmRecencyColorRgb(ageSeconds) {
+    const anchors = vdmRecencyAnchors();
+    const t = vdmClamp(isFinite(ageSeconds) ? ageSeconds : 3600, 0, 3600);
 
     let loT = anchors[0][0];
     let lo = anchors[0][1];
@@ -245,21 +244,59 @@ window.vdmRecencyDotRenderer = function(params) {
         loT = hiT;
         lo = hi;
     }
+    return color;
+}
+
+function vdmRecencyText(ageSeconds) {
+    const s = Math.max(0, Math.floor(ageSeconds));
+    if (s < 60) return `${s}s ago`;
+    const m = Math.floor(s / 60);
+    if (m < 60) return `${m}m ago`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h ago`;
+    const d = Math.floor(h / 24);
+    return `${d}d ago`;
+}
+
+// Render a recency dot + relative time string.
+// Contract: row data includes:
+// - last_accessed_epoch_ms (number)
+// - last_accessed_age_s_at_render (number)
+// - last_accessed_iso (string)
+window.vdmRecencyDotRenderer = function(params) {
+    const data = (params && params.data) || {};
+
+    const iso = data.last_accessed_iso ? String(data.last_accessed_iso) : '';
+    const epochMs = Number(data.last_accessed_epoch_ms);
+    const ageAtRender = Number(data.last_accessed_age_s_at_render);
+
+    const safeAge = isFinite(ageAtRender) ? ageAtRender : 3600;
+    const rgb = vdmRecencyColorRgb(safeAge);
 
     const dot = React.createElement('span', {
         className: 'vdm-recency-dot',
-        style: { backgroundColor: `rgb(${color[0]}, ${color[1]}, ${color[2]})` },
+        // data hooks for the live updater:
+        'data-vdm-recency-epoch-ms': isFinite(epochMs) ? String(epochMs) : '',
+        'data-vdm-recency-age-at-render': isFinite(ageAtRender) ? String(ageAtRender) : '3600',
+        style: { backgroundColor: `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})` },
     });
 
-    const iso = data.last_accessed_iso ? String(data.last_accessed_iso) : '';
+    const text = React.createElement('span', {
+        className: 'vdm-recency-text',
+    }, params && params.value ? String(params.value) : '');
 
     return React.createElement(
         'span',
         {
+            className: 'vdm-recency-wrap',
             style: { display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'help' },
             title: iso || 'No timestamp available',
         },
         dot,
-        React.createElement('span', {}, text)
+        text
     );
 };
+
+// Expose helpers for the init script.
+window.vdmRecencyColorRgb = vdmRecencyColorRgb;
+window.vdmRecencyText = vdmRecencyText;

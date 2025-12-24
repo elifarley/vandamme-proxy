@@ -191,6 +191,24 @@ def timestamp_age_seconds(iso_string: str | None) -> float | None:
     return max(0.0, float(diff.total_seconds()))
 
 
+def timestamp_epoch_ms(iso_string: str | None) -> int | None:
+    """Return epoch milliseconds for an ISO timestamp.
+
+    Used for low-overhead client-side recency updates (no ISO parsing in JS loops).
+    """
+    dt = _parse_iso_datetime(iso_string)
+    if not dt:
+        return None
+
+    if dt.tzinfo is None:
+        # Naive timestamps are interpreted as *local time*.
+        # This must match `format_timestamp` semantics to keep the recency ticker correct.
+        local_tz = datetime.now().astimezone().tzinfo
+        dt = dt.replace(tzinfo=local_tz)
+
+    return int(dt.timestamp() * 1000)
+
+
 def recency_color_hex(age_seconds: float) -> str:
     """Map age in seconds to a continuous gradient color.
 
@@ -228,12 +246,29 @@ def recency_color_hex(age_seconds: float) -> str:
 
 
 def recency_dot(iso_string: str | None) -> html.Span:
+    # Used for simple (non-ticking) cases.
     age = timestamp_age_seconds(iso_string)
     color = recency_color_hex(age if age is not None else 3600.0)
     return html.Span(
         "",
         className="vdm-recency-dot",
         style={"backgroundColor": color},
+        title=iso_string or "No timestamp available",
+    )
+
+
+def recency_dot_with_data_attrs(iso_string: str | None) -> html.Span:
+    """Recency dot that exposes epoch+age so JS can update it without server refresh."""
+    epoch_ms = timestamp_epoch_ms(iso_string) or 0
+    age_at_render = timestamp_age_seconds(iso_string) or 3600.0
+    return html.Span(
+        "",
+        className="vdm-recency-dot",
+        style={
+            "backgroundColor": recency_color_hex(age_at_render),
+            "--vdm-recency-epoch-ms": str(epoch_ms),
+            "--vdm-recency-age-at-render": str(age_at_render),
+        },
         title=iso_string or "No timestamp available",
     )
 
@@ -252,13 +287,30 @@ def timestamp_with_hover(iso_string: str | None) -> html.Span:
     )
 
 
-def timestamp_with_recency_dot(iso_string: str | None) -> html.Span:
-    """Render a recency dot + relative time text, with absolute timestamp on hover."""
+def timestamp_with_recency_dot(
+    iso_string: str | None,
+    *,
+    id_override: str | None = None,
+) -> html.Span:
+    """Render a recency dot + relative time text, with absolute timestamp on hover.
+
+    This is used both in AG Grid cells and in KPI cards. We attach predictable
+    DOM hooks so a lightweight client-side ticker can update the dot/text
+    without any server refresh.
+
+    `id_override` exists so specific places (e.g., the Overview "Last activity"
+    KPI) can be targeted by client-side tickers without relying on brittle DOM
+    traversal.
+    """
 
     hover_text = iso_string if iso_string else "No timestamp available"
+    dot = recency_dot_with_data_attrs(iso_string)
+    text = html.Span(format_timestamp(iso_string), className="vdm-recency-text")
 
     return html.Span(
-        [recency_dot(iso_string), html.Span(format_timestamp(iso_string))],
+        [dot, text],
+        className="vdm-recency-wrap",
+        id=id_override,
         title=hover_text,
         style={
             "display": "inline-flex",

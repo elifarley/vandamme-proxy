@@ -194,8 +194,8 @@ console.info('[vdm] AG Grid init script loaded');
 
     // Retry attach because Dash may mount later.
     function boot() {
-        attach('vdm-provider-breakdown');
-        attach('vdm-model-breakdown');
+        attach('vdm-metrics-providers-grid');
+        attach('vdm-metrics-models-grid');
     }
 
     boot();
@@ -211,3 +211,147 @@ window.dash_clientside.vdm_metrics = window.dash_clientside.vdm_metrics || {};
 window.dash_clientside.vdm_metrics.user_active = function(n) {
     return !!window.__vdm_metrics_user_active;
 };
+
+
+// --- Metrics live recency updates ---
+// Update dot color at ~10fps and relative text at ~1fps without server fetches.
+(function initMetricsRecencyTicker() {
+    if (window.__vdmMetricsRecencyTickerInit) return;
+    window.__vdmMetricsRecencyTickerInit = true;
+
+    const GRID_CONTAINER_IDS = ['vdm-metrics-providers-grid', 'vdm-metrics-models-grid'];
+    const OVERVIEW_LAST_ACTIVITY_ID = 'vdm-overview-last-activity';
+
+    // Use performance.now() for smooth elapsed time, and anchor it to epoch.
+    // This avoids calling Date.now() in hot loops.
+    const epochOffsetMs = Date.now() - performance.now();
+
+    let lastDotTickMs = 0;
+    let lastTextTickMs = 0;
+
+    function withinMetricsOrOverview() {
+        // Run if Metrics grids exist or the Overview last-activity KPI exists.
+        if (document.getElementById(OVERVIEW_LAST_ACTIVITY_ID)) return true;
+        return GRID_CONTAINER_IDS.some((id) => document.getElementById(id));
+    }
+
+    // Minimal run-time cost: only tick when there is at least one target wrap.
+    function anyRecencyTargetsPresent() {
+        if (document.getElementById(OVERVIEW_LAST_ACTIVITY_ID)) return true;
+        for (const containerId of GRID_CONTAINER_IDS) {
+            const root = document.getElementById(containerId);
+            if (!root) continue;
+            if (root.querySelector('.vdm-recency-wrap')) return true;
+        }
+        return false;
+    }
+
+    function getEpochAndAge(dot) {
+        const epochMsStr = dot.getAttribute('data-vdm-recency-epoch-ms')
+            || dot.style.getPropertyValue('--vdm-recency-epoch-ms')
+            || '';
+        const ageAtRenderStr = dot.getAttribute('data-vdm-recency-age-at-render')
+            || dot.style.getPropertyValue('--vdm-recency-age-at-render')
+            || '3600';
+
+        return {
+            epochMs: Number(epochMsStr),
+            ageAtRender: Number(ageAtRenderStr),
+        };
+    }
+
+    function updateWrap(wrap, nowEpochMs, nowPerfMs, doDot, doText) {
+        if (!wrap) return;
+        const dot = wrap.querySelector('.vdm-recency-dot');
+        if (!dot) return;
+
+        const { epochMs, ageAtRender } = getEpochAndAge(dot);
+        if (!isFinite(ageAtRender)) return;
+
+        const ageSeconds = (isFinite(epochMs) && epochMs > 0)
+            ? Math.max(0, (nowEpochMs - epochMs) / 1000)
+            : ageAtRender + (nowPerfMs / 1000);
+
+        if (doDot && typeof window.vdmRecencyColorRgb === 'function') {
+            const rgb = window.vdmRecencyColorRgb(ageSeconds);
+            const next = `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
+            if (dot.style.backgroundColor !== next) {
+                dot.style.backgroundColor = next;
+            }
+        }
+
+        if (doText && typeof window.vdmRecencyText === 'function') {
+            const textEl = wrap.querySelector('.vdm-recency-text');
+            if (!textEl) return;
+
+            const nextText = window.vdmRecencyText(ageSeconds);
+            if (textEl.textContent !== nextText) {
+                textEl.textContent = nextText;
+            }
+        }
+    }
+
+    function updateMetricsTargets(nowEpochMs, nowPerfMs, doDot, doText) {
+        for (const containerId of GRID_CONTAINER_IDS) {
+            const root = document.getElementById(containerId);
+            if (!root) continue;
+            const wraps = root.querySelectorAll('.vdm-recency-wrap');
+            for (const wrap of wraps) {
+                updateWrap(wrap, nowEpochMs, nowPerfMs, doDot, doText);
+            }
+        }
+    }
+
+    function updateOverviewTarget(nowEpochMs, nowPerfMs, doDot, doText) {
+        const overviewWrap = document.getElementById(OVERVIEW_LAST_ACTIVITY_ID);
+        if (overviewWrap) {
+            updateWrap(overviewWrap, nowEpochMs, nowPerfMs, doDot, doText);
+        }
+    }
+
+    function tick(nowPerfMs) {
+        if (document.visibilityState === 'hidden') {
+            // Avoid doing any work while the tab is hidden.
+            requestAnimationFrame(tick);
+            return;
+        }
+
+        if (!withinMetricsOrOverview()) {
+            requestAnimationFrame(tick);
+            return;
+        }
+
+        if (!anyRecencyTargetsPresent()) {
+            requestAnimationFrame(tick);
+            return;
+        }
+
+        // Fast path: if helpers aren't available, don't do work.
+        if (typeof window.vdmRecencyColorRgb !== 'function' || typeof window.vdmRecencyText !== 'function') {
+            requestAnimationFrame(tick);
+            return;
+        }
+
+        // Compute epoch time once per tick.
+        const nowEpochMs = epochOffsetMs + nowPerfMs;
+
+        // Throttle dot updates (~10fps) and text updates (~1fps)
+        const doDot = (nowPerfMs - lastDotTickMs) >= 100;
+        const doText = (nowPerfMs - lastTextTickMs) >= 1000;
+
+        if (!doDot && !doText) {
+            requestAnimationFrame(tick);
+            return;
+        }
+
+        if (doDot) lastDotTickMs = nowPerfMs;
+        if (doText) lastTextTickMs = nowPerfMs;
+
+        updateMetricsTargets(nowEpochMs, nowPerfMs, doDot, doText);
+        updateOverviewTarget(nowEpochMs, nowPerfMs, doDot, doText);
+
+        requestAnimationFrame(tick);
+    }
+
+    requestAnimationFrame(tick);
+})();

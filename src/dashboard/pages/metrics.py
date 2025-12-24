@@ -23,6 +23,13 @@ def metrics_layout() -> dbc.Container:
                         html.Div(
                             [
                                 html.Div("Live updates", className="text-muted small me-2"),
+                                dbc.Button(
+                                    "Refresh",
+                                    id="vdm-metrics-refresh",
+                                    color="secondary",
+                                    outline=True,
+                                    className="me-2",
+                                ),
                                 dbc.Switch(
                                     id="vdm-metrics-poll-toggle",
                                     label="Polling",
