@@ -17,6 +17,24 @@ async def test_recent_traces_and_errors_buffers_capture_completed_requests():
         output_tokens=20,
     )
 
+    # Regression: metrics should be keyed by the resolved target model (canonical),
+    # never by a provider-prefixed alias like "openai:fast".
+    await request_tracker.start_request("r_alias", claude_model="openai:fast", is_streaming=False)
+    await request_tracker.end_request(
+        "r_alias",
+        provider="openai",
+        openai_model="gpt-4o-mini",
+        input_tokens=1,
+        output_tokens=1,
+    )
+
+    data = await request_tracker.get_running_totals_hierarchical()
+    openai_provider = data["providers"]["openai"]
+    assert "openai:fast" not in openai_provider["models"]
+    assert "fast" not in openai_provider["models"]
+    assert "gpt-4o-mini" in openai_provider["models"]
+    assert openai_provider["models"]["gpt-4o-mini"]["total"]["requests"] >= 1
+
     await request_tracker.start_request("r2", claude_model="openai:gpt-4o", is_streaming=True)
     await request_tracker.end_request(
         "r2",

@@ -372,16 +372,17 @@ async def create_message(
                     openai_request["messages"] = processed_context.messages
                     logger.debug(f"Request modified by middleware, provider={provider_name}")
 
-            # Update metrics with OpenAI model and provider
+            # Metrics should always be recorded against the *resolved target model*
+            # (never the alias the user typed).
             if LOG_REQUEST_METRICS and metrics:
-                openai_model = openai_request.get("model", "unknown")
-                metrics.openai_model = openai_model
+                resolved_model = str(openai_request.get("model", "unknown"))
                 metrics.provider = provider_name  # type: ignore[assignment]
+                metrics.openai_model = resolved_model
 
                 # Update last_accessed timestamp
                 await tracker.update_last_accessed(
                     provider=provider_name,
-                    model=openai_model,
+                    model=resolved_model,
                     timestamp=metrics.start_time_iso,
                 )
 

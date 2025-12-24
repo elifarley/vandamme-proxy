@@ -22,6 +22,19 @@ def test_parse_metric_totals_disabled_returns_zeros() -> None:
     assert totals.total_errors == 0
 
 
+def test_parse_metric_totals_prefers_total_tool_calls() -> None:
+    totals = parse_metric_totals(
+        {
+            "summary": {
+                "total_requests": 1,
+                "total_tool_calls": 7,
+                "tool_calls": 2,
+            }
+        }
+    )
+    assert totals.tool_calls == 7
+
+
 def test_provider_rows_basic_shape() -> None:
     rows = provider_rows(
         {

@@ -60,12 +60,22 @@ class SummaryMetrics:
             self.total_errors += 1
             self.error_counts[metrics.error_type or "unknown"] += 1
 
-        if metrics.openai_model and ":" in metrics.openai_model:
-            provider_key = metrics.openai_model
-        elif metrics.provider and metrics.openai_model:
-            provider_key = f"{metrics.provider}:{metrics.openai_model}"
-        else:
-            provider_key = metrics.provider or metrics.openai_model or "unknown"
+        # IMPORTANT: Keep provider/model keys canonical.
+        #
+        # `metrics.openai_model` is intended to represent a concrete resolved model name.
+        # Some request paths (notably OpenAI-compatible /v1/chat/completions clients)
+        # may send a provider-prefixed string like "openai:fast" (where "fast" is an
+        # alias). If we treat that raw string as a key, the dashboard will render
+        # misleading model rows (e.g., "openai:fast").
+        #
+        # Canonical rule:
+        # - bucket key is always "{provider}:{resolved_model}" when both exist
+        # - otherwise fall back to provider or model or "unknown"
+        provider_key = (
+            f"{metrics.provider}:{metrics.openai_model}"
+            if metrics.provider and metrics.openai_model
+            else metrics.provider or metrics.openai_model or "unknown"
+        )
 
         pm = self.provider_model_metrics[provider_key]
         pm.total_requests += 1

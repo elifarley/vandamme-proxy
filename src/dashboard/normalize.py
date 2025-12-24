@@ -88,7 +88,10 @@ def parse_metric_totals(running_totals_yaml: dict[str, Any]) -> MetricTotals:
         cache_read_tokens=_as_int(summary.get("cache_read_tokens")),
         cache_creation_tokens=_as_int(summary.get("cache_creation_tokens")),
         tool_calls=_as_int(
-            summary.get("tool_calls") or summary.get("tool_uses") or summary.get("tool_results")
+            summary.get("total_tool_calls")
+            or summary.get("tool_calls")
+            or summary.get("tool_uses")
+            or summary.get("tool_results")
         ),
         active_requests=_as_int(summary.get("active_requests")),
         average_duration_ms=_as_float(summary.get("average_duration_ms")),
