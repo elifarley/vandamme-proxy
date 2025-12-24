@@ -280,6 +280,58 @@ def metrics_providers_row_data(running_totals_yaml: dict[str, Any]) -> list[dict
     return row_data
 
 
+def metrics_active_requests_row_data(active_requests: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Build AG-Grid rowData for the Metrics Active Requests grid.
+
+    The API returns a snapshot from `RequestTracker.get_active_requests_snapshot()`.
+
+    Responsibilities here:
+    - Ensure provider badge fields are present (`provider_color`, `model`)
+    - Provide `last_accessed_*` fields expected by `vdmRecencyDotRenderer`, mapped
+      to request start time (`start_time`) so the dot reflects request age.
+
+    Note: `start_time` is epoch seconds.
+    """
+
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc)
+
+    row_data: list[dict[str, Any]] = []
+    for r in active_requests:
+        if not isinstance(r, dict):
+            continue
+
+        provider = str(r.get("provider") or "")
+        model = str(r.get("model") or "")
+
+        start_time_s = r.get("start_time")
+        if isinstance(start_time_s, (int, float)):
+            start_epoch_ms = float(start_time_s) * 1000.0
+            start_iso = datetime.fromtimestamp(float(start_time_s), tz=timezone.utc).isoformat()
+            age_s = now.timestamp() - float(start_time_s)
+        else:
+            start_epoch_ms = 0.0
+            start_iso = ""
+            age_s = 3600.0
+
+        row_data.append(
+            {
+                **r,
+                "provider": provider,
+                "provider_color": provider_badge_color(provider),
+                "model": model,
+                # `vdmRecencyDotRenderer` contract:
+                "last_accessed": "",
+                "last_accessed_iso": start_iso,
+                "last_accessed_epoch_ms": int(start_epoch_ms) if start_epoch_ms else 0,
+                "last_accessed_age_s_at_render": float(age_s),
+            }
+        )
+
+    return row_data
+
+
 def metrics_models_row_data(running_totals_yaml: dict[str, Any]) -> list[dict[str, Any]]:
     """Build AG-Grid rowData for the Metrics Models grid across all providers."""
 

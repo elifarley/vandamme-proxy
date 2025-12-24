@@ -219,7 +219,7 @@ window.dash_clientside.vdm_metrics.user_active = function(n) {
     if (window.__vdmMetricsRecencyTickerInit) return;
     window.__vdmMetricsRecencyTickerInit = true;
 
-    const GRID_CONTAINER_IDS = ['vdm-metrics-providers-grid', 'vdm-metrics-models-grid'];
+    const GRID_CONTAINER_IDS = ['vdm-metrics-providers-grid', 'vdm-metrics-models-grid', 'vdm-metrics-active-requests-grid'];
     const OVERVIEW_LAST_ACTIVITY_ID = 'vdm-overview-last-activity';
     const OVERVIEW_ANCHOR_ID = 'vdm-refresh-now';
     const OVERVIEW_FALLBACK_WRAP_SELECTOR = '.vdm-recency-wrap';
@@ -299,6 +299,11 @@ window.dash_clientside.vdm_metrics.user_active = function(n) {
         if (doText && typeof window.vdmRecencyText === 'function') {
             const textEl = wrap.querySelector('.vdm-recency-text');
             if (!textEl) return;
+
+            // Active Requests Duration column is special: it reuses the recency dot
+            // renderer for the dot UI, but the text is updated by a dedicated ticker
+            // to show duration (no "ago").
+            if (wrap.closest('.vdm-active-req-duration')) return;
 
             const nextText = window.vdmRecencyText(ageSeconds);
             if (textEl.textContent !== nextText) {

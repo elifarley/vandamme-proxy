@@ -49,7 +49,23 @@ def register_metrics_callbacks(
 
     app.clientside_callback(
         """
-        function(n) {
+        function(n, activeReqTickMs) {
+            // Store the active-requests duration tick rate for the assets JS ticker.
+            // This keeps the grid purely client-updated without server round-trips.
+            if (typeof activeReqTickMs === 'number' && isFinite(activeReqTickMs)) {
+                window.__vdm_active_requests_duration_tick_ms = activeReqTickMs;
+                try {
+                    if (window.localStorage) {
+                        localStorage.setItem(
+                            'vdm.metrics.activeRequests.durationTickMs',
+                            String(activeReqTickMs)
+                        );
+                    }
+                } catch (e) {
+                    // ignore
+                }
+            }
+
             if (window.dash_clientside
                 && window.dash_clientside.vdm_metrics
                 && window.dash_clientside.vdm_metrics.user_active) {
@@ -60,6 +76,7 @@ def register_metrics_callbacks(
         """,
         Output("vdm-metrics-user-active", "data"),
         Input("vdm-metrics-user-active-poll", "n_intervals"),
+        State("vdm-active-requests-tick-ms", "value"),
         prevent_initial_call=False,
     )
 

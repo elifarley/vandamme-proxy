@@ -4,18 +4,30 @@ from typing import Any
 
 import dash_ag_grid as dag  # type: ignore[import-untyped]
 
+from src.dashboard.ag_grid.column_presets import (
+    duration_like_last_col,
+    duration_ms_col,
+    last_col,
+    numeric_col,
+    qualified_model_col,
+    resolved_model_col,
+)
 from src.dashboard.ag_grid.factories import build_ag_grid
+from src.dashboard.ag_grid.grid_presets import grid_css_compact, metrics_common_grid_options
 from src.dashboard.ag_grid.scripts import (
     get_ag_grid_clientside_callback as _get_ag_grid_clientside_callback,
 )
 from src.dashboard.ag_grid.transformers import (
     logs_errors_row_data,
     logs_traces_row_data,
+    metrics_active_requests_row_data,
     metrics_models_row_data,
     metrics_providers_row_data,
     models_row_data,
     top_models_row_data,
 )
+
+# --- Metrics grids ---
 
 
 def metrics_active_requests_ag_grid(
@@ -29,43 +41,17 @@ def metrics_active_requests_ag_grid(
     if not isinstance(active_requests, list):
         active_requests = []
 
+    active_requests = metrics_active_requests_row_data(active_requests)
+
     # Keep columns consistent with the model breakdown grid.
     column_defs = [
-        {
-            "headerName": "Duration",
-            "field": "duration_ms",
-            "sortable": True,
-            "filter": True,
-            "resizable": True,
-            "width": 120,
-            "suppressSizeToFit": True,
-            "valueGetter": {"function": "vdmFormatDurationValue(params.data.duration_ms)"},
-            "tooltipValueGetter": {"function": "vdmFormatDurationTooltip(params.data.duration_ms)"},
-            "sort": "desc",
-        },
-        {
-            "headerName": "Model",
-            "field": "qualified_model",
-            "sortable": True,
-            "filter": True,
-            "resizable": True,
-            "flex": 2,
-            "width": 280,
-            "cellRenderer": "vdmQualifiedModelRenderer",
-            "cellStyle": {"fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas"},
-            "tooltipField": "qualified_model",
-        },
-        {
-            "headerName": "Resolved",
-            "field": "resolved_model_stripped",
-            "sortable": True,
-            "filter": True,
-            "resizable": True,
-            "flex": 2,
-            "minWidth": 260,
-            "cellStyle": {"fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas"},
-            "tooltipField": "resolved_model_stripped",
-        },
+        duration_like_last_col(
+            duration_field="duration_ms",
+            duration_epoch_field="start_time",
+            sort="desc",
+        ),
+        qualified_model_col(sort=None),
+        resolved_model_col(),
         {
             "headerName": "Streaming",
             "field": "is_streaming",
@@ -75,36 +61,9 @@ def metrics_active_requests_ag_grid(
             "width": 110,
             "suppressSizeToFit": True,
         },
-        {
-            "headerName": "In",
-            "field": "input_tokens",
-            "sortable": True,
-            "filter": True,
-            "resizable": True,
-            "width": 110,
-            "suppressSizeToFit": True,
-            "cellRenderer": "vdmFormattedNumberRenderer",
-        },
-        {
-            "headerName": "Out",
-            "field": "output_tokens",
-            "sortable": True,
-            "filter": True,
-            "resizable": True,
-            "width": 110,
-            "suppressSizeToFit": True,
-            "cellRenderer": "vdmFormattedNumberRenderer",
-        },
-        {
-            "headerName": "Tools",
-            "field": "tool_calls",
-            "sortable": True,
-            "filter": True,
-            "resizable": True,
-            "width": 90,
-            "suppressSizeToFit": True,
-            "cellRenderer": "vdmFormattedNumberRenderer",
-        },
+        numeric_col(header="In", field="input_tokens", width=110),
+        numeric_col(header="Out", field="output_tokens", width=110),
+        numeric_col(header="Tools", field="tool_calls", width=90),
         {
             "headerName": "Req id",
             "field": "request_id",
@@ -127,13 +86,9 @@ def metrics_active_requests_ag_grid(
         no_rows_message="No active requests",
         dash_grid_options_overrides={
             "pagination": False,
-            "rowHeight": 37,
+            **metrics_common_grid_options(),
         },
-        custom_css={
-            "height": "260px",
-            "width": "100%",
-            "minHeight": "260px",
-        },
+        custom_css=grid_css_compact(height_px=260),
     )
 
 
@@ -571,16 +526,7 @@ def metrics_providers_ag_grid(
     """Create an AG-Grid table for Metrics provider rollups."""
 
     column_defs = [
-        {
-            "headerName": "Last",
-            "field": "last_accessed",
-            "sortable": True,
-            "filter": True,
-            "resizable": True,
-            "width": 120,
-            "suppressSizeToFit": True,
-            "cellRenderer": "vdmRecencyDotRenderer",
-        },
+        last_col(),
         {
             "headerName": "Provider",
             "field": "provider",
@@ -603,91 +549,14 @@ def metrics_providers_ag_grid(
             "valueGetter": {"function": "params.data.average_duration"},
             "tooltipValueGetter": {"function": "params.data.average_duration"},
         },
-        {
-            "headerName": "Total\ntime",
-            "field": "total_duration_ms_raw",
-            "sortable": True,
-            "filter": True,
-            "resizable": True,
-            "width": 120,
-            "suppressSizeToFit": True,
-            "valueGetter": {
-                "function": "vdmFormatDurationValue(params.data.total_duration_ms_raw)"
-            },
-            "tooltipValueGetter": {
-                "function": "vdmFormatDurationTooltip(params.data.total_duration_ms_raw)"
-            },
-        },
-        {
-            "headerName": "Tools",
-            "field": "tool_calls_raw",
-            "sortable": True,
-            "filter": True,
-            "resizable": True,
-            "width": 90,
-            "suppressSizeToFit": True,
-            "cellRenderer": "vdmFormattedNumberRenderer",
-        },
-        {
-            "headerName": "Requests",
-            "field": "requests",
-            "sortable": True,
-            "filter": True,
-            "resizable": True,
-            "width": 110,
-            "suppressSizeToFit": True,
-            "cellRenderer": "vdmFormattedNumberRenderer",
-        },
-        {
-            "headerName": "In\ntokens",
-            "field": "input_tokens_raw",
-            "sortable": True,
-            "filter": True,
-            "resizable": True,
-            "width": 120,
-            "suppressSizeToFit": True,
-            "cellRenderer": "vdmFormattedNumberRenderer",
-        },
-        {
-            "headerName": "Out\ntokens",
-            "field": "output_tokens_raw",
-            "sortable": True,
-            "filter": True,
-            "resizable": True,
-            "width": 120,
-            "suppressSizeToFit": True,
-            "cellRenderer": "vdmFormattedNumberRenderer",
-        },
-        {
-            "headerName": "Cache\nread",
-            "field": "cache_read_tokens_raw",
-            "sortable": True,
-            "filter": True,
-            "resizable": True,
-            "width": 120,
-            "suppressSizeToFit": True,
-            "cellRenderer": "vdmFormattedNumberRenderer",
-        },
-        {
-            "headerName": "Cache\ncreate",
-            "field": "cache_creation_tokens_raw",
-            "sortable": True,
-            "filter": True,
-            "resizable": True,
-            "width": 120,
-            "suppressSizeToFit": True,
-            "cellRenderer": "vdmFormattedNumberRenderer",
-        },
-        {
-            "headerName": "Errors",
-            "field": "errors",
-            "sortable": True,
-            "filter": True,
-            "resizable": True,
-            "width": 100,
-            "suppressSizeToFit": True,
-            "cellRenderer": "vdmFormattedNumberRenderer",
-        },
+        duration_ms_col(header="Total\ntime", field="total_duration_ms_raw", width=120),
+        numeric_col(header="Tools", field="tool_calls_raw", width=90),
+        numeric_col(header="Requests", field="requests", width=110),
+        numeric_col(header="In\ntokens", field="input_tokens_raw", width=120),
+        numeric_col(header="Out\ntokens", field="output_tokens_raw", width=120),
+        numeric_col(header="Cache\nread", field="cache_read_tokens_raw", width=120),
+        numeric_col(header="Cache\ncreate", field="cache_creation_tokens_raw", width=120),
+        numeric_col(header="Errors", field="errors", width=100),
         {
             "headerName": "Error rate",
             "field": "error_rate_pct",
@@ -708,17 +577,9 @@ def metrics_providers_ag_grid(
         dash_grid_options_overrides={
             "paginationPageSize": 5,
             "paginationPageSizeSelector": [5, 15, 50],
-            "rowHeight": 37,
+            **metrics_common_grid_options(),
         },
-        custom_css={
-            # TODO(dashboard/metrics): Header wrapping + row height tweaks appear to be
-            # ignored by AG Grid in Dash (likely header DOM structure/CSS precedence,
-            # or grid height constrained by surrounding layout). Investigate a metrics-
-            # scoped solution (e.g., headerClass + targeted CSS, or container sizing).
-            "height": "286px",
-            "width": "100%",
-            "minHeight": "286px",
-        },
+        custom_css=grid_css_compact(height_px=286),
     )
 
 
@@ -730,32 +591,8 @@ def metrics_models_ag_grid(
     """Create an AG-Grid table for Metrics model rollups across providers."""
 
     column_defs = [
-        {
-            "headerName": "Last",
-            "field": "last_accessed",
-            "sortable": True,
-            "filter": True,
-            "resizable": True,
-            "width": 120,
-            "suppressSizeToFit": True,
-            "cellRenderer": "vdmRecencyDotRenderer",
-        },
-        {
-            "headerName": "Model",
-            "field": "qualified_model",
-            "sortable": True,
-            "filter": True,
-            "resizable": True,
-            "flex": 2,
-            "width": 280,
-            # Display: <provider badge> : <model id>
-            # Sort/filter should use the underlying text value.
-            "cellRenderer": "vdmQualifiedModelRenderer",
-            "cellStyle": {"fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas"},
-            "sort": "asc",
-            # Keep the underlying string accessible in the browser for debugging.
-            "tooltipField": "qualified_model",
-        },
+        last_col(),
+        qualified_model_col(sort="asc"),
         {
             "headerName": "Avg",
             "field": "average_duration_ms",
@@ -767,61 +604,11 @@ def metrics_models_ag_grid(
             "valueGetter": {"function": "params.data.average_duration"},
             "tooltipValueGetter": {"function": "params.data.average_duration"},
         },
-        {
-            "headerName": "Total\ntime",
-            "field": "total_duration_ms_raw",
-            "sortable": True,
-            "filter": True,
-            "resizable": True,
-            "width": 120,
-            "suppressSizeToFit": True,
-            "valueGetter": {
-                "function": "vdmFormatDurationValue(params.data.total_duration_ms_raw)"
-            },
-            "tooltipValueGetter": {
-                "function": "vdmFormatDurationTooltip(params.data.total_duration_ms_raw)"
-            },
-        },
-        {
-            "headerName": "Tools",
-            "field": "tool_calls_raw",
-            "sortable": True,
-            "filter": True,
-            "resizable": True,
-            "width": 90,
-            "suppressSizeToFit": True,
-            "cellRenderer": "vdmFormattedNumberRenderer",
-        },
-        {
-            "headerName": "Requests",
-            "field": "requests",
-            "sortable": True,
-            "filter": True,
-            "resizable": True,
-            "width": 110,
-            "suppressSizeToFit": True,
-            "cellRenderer": "vdmFormattedNumberRenderer",
-        },
-        {
-            "headerName": "In\ntokens",
-            "field": "input_tokens_raw",
-            "sortable": True,
-            "filter": True,
-            "resizable": True,
-            "width": 120,
-            "suppressSizeToFit": True,
-            "cellRenderer": "vdmFormattedNumberRenderer",
-        },
-        {
-            "headerName": "Out\ntokens",
-            "field": "output_tokens_raw",
-            "sortable": True,
-            "filter": True,
-            "resizable": True,
-            "width": 120,
-            "suppressSizeToFit": True,
-            "cellRenderer": "vdmFormattedNumberRenderer",
-        },
+        duration_ms_col(header="Total\ntime", field="total_duration_ms_raw", width=120),
+        numeric_col(header="Tools", field="tool_calls_raw", width=90),
+        numeric_col(header="Requests", field="requests", width=110),
+        numeric_col(header="In\ntokens", field="input_tokens_raw", width=120),
+        numeric_col(header="Out\ntokens", field="output_tokens_raw", width=120),
     ]
 
     return build_ag_grid(
@@ -832,13 +619,9 @@ def metrics_models_ag_grid(
         dash_grid_options_overrides={
             "paginationPageSize": 15,
             "paginationPageSizeSelector": [5, 15, 50, 100],
-            "rowHeight": 37,
+            **metrics_common_grid_options(),
         },
-        custom_css={
-            "height": "600px",
-            "width": "100%",
-            "minHeight": "600px",
-        },
+        custom_css=grid_css_compact(height_px=420),
     )
 
 

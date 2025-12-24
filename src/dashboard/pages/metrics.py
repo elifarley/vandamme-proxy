@@ -48,6 +48,24 @@ def metrics_layout() -> dbc.Container:
                                     style={"minWidth": "7rem"},
                                     className="ms-1",
                                 ),
+                                dcc.Dropdown(
+                                    id="vdm-active-requests-tick-ms",
+                                    options=[
+                                        {"label": "0.5s", "value": 500},
+                                        {"label": "1s", "value": 1_000},
+                                        {"label": "2s", "value": 2_000},
+                                        {"label": "5s", "value": 5_000},
+                                    ],  # type: ignore[arg-type]
+                                    value=2_000,
+                                    clearable=False,
+                                    style={"minWidth": "6rem"},
+                                    className="ms-2",
+                                ),
+                                html.Div(
+                                    "Active req",
+                                    className="text-muted small ms-1",
+                                    style={"alignSelf": "center"},
+                                ),
                             ],
                             className="vdm-toolbar justify-content-end",
                         ),
@@ -75,23 +93,9 @@ def metrics_layout() -> dbc.Container:
                     dbc.Col(
                         dbc.Card(
                             [
-                                dbc.CardHeader("Provider breakdown"),
-                                dbc.CardBody(dbc.Spinner(id="vdm-provider-breakdown")),
-                            ]
-                        ),
-                        md=12,
-                    ),
-                ],
-                className="mb-3",
-            ),
-            dbc.Row(
-                [
-                    dbc.Col(
-                        dbc.Card(
-                            [
                                 dbc.CardHeader(
                                     [
-                                        html.Span("Model breakdown"),
+                                        html.Span("Model aggregates"),
                                         html.Span(
                                             "· Last updated on refresh or polling",
                                             className="text-muted small ms-2",
@@ -103,6 +107,20 @@ def metrics_layout() -> dbc.Container:
                         ),
                         md=12,
                     )
+                ],
+                className="mb-3",
+            ),
+            dbc.Row(
+                [
+                    dbc.Col(
+                        dbc.Card(
+                            [
+                                dbc.CardHeader("Provider breakdown"),
+                                dbc.CardBody(dbc.Spinner(id="vdm-provider-breakdown")),
+                            ]
+                        ),
+                        md=12,
+                    ),
                 ],
                 className="mb-3",
             ),
