@@ -114,6 +114,7 @@ window.dashAgGridComponentFunctions = window.dashAgGridComponentFunctions || {};
             vdmProviderBadgeRenderer: window.vdmProviderBadgeRenderer,
             vdmFormattedNumberRenderer: window.vdmFormattedNumberRenderer,
             vdmQualifiedModelRenderer: window.vdmQualifiedModelRenderer,
+            vdmRecencyDotRenderer: window.vdmRecencyDotRenderer,
         };
 
         let registeredCount = 0;

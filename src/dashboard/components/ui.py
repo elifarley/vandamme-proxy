@@ -161,6 +161,83 @@ def format_timestamp(iso_string: str | None) -> str:
         return "Unknown"
 
 
+def _parse_iso_datetime(iso_string: str | None) -> datetime | None:
+    if not iso_string:
+        return None
+
+    try:
+        if iso_string.endswith("Z"):
+            return datetime.fromisoformat(iso_string.replace("Z", "+00:00"))
+        if "+" in iso_string[-6:] or "-" in iso_string[-6:]:
+            return datetime.fromisoformat(iso_string)
+        # Naive datetime: treat as local time
+        return datetime.fromisoformat(iso_string)
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
+def timestamp_age_seconds(iso_string: str | None) -> float | None:
+    """Return age in seconds for an ISO timestamp.
+
+    This is the shared primitive used by the Metrics recency indicator.
+    """
+    dt = _parse_iso_datetime(iso_string)
+    if not dt:
+        return None
+
+    diff = datetime.now() - dt if dt.tzinfo is None else datetime.now(timezone.utc) - dt
+
+    # Future timestamps (clock skew) count as "just now".
+    return max(0.0, float(diff.total_seconds()))
+
+
+def recency_color_hex(age_seconds: float) -> str:
+    """Map age in seconds to a continuous gradient color.
+
+    Anchors:
+    - red (<1s), orange, yellow, green, white, blue, black (>=1h)
+
+    We interpolate linearly between anchor colors across [0s..3600s].
+    """
+
+    # Clamp to [0..3600]
+    t = max(0.0, min(float(age_seconds), 3600.0))
+
+    anchors = [
+        (0.0, (255, 0, 0)),  # red
+        (5.0, (255, 165, 0)),  # orange
+        (20.0, (255, 255, 0)),  # yellow
+        (120.0, (0, 255, 0)),  # green
+        (600.0, (255, 255, 255)),  # white
+        (1800.0, (0, 128, 255)),  # blue
+        (3600.0, (0, 0, 0)),  # black
+    ]
+
+    lo_t, lo_rgb = anchors[0]
+    for hi_t, hi_rgb in anchors[1:]:
+        if t <= hi_t:
+            span = max(1e-9, hi_t - lo_t)
+            u = (t - lo_t) / span
+            r = int(round(lo_rgb[0] + (hi_rgb[0] - lo_rgb[0]) * u))
+            g = int(round(lo_rgb[1] + (hi_rgb[1] - lo_rgb[1]) * u))
+            b = int(round(lo_rgb[2] + (hi_rgb[2] - lo_rgb[2]) * u))
+            return f"#{r:02x}{g:02x}{b:02x}"
+        lo_t, lo_rgb = hi_t, hi_rgb
+
+    return "#000000"
+
+
+def recency_dot(iso_string: str | None) -> html.Span:
+    age = timestamp_age_seconds(iso_string)
+    color = recency_color_hex(age if age is not None else 3600.0)
+    return html.Span(
+        "",
+        className="vdm-recency-dot",
+        style={"backgroundColor": color},
+        title=iso_string or "No timestamp available",
+    )
+
+
 def timestamp_with_hover(iso_string: str | None) -> html.Span:
     """Create a span with relative time display and absolute timestamp on hover."""
     relative_time = format_timestamp(iso_string)
@@ -172,6 +249,25 @@ def timestamp_with_hover(iso_string: str | None) -> html.Span:
         relative_time,
         title=hover_text,
         style={"cursor": "help", "textDecoration": "underline", "textDecorationStyle": "dotted"},
+    )
+
+
+def timestamp_with_recency_dot(iso_string: str | None) -> html.Span:
+    """Render a recency dot + relative time text, with absolute timestamp on hover."""
+
+    hover_text = iso_string if iso_string else "No timestamp available"
+
+    return html.Span(
+        [recency_dot(iso_string), html.Span(format_timestamp(iso_string))],
+        title=hover_text,
+        style={
+            "display": "inline-flex",
+            "alignItems": "center",
+            "gap": "6px",
+            "cursor": "help",
+            "textDecoration": "underline",
+            "textDecorationStyle": "dotted",
+        },
     )
 
 

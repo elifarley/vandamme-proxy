@@ -53,9 +53,15 @@ def kpis_grid(totals: MetricTotals) -> dbc.Row:
 
 
 def _kpi_col(title: str, value: Any, *, subtitle: str | None = None, raw: bool = False) -> dbc.Col:
-    from src.dashboard.components.ui import kpi_card, monospace, timestamp_with_hover
+    from src.dashboard.components.ui import (
+        kpi_card,
+        monospace,
+        timestamp_with_recency_dot,
+    )
 
-    display = timestamp_with_hover(value) if raw and title == "Last activity" else monospace(value)
+    display = (
+        timestamp_with_recency_dot(value) if raw and title == "Last activity" else monospace(value)
+    )
 
     return dbc.Col(
         kpi_card(title=title, value=display, subtitle=subtitle),

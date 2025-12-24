@@ -451,6 +451,7 @@ def metrics_providers_ag_grid(
             "width": 160,
             "suppressSizeToFit": True,
             "tooltipField": "last_accessed_iso",
+            "cellRenderer": "vdmRecencyDotRenderer",
         },
         {
             "headerName": "Provider",
@@ -604,6 +605,7 @@ def metrics_models_ag_grid(
             "width": 160,
             "suppressSizeToFit": True,
             "tooltipField": "last_accessed_iso",
+            "cellRenderer": "vdmRecencyDotRenderer",
         },
         {
             "headerName": "Model",

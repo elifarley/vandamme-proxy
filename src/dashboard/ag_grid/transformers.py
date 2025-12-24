@@ -9,6 +9,7 @@ from src.dashboard.components.ui import (
     format_duration,
     format_model_created_timestamp,
     format_timestamp,
+    timestamp_age_seconds,
 )
 
 # Module-level cache for provider configs
@@ -265,6 +266,7 @@ def metrics_providers_row_data(running_totals_yaml: dict[str, Any]) -> list[dict
                 "total_duration": format_duration(float(r.get("total_duration_ms") or 0.0)),
                 "last_accessed": format_timestamp(r.get("last_accessed")) or "",
                 "last_accessed_iso": r.get("last_accessed") or "",
+                "last_accessed_age_s": timestamp_age_seconds(r.get("last_accessed")) or 3600.0,
             }
         )
 
@@ -307,6 +309,7 @@ def metrics_models_row_data(running_totals_yaml: dict[str, Any]) -> list[dict[st
                     "total_duration": format_duration(float(mr.get("total_duration_ms") or 0.0)),
                     "last_accessed": format_timestamp(mr.get("last_accessed")) or "",
                     "last_accessed_iso": mr.get("last_accessed") or "",
+                    "last_accessed_age_s": timestamp_age_seconds(mr.get("last_accessed")) or 3600.0,
                 }
             )
 

@@ -61,6 +61,16 @@ body, .app-entry {
   background-color: #6f42c1; /* bootstrap "purple" */
   color: #fff;
 }
+
+/* Recency dot used by Metrics grids + KPI cards */
+.vdm-recency-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  display: inline-block;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25);
+}
+
 .btn-primary:hover {
   background-color: var(--vdm-primary-strong);
   border-color: var(--vdm-primary-strong);
