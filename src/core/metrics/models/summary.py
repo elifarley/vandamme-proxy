@@ -53,8 +53,12 @@ class SummaryMetrics:
         self.total_tool_results += metrics.tool_result_count
         self.total_tool_calls += metrics.tool_call_count
 
+        # Keep model_counts keyed by actual model (not provider-prefixed strings).
         if metrics.openai_model:
-            self.model_counts[metrics.openai_model] += 1
+            model_key = metrics.openai_model
+            if ":" in model_key:
+                _, model_key = model_key.split(":", 1)
+            self.model_counts[model_key] += 1
 
         if metrics.error:
             self.total_errors += 1
@@ -71,10 +75,18 @@ class SummaryMetrics:
         # Canonical rule:
         # - bucket key is always "{provider}:{resolved_model}" when both exist
         # - otherwise fall back to provider or model or "unknown"
+        #
+        # Defensive normalization: some upstream paths can still provide provider-prefixed
+        # strings in `openai_model` (e.g. "openrouter:cheap"). Even if that value is
+        # already resolved, it must never be treated as a nested provider in the model name.
+        model_name = metrics.openai_model
+        if model_name and ":" in model_name:
+            _, model_name = model_name.split(":", 1)
+
         provider_key = (
-            f"{metrics.provider}:{metrics.openai_model}"
-            if metrics.provider and metrics.openai_model
-            else metrics.provider or metrics.openai_model or "unknown"
+            f"{metrics.provider}:{model_name}"
+            if metrics.provider and model_name
+            else metrics.provider or model_name or "unknown"
         )
 
         pm = self.provider_model_metrics[provider_key]

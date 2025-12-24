@@ -61,6 +61,20 @@ def metrics_layout() -> dbc.Container:
                     dbc.Col(
                         dbc.Card(
                             [
+                                dbc.CardHeader("Active requests"),
+                                dbc.CardBody(dbc.Spinner(id="vdm-active-requests")),
+                            ]
+                        ),
+                        md=12,
+                    ),
+                ],
+                className="mb-3",
+            ),
+            dbc.Row(
+                [
+                    dbc.Col(
+                        dbc.Card(
+                            [
                                 dbc.CardHeader("Provider breakdown"),
                                 dbc.CardBody(dbc.Spinner(id="vdm-provider-breakdown")),
                             ]

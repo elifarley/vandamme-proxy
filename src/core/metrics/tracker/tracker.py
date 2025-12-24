@@ -72,9 +72,20 @@ class RequestTracker:
         self._logger = ConversationLogger.get_logger()
 
     async def start_request(
-        self, request_id: str, claude_model: str, is_streaming: bool = False
+        self,
+        request_id: str,
+        claude_model: str,
+        is_streaming: bool = False,
+        *,
+        provider: str | None = None,
+        resolved_model: str | None = None,
     ) -> RequestMetrics:
-        """Register a new active request."""
+        """Register a new active request.
+
+        Note: We accept (provider, resolved_model) so the dashboard's *active request*
+        display can use canonical model names immediately, rather than showing transient
+        alias strings until the request completes.
+        """
 
         metrics = RequestMetrics(
             request_id=request_id,
@@ -82,6 +93,10 @@ class RequestTracker:
             claude_model=claude_model,
             is_streaming=is_streaming,
         )
+        if provider:
+            metrics.provider = provider
+        if resolved_model:
+            metrics.openai_model = resolved_model
         async with self._lock:
             self.active_requests[request_id] = metrics
         return metrics
@@ -153,6 +168,54 @@ class RequestTracker:
         async with self._lock:
             return self.active_requests.get(request_id)
 
+    async def get_active_requests_snapshot(self) -> list[dict[str, object]]:
+        """Return a snapshot of active requests suitable for dashboard display."""
+
+        async with self._lock:
+            now = time.time()
+            rows: list[dict[str, object]] = []
+            for m in self.active_requests.values():
+                # Requested model is what the client sent.
+                requested_model = m.claude_model or "unknown"
+                resolved_model = m.openai_model or ""
+
+                # Derive provider from the tracker if available; otherwise use the prefix
+                # of the requested model.
+                provider = m.provider
+                if not provider and ":" in requested_model:
+                    provider, _ = requested_model.split(":", 1)
+
+                duration_ms = int(round((now - float(m.start_time)) * 1000))
+
+                rows.append(
+                    {
+                        "request_id": m.request_id,
+                        "provider": provider or "unknown",
+                        "requested_model": requested_model,
+                        "resolved_model": resolved_model,
+                        "is_streaming": bool(m.is_streaming),
+                        "start_time": float(m.start_time),
+                        "duration_ms": duration_ms,
+                        "input_tokens": int(m.input_tokens or 0),
+                        "output_tokens": int(m.output_tokens or 0),
+                        "cache_read_tokens": int(m.cache_read_tokens or 0),
+                        "cache_creation_tokens": int(m.cache_creation_tokens or 0),
+                        "tool_uses": int(m.tool_use_count or 0),
+                        "tool_results": int(m.tool_result_count or 0),
+                        "tool_calls": int(m.tool_call_count or 0),
+                        "request_size": int(m.request_size or 0),
+                        "message_count": int(m.message_count or 0),
+                    }
+                )
+
+            # Most recent first.
+            def _start_time_key(row: dict[str, object]) -> float:
+                v = row.get("start_time")
+                return float(v) if isinstance(v, float) else 0.0
+
+            rows.sort(key=_start_time_key, reverse=True)
+            return rows
+
     async def get_recent_errors(self, *, limit: int = 100) -> list[dict[str, object]]:
         async with self._lock:
             return list(self._recent_errors)[:limit]
@@ -185,9 +248,18 @@ class RequestTracker:
                 self.last_accessed_timestamps["top"] = timestamp
 
     async def get_running_totals_hierarchical(
-        self, *, provider_filter: str | None = None, model_filter: str | None = None
+        self,
+        *,
+        provider_filter: str | None = None,
+        model_filter: str | None = None,
+        include_active: bool = True,
     ) -> HierarchicalData:
-        """Return hierarchical provider->models metrics, including in-flight requests."""
+        """Return hierarchical provider->models metrics.
+
+        By default, includes in-flight requests. The dashboard's provider/model breakdown
+        wants *completed-only* semantics, so it can request include_active=False and use
+        the dedicated Active Requests grid for in-flight visibility.
+        """
 
         async with self._lock:
             all_completed = self.summary_metrics
@@ -251,55 +323,66 @@ class RequestTracker:
                     model_entry = cast(dict[str, Any], models[model])
                     accumulate_pm_into_provider_and_model(provider_entry, model_entry, pm)
 
-            # Active requests
-            for metrics in list(self.active_requests.values()):
-                provider = metrics.provider or "unknown"
-                if metrics.claude_model and ":" in metrics.claude_model:
-                    _, model = metrics.claude_model.split(":", 1)
-                else:
-                    model = metrics.claude_model or "unknown"
+            if include_active:
+                # Active requests
+                for metrics in list(self.active_requests.values()):
+                    provider = metrics.provider or "unknown"
 
-                if provider_filter and not matches_pattern(provider, provider_filter):
-                    continue
-                if model_filter and model != "unknown" and not matches_pattern(model, model_filter):
-                    continue
+                    # Prefer resolved model if available so we never surface alias tokens
+                    # like "openrouter:cheap" while a request is in-flight.
+                    model = metrics.openai_model or "unknown"
+                    if model != "unknown" and ":" in model:
+                        _, model = model.split(":", 1)
+                    elif metrics.claude_model and ":" in metrics.claude_model:
+                        _, model = metrics.claude_model.split(":", 1)
+                    elif model == "unknown":
+                        model = metrics.claude_model or "unknown"
 
-                running_totals.total_requests += 1
-                running_totals.total_input_tokens += int(metrics.input_tokens or 0)
-                running_totals.total_output_tokens += int(metrics.output_tokens or 0)
-                running_totals.total_cache_read_tokens += int(metrics.cache_read_tokens or 0)
-                running_totals.total_cache_creation_tokens += int(
-                    metrics.cache_creation_tokens or 0
-                )
-                running_totals.total_tool_uses += int(metrics.tool_use_count or 0)
-                running_totals.total_tool_results += int(metrics.tool_result_count or 0)
-                running_totals.total_tool_calls += int(metrics.tool_call_count or 0)
-                if metrics.error:
-                    running_totals.total_errors += 1
+                    if provider_filter and not matches_pattern(provider, provider_filter):
+                        continue
+                    if (
+                        model_filter
+                        and model != "unknown"
+                        and not matches_pattern(model, model_filter)
+                    ):
+                        continue
 
-                provider_entry = running_totals.providers.get(provider)
-                if provider_entry is None:
-                    provider_entry = new_provider_entry(
-                        cast(dict[str, str], self.last_accessed_timestamps["providers"]).get(
-                            provider
-                        )
+                    running_totals.total_requests += 1
+                    running_totals.total_input_tokens += int(metrics.input_tokens or 0)
+                    running_totals.total_output_tokens += int(metrics.output_tokens or 0)
+                    running_totals.total_cache_read_tokens += int(metrics.cache_read_tokens or 0)
+                    running_totals.total_cache_creation_tokens += int(
+                        metrics.cache_creation_tokens or 0
                     )
-                    running_totals.providers[provider] = provider_entry
+                    running_totals.total_tool_uses += int(metrics.tool_use_count or 0)
+                    running_totals.total_tool_results += int(metrics.tool_result_count or 0)
+                    running_totals.total_tool_calls += int(metrics.tool_call_count or 0)
+                    if metrics.error:
+                        running_totals.total_errors += 1
 
-                rollup = cast(dict[str, dict[str, float | int]], provider_entry["rollup"])
-                add_active_request_to_split(rollup, metrics)
-
-                if model != "unknown":
-                    models = cast(dict[str, Any], provider_entry["models"])
-                    if model not in models:
-                        models[model] = new_model_entry(
-                            cast(dict[str, str], self.last_accessed_timestamps["models"]).get(
-                                f"{provider}:{model}"
+                    provider_entry = running_totals.providers.get(provider)
+                    if provider_entry is None:
+                        provider_entry = new_provider_entry(
+                            cast(dict[str, str], self.last_accessed_timestamps["providers"]).get(
+                                provider
                             )
                         )
-                    add_active_request_to_split(
-                        cast(dict[str, dict[str, float | int]], models[model]), metrics
-                    )
+                        running_totals.providers[provider] = provider_entry
+
+                    rollup = cast(dict[str, dict[str, float | int]], provider_entry["rollup"])
+                    add_active_request_to_split(rollup, metrics)
+
+                    if model != "unknown":
+                        models = cast(dict[str, Any], provider_entry["models"])
+                        if model not in models:
+                            models[model] = new_model_entry(
+                                cast(dict[str, str], self.last_accessed_timestamps["models"]).get(
+                                    f"{provider}:{model}"
+                                )
+                            )
+                        add_active_request_to_split(
+                            cast(dict[str, dict[str, float | int]], models[model]), metrics
+                        )
 
             return finalize_running_totals(running_totals)
 

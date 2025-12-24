@@ -28,12 +28,44 @@ async def test_recent_traces_and_errors_buffers_capture_completed_requests():
         output_tokens=1,
     )
 
-    data = await request_tracker.get_running_totals_hierarchical()
+    # Extra regression: if a provider-prefixed alias leaks into openai_model on completion,
+    # aggregation must not treat it as a nested provider/model.
+    await request_tracker.start_request(
+        "r_bad_model",
+        claude_model="openrouter:cheap",
+        is_streaming=False,
+        provider="openrouter",
+        resolved_model="minimax/minimax-m2",
+    )
+    await request_tracker.end_request(
+        "r_bad_model",
+        provider="openrouter",
+        openai_model="openrouter:cheap",
+        input_tokens=1,
+        output_tokens=1,
+    )
+
+    # Canonicalization happens when aggregating completed requests. If openai_model contains
+    # a provider prefix, we strip it and bucket under the model portion.
+    # (The dashboard's rollup grids avoid active requests via include_active=false, and the
+    # Active Requests grid shows requested vs resolved explicitly.)
+
+    data = await request_tracker.get_running_totals_hierarchical(include_active=False)
+
     openai_provider = data["providers"]["openai"]
     assert "openai:fast" not in openai_provider["models"]
     assert "fast" not in openai_provider["models"]
     assert "gpt-4o-mini" in openai_provider["models"]
     assert openai_provider["models"]["gpt-4o-mini"]["total"]["requests"] >= 1
+
+    openrouter_provider = data["providers"]["openrouter"]
+    assert "openrouter:cheap" not in openrouter_provider["models"]
+    assert "cheap" in openrouter_provider["models"]
+    assert openrouter_provider["models"]["cheap"]["total"]["requests"] >= 1
+
+    # Active requests snapshot should include in-flight requests only.
+    active = await request_tracker.get_active_requests_snapshot()
+    assert active == []
 
     await request_tracker.start_request("r2", claude_model="openai:gpt-4o", is_streaming=True)
     await request_tracker.end_request(

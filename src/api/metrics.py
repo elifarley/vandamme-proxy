@@ -2,7 +2,7 @@ import logging
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from src.api.endpoints import validate_api_key
 from src.api.utils.yaml_formatter import create_hierarchical_structure, format_running_totals_yaml
@@ -45,6 +45,34 @@ async def get_logs(
     }
 
 
+@metrics_router.get("/active-requests")
+async def get_active_requests(
+    http_request: Request,
+    _: None = Depends(validate_api_key),
+) -> JSONResponse:
+    """Get a snapshot of in-flight requests for the dashboard."""
+
+    if not LOG_REQUEST_METRICS:
+        return JSONResponse(
+            status_code=200,
+            content={
+                "disabled": True,
+                "message": "Request metrics logging is disabled",
+                "suggestion": "Set LOG_REQUEST_METRICS=true to enable tracking",
+                "active_requests": [],
+            },
+            headers={"Cache-Control": "no-cache"},
+        )
+
+    tracker = get_request_tracker(http_request)
+    rows = await tracker.get_active_requests_snapshot()
+    return JSONResponse(
+        status_code=200,
+        content={"disabled": False, "active_requests": rows},
+        headers={"Cache-Control": "no-cache"},
+    )
+
+
 @metrics_router.get("/running-totals")
 async def get_running_totals(
     http_request: Request,
@@ -53,6 +81,14 @@ async def get_running_totals(
     ),
     model: str | None = Query(
         None, description="Filter by model (case-insensitive, supports * and ? wildcards)"
+    ),
+    include_active: bool = Query(
+        True,
+        description=(
+            "Include in-flight requests in provider/model breakdown. "
+            "Dash rollup grids should use include_active=false and rely on the "
+            "Active Requests grid."
+        ),
     ),
     _: None = Depends(validate_api_key),
 ) -> PlainTextResponse:
@@ -85,6 +121,7 @@ async def get_running_totals(
         data = await tracker.get_running_totals_hierarchical(
             provider_filter=provider,
             model_filter=model,
+            include_active=include_active,
         )
 
         # Create YAML structure - data now has flattened structure

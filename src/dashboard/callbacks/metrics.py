@@ -16,6 +16,7 @@ def register_metrics_callbacks(
 ) -> None:
     @app.callback(
         Output("vdm-token-chart", "children"),
+        Output("vdm-active-requests", "children"),
         Output("vdm-provider-breakdown", "children"),
         Output("vdm-model-breakdown", "children"),
         Input("vdm-metrics-poll", "n_intervals"),
@@ -27,7 +28,7 @@ def register_metrics_callbacks(
         n: int,
         refresh_clicks: int | None,
         polling: bool,
-    ) -> tuple[Any, Any, Any]:
+    ) -> tuple[Any, Any, Any, Any]:
         # Manual refresh should always work. Polling can be disabled.
         if not refresh_clicks and (not polling) and n:
             raise dash.exceptions.PreventUpdate
@@ -37,6 +38,7 @@ def register_metrics_callbacks(
         view = run(build_metrics_view(cfg=cfg))
         return (
             view.token_chart,
+            view.active_requests,
             view.provider_breakdown,
             view.model_breakdown,
         )

@@ -146,6 +146,31 @@ async def chat_completions(
     """
     request_id = str(uuid.uuid4())
 
+    # Start request tracking if metrics are enabled
+    if LOG_REQUEST_METRICS:
+        tracker = get_request_tracker(http_request)
+
+        # Resolve early so active requests never show provider-prefixed aliases.
+        provider_name, resolved_model = get_model_manager().resolve_model(request.model)
+
+        metrics = await tracker.start_request(
+            request_id=request_id,
+            claude_model=request.model,
+            is_streaming=request.stream or False,
+            provider=provider_name,
+            resolved_model=resolved_model,
+        )
+        await tracker.update_last_accessed(
+            provider=provider_name,
+            model=resolved_model,
+            timestamp=metrics.start_time_iso,
+        )
+
+        # /v1/chat/completions doesn't carry Claude tool_use/tool_result blocks.
+        # Tool call counts are derived from upstream usage where available.
+    else:
+        metrics = None
+
     with ConversationLogger.correlation_context(request_id):
         start_time = time.time()
 
@@ -156,6 +181,28 @@ async def chat_completions(
         provider_name = provider_ctx.provider_name
         resolved_model = provider_ctx.resolved_model
         provider_config = provider_ctx.provider_config
+
+        if LOG_REQUEST_METRICS and metrics:
+            metrics.provider = provider_name  # type: ignore[assignment]
+
+            # Metrics must always use the resolved target model (no provider prefix).
+            # Some alias targets for providers like OpenRouter are configured as
+            # provider-scoped model IDs (e.g. "openai/gpt-5.2"), which are still a
+            # concrete model identifier; we should never record the alias token.
+            metrics.openai_model = resolved_model
+
+            await tracker.update_last_accessed(
+                provider=provider_name,
+                model=resolved_model,
+                timestamp=metrics.start_time_iso,
+            )
+
+            logger.debug(
+                "[metrics] chat.completions model=%s resolved_provider=%s resolved_model=%s",
+                request.model,
+                provider_name,
+                resolved_model,
+            )
 
         # Build upstream request dict and attach resolved model.
         openai_request: dict[str, Any] = request.model_dump(exclude_none=True)
@@ -204,16 +251,30 @@ async def chat_completions(
                     headers=sse_headers(),
                 )
 
-            anthropic_response = await openai_client.create_chat_completion(
-                anthropic_request,
-                request_id,
-                api_key=(client_api_key if provider_config.uses_passthrough else provider_api_key),
-                next_api_key=(None if provider_config.uses_passthrough else _next_provider_key),
-            )
+            # Non-streaming path: ensure metrics are finalized.
+            # Streaming finalization is handled by with_streaming_metrics_finalizer.
+            try:
+                anthropic_response = await openai_client.create_chat_completion(
+                    anthropic_request,
+                    request_id,
+                    api_key=(
+                        client_api_key if provider_config.uses_passthrough else provider_api_key
+                    ),
+                    next_api_key=(None if provider_config.uses_passthrough else _next_provider_key),
+                )
+            except Exception as e:
+                if LOG_REQUEST_METRICS and metrics:
+                    metrics.error = str(e)
+                    metrics.error_type = "upstream_error"
+                    await tracker.end_request(request_id)
+                raise
 
             openai_response = anthropic_message_to_openai_chat_completion(
                 anthropic=anthropic_response
             )
+
+            if LOG_REQUEST_METRICS and metrics:
+                await tracker.end_request(request_id)
             return JSONResponse(status_code=200, content=openai_response)
 
         # OpenAI-format providers: passthrough request/response.
@@ -241,12 +302,19 @@ async def chat_completions(
                 headers=sse_headers(),
             )
 
-        openai_response = await openai_client.create_chat_completion(
-            openai_request,
-            request_id,
-            api_key=(client_api_key if provider_config.uses_passthrough else provider_api_key),
-            next_api_key=(None if provider_config.uses_passthrough else _next_provider_key),
-        )
+        try:
+            openai_response = await openai_client.create_chat_completion(
+                openai_request,
+                request_id,
+                api_key=(client_api_key if provider_config.uses_passthrough else provider_api_key),
+                next_api_key=(None if provider_config.uses_passthrough else _next_provider_key),
+            )
+        except Exception as e:
+            if LOG_REQUEST_METRICS and metrics:
+                metrics.error = str(e)
+                metrics.error_type = "upstream_error"
+                await tracker.end_request(request_id)
+            raise
 
         # Basic timing log (metrics system is handled elsewhere for /v1/messages).
         duration_ms = (time.time() - start_time) * 1000
@@ -257,6 +325,8 @@ async def chat_completions(
             resolved_model,
         )
 
+        if LOG_REQUEST_METRICS and metrics:
+            await tracker.end_request(request_id)
         return JSONResponse(status_code=200, content=openai_response)
 
 
@@ -272,10 +342,21 @@ async def create_message(
     # Start request tracking if metrics are enabled
     if LOG_REQUEST_METRICS:
         tracker = get_request_tracker(http_request)
+
+        # Resolve early so active requests never show provider-prefixed aliases.
+        provider_name, resolved_model = get_model_manager().resolve_model(request.model)
+
         metrics = await tracker.start_request(
             request_id=request_id,
             claude_model=request.model,
             is_streaming=request.stream or False,
+            provider=provider_name,
+            resolved_model=resolved_model,
+        )
+        await tracker.update_last_accessed(
+            provider=provider_name,
+            model=resolved_model,
+            timestamp=metrics.start_time_iso,
         )
 
         # Calculate request size
@@ -384,6 +465,13 @@ async def create_message(
                     provider=provider_name,
                     model=resolved_model,
                     timestamp=metrics.start_time_iso,
+                )
+
+                logger.debug(
+                    "[metrics] messages model=%s resolved_provider=%s resolved_model=%s",
+                    request.model,
+                    provider_name,
+                    resolved_model,
                 )
 
             # Check if client disconnected before processing

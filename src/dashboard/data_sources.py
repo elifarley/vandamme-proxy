@@ -69,6 +69,7 @@ async def fetch_running_totals(
     cfg: DashboardConfigProtocol,
     provider: str | None = None,
     model: str | None = None,
+    include_active: bool = True,
 ) -> dict[str, Any]:
     url = f"{cfg.api_base_url}/metrics/running-totals"
     params: dict[str, str] = {}
@@ -76,6 +77,8 @@ async def fetch_running_totals(
         params["provider"] = provider
     if model:
         params["model"] = model
+    if not include_active:
+        params["include_active"] = "false"
 
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.get(url, params=params)
@@ -91,6 +94,24 @@ async def fetch_running_totals(
             f"Unexpected /metrics/running-totals YAML shape from {url}: {type(data)}"
         )
     return data
+
+
+async def fetch_active_requests(*, cfg: DashboardConfigProtocol) -> dict[str, Any]:
+    url = f"{cfg.api_base_url}/metrics/active-requests"
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.get(url)
+        resp.raise_for_status()
+
+    try:
+        payload = resp.json()
+    except Exception as e:  # noqa: BLE001
+        _log_and_raise("Failed to parse JSON", url, e)
+
+    if not isinstance(payload, dict):
+        raise DashboardDataError(
+            f"Unexpected /metrics/active-requests JSON shape from {url}: {type(payload)}"
+        )
+    return payload
 
 
 async def fetch_models(

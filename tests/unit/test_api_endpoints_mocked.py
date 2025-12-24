@@ -101,11 +101,64 @@ def test_openai_chat_completions_passthrough_mocked(mock_openai_api, openai_chat
             headers=TEST_HEADERS,
         )
 
-    assert response.status_code == 200
-    data = response.json()
-    assert data["object"] == "chat.completion"
-    assert data["choices"][0]["message"]["content"] == "Hello! How can I help you today?"
-    assert data["choices"][0]["message"]["role"] == "assistant"
+        assert response.status_code == 200
+        data = response.json()
+        assert data["object"] == "chat.completion"
+        assert data["choices"][0]["message"]["content"] == "Hello! How can I help you today?"
+        assert data["choices"][0]["message"]["role"] == "assistant"
+
+        # Metrics should include this request under the resolved target model.
+        totals = client.get("/metrics/running-totals", headers=TEST_HEADERS)
+        assert totals.status_code == 200
+        assert "providers:" in totals.text
+        assert "openai:" in totals.text
+        assert "gpt-4" in totals.text
+        assert "total_requests:" in totals.text
+        assert "total_requests: 1" in totals.text
+
+
+def test_openrouter_prefixed_alias_records_target_model_in_metrics(
+    mock_openai_api, openai_chat_completion, monkeypatch
+):
+    """Regression: requests like model='openrouter:cheap' must record the target model.
+
+    Underlying bug: provider-prefixed aliases can leak into metrics and appear as model rows.
+    This test enforces that the recorded model name is the resolved target.
+    """
+
+    # Ensure a deterministic openrouter alias in this test.
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
+    monkeypatch.setenv("OPENROUTER_API_FORMAT", "openai")
+    monkeypatch.setenv("OPENROUTER_ALIAS_CHEAP", "minimax/minimax-m2")
+
+    from src.main import app
+
+    # OpenRouter is OpenAI-compatible, but uses a different base URL. In unit tests,
+    # the provider base URL may vary; match any upstream call to /chat/completions.
+    mock_openai_api.post(url__regex=r".*/chat/completions$").mock(
+        return_value=httpx.Response(200, json=openai_chat_completion)
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "openrouter:cheap",
+                "messages": [{"role": "user", "content": "Hello"}],
+                "max_tokens": 100,
+            },
+            headers=TEST_HEADERS,
+        )
+
+        assert response.status_code == 200
+
+        totals = client.get("/metrics/running-totals", headers=TEST_HEADERS)
+        assert totals.status_code == 200
+        assert "providers:" in totals.text
+        assert "openrouter:" in totals.text
+        assert "minimax/minimax-m2" in totals.text
+        assert "openrouter:cheap" not in totals.text
+        assert "total_requests: 1" in totals.text
 
 
 @pytest.mark.unit

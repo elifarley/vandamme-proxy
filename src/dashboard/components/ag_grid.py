@@ -18,6 +18,141 @@ from src.dashboard.ag_grid.transformers import (
 )
 
 
+def metrics_active_requests_ag_grid(
+    active_requests_payload: dict[str, Any],
+    *,
+    grid_id: str = "vdm-metrics-active-requests-grid",
+) -> dag.AgGrid:
+    """Create an AG-Grid table for in-flight requests."""
+
+    active_requests = active_requests_payload.get("active_requests")
+    if not isinstance(active_requests, list):
+        active_requests = []
+
+    # Keep columns focused on performance + debuggability.
+    column_defs = [
+        {
+            "headerName": "Streaming",
+            "field": "is_streaming",
+            "sortable": True,
+            "filter": True,
+            "resizable": True,
+            "width": 110,
+            "suppressSizeToFit": True,
+        },
+        {
+            "headerName": "Provider",
+            "field": "provider",
+            "sortable": True,
+            "filter": True,
+            "resizable": True,
+            "width": 140,
+            "suppressSizeToFit": True,
+            "cellRenderer": "vdmProviderBadgeRenderer",
+        },
+        {
+            "headerName": "Requested model",
+            "field": "requested_model",
+            "sortable": True,
+            "filter": True,
+            "resizable": True,
+            "flex": 2,
+            "minWidth": 260,
+            "cellStyle": {"fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas"},
+        },
+        {
+            "headerName": "Resolved model",
+            "field": "resolved_model",
+            "sortable": True,
+            "filter": True,
+            "resizable": True,
+            "flex": 2,
+            "minWidth": 260,
+            "cellStyle": {"fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas"},
+        },
+        {
+            "headerName": "Duration",
+            "field": "duration_ms",
+            "sortable": True,
+            "filter": True,
+            "resizable": True,
+            "width": 120,
+            "suppressSizeToFit": True,
+            "valueGetter": {"function": "vdmFormatDurationValue(params.data.duration_ms)"},
+            "tooltipValueGetter": {"function": "vdmFormatDurationTooltip(params.data.duration_ms)"},
+        },
+        {
+            "headerName": "In",
+            "field": "input_tokens",
+            "sortable": True,
+            "filter": True,
+            "resizable": True,
+            "width": 110,
+            "suppressSizeToFit": True,
+            "cellRenderer": "vdmFormattedNumberRenderer",
+        },
+        {
+            "headerName": "Out",
+            "field": "output_tokens",
+            "sortable": True,
+            "filter": True,
+            "resizable": True,
+            "width": 110,
+            "suppressSizeToFit": True,
+            "cellRenderer": "vdmFormattedNumberRenderer",
+        },
+        {
+            "headerName": "Tools",
+            "field": "tool_calls",
+            "sortable": True,
+            "filter": True,
+            "resizable": True,
+            "width": 90,
+            "suppressSizeToFit": True,
+            "cellRenderer": "vdmFormattedNumberRenderer",
+        },
+        {
+            "headerName": "Req id",
+            "field": "request_id",
+            "sortable": False,
+            "filter": True,
+            "resizable": True,
+            "width": 170,
+            "suppressSizeToFit": True,
+            "cellStyle": {
+                "fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas",
+                "opacity": 0.8,
+            },
+        },
+    ]
+
+    return build_ag_grid(
+        grid_id=grid_id,
+        column_defs=column_defs,
+        row_data=active_requests,
+        no_rows_message="No active requests",
+        dash_grid_options_overrides={
+            "pagination": False,
+            "rowHeight": 37,
+        },
+        custom_css={
+            "height": "260px",
+            "width": "100%",
+            "minHeight": "260px",
+        },
+    )
+
+
+def _coerce_bool(x: object) -> bool:
+    return bool(x)
+
+
+def metrics_active_requests_component(active_requests_payload: dict[str, Any]) -> Any:
+    if active_requests_payload.get("disabled"):
+        return "Active request metrics are disabled. Set LOG_REQUEST_METRICS=true."
+    return metrics_active_requests_ag_grid(active_requests_payload)
+
+
 def top_models_ag_grid(
     models: list[dict[str, Any]],
     *,
@@ -624,6 +759,8 @@ def metrics_models_ag_grid(
             "cellRenderer": "vdmQualifiedModelRenderer",
             "cellStyle": {"fontFamily": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas"},
             "sort": "asc",
+            # Keep the underlying string accessible in the browser for debugging.
+            "tooltipField": "qualified_model",
         },
         {
             "headerName": "Avg",
