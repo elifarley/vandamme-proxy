@@ -66,22 +66,16 @@ class SummaryMetrics:
 
         # IMPORTANT: Keep provider/model keys canonical.
         #
-        # `metrics.openai_model` is intended to represent a concrete resolved model name.
-        # Some request paths (notably OpenAI-compatible /v1/chat/completions clients)
-        # may send a provider-prefixed string like "openai:fast" (where "fast" is an
-        # alias). If we treat that raw string as a key, the dashboard will render
-        # misleading model rows (e.g., "openai:fast").
+        # `metrics.openai_model` is the resolved model name from the provider.
+        # It does NOT contain a provider prefix - that was stripped during model
+        # resolution. The model name may legitimately contain colons (e.g., OpenRouter
+        # models like "kwaipilot/kat-coder-pro:free" or
+        # "anthropic/claude-3-5-sonnet:context-flash").
         #
         # Canonical rule:
         # - bucket key is always "{provider}:{resolved_model}" when both exist
         # - otherwise fall back to provider or model or "unknown"
-        #
-        # Defensive normalization: some upstream paths can still provide provider-prefixed
-        # strings in `openai_model` (e.g. "openrouter:cheap"). Even if that value is
-        # already resolved, it must never be treated as a nested provider in the model name.
         model_name = metrics.openai_model
-        if model_name and ":" in model_name:
-            _, model_name = model_name.split(":", 1)
 
         provider_key = (
             f"{metrics.provider}:{model_name}"

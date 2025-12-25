@@ -196,9 +196,6 @@ class RequestTracker:
                         else requested_model,
                         "requested_model": requested_model,
                         "resolved_model": resolved_model,
-                        "resolved_model_stripped": resolved_model.split(":", 1)[1]
-                        if ":" in resolved_model
-                        else resolved_model,
                         "qualified_model": (
                             requested_model
                             if ":" in requested_model
@@ -292,11 +289,11 @@ class RequestTracker:
                     else (provider_model_key, None)
                 )
 
-                # Normalize provider strings written in as "provider:model".
-                # In completed metrics we store provider+model as a single key, but the
-                # hierarchical view expects provider -> models nesting.
-                if model and ":" in model:
-                    provider, model = model.split(":", 1)
+                # The model name may legitimately contain colons (e.g., OpenRouter models like
+                # "anthropic/claude-3-5-sonnet:context-flash"). The first colon already separated
+                # the provider from the model name, so no further splitting is needed.
+                # Note: SummaryMetrics.add_request already strips one provider prefix from
+                # openai_model before creating the provider_model_key, so model is correct here.
 
                 # If a provider filter is applied, it should still match the resolved provider.
 

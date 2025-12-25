@@ -61,7 +61,7 @@ def qualified_model_col(
 def resolved_model_col(
     *,
     header: str = "Resolved",
-    field: str = "resolved_model_stripped",
+    field: str = "resolved_model",
     flex: int = 2,
     min_width: int = 260,
 ) -> dict[str, Any]:
