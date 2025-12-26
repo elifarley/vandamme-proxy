@@ -322,3 +322,63 @@ class TestAliasManager:
             mock_pm.parse_model_name.assert_called_with("!my-literal-model")
             assert provider == "poe"
             assert model == "my-literal-model"
+
+    def test_resolve_cross_provider_alias_no_double_prefix(self):
+        """Test that cross-provider alias doesn't get double prefix."""
+        with (
+            patch.dict(os.environ, {"XPOE_ALIAS_HAIKU": "zai:haiku"}),
+            patch("src.core.provider_manager.ProviderManager") as mock_provider_manager,
+        ):
+            mock_pm = mock_provider_manager.return_value
+            mock_pm._configs = {"xpoe": {}}
+
+            with patch("src.core.alias_config.AliasConfigLoader") as mock_config_loader:
+                mock_loader_instance = mock_config_loader.return_value
+                mock_loader_instance.load_config.return_value = {"providers": {}, "defaults": {}}
+                mock_loader_instance.get_defaults.return_value = {}
+                alias_manager = AliasManager()
+
+            # Cross-provider alias target should be returned as-is (not "xpoe:zai:haiku")
+            assert alias_manager.resolve_alias("haiku", provider="xpoe") == "zai:haiku"
+
+    def test_resolve_bare_model_target_gets_prefix(self):
+        """Test that bare model targets still get provider prefix."""
+        with (
+            patch.dict(os.environ, {"XPOE_ALIAS_HAIKU": "some-model"}),
+            patch("src.core.provider_manager.ProviderManager") as mock_provider_manager,
+        ):
+            mock_pm = mock_provider_manager.return_value
+            mock_pm._configs = {"xpoe": {}}
+
+            with patch("src.core.alias_config.AliasConfigLoader") as mock_config_loader:
+                mock_loader_instance = mock_config_loader.return_value
+                mock_loader_instance.load_config.return_value = {"providers": {}, "defaults": {}}
+                mock_loader_instance.get_defaults.return_value = {}
+                alias_manager = AliasManager()
+
+            # Bare model target should get provider prefix added
+            assert alias_manager.resolve_alias("haiku", provider="xpoe") == "xpoe:some-model"
+
+    def test_alias_target_with_colon_preserved(self):
+        """Test that alias targets with colons (like OpenRouter models) are preserved."""
+        with (
+            patch.dict(
+                os.environ,
+                {"OPENROUTER_ALIAS_FREE": "kwaipilot/kat-coder-pro:free"},
+            ),
+            patch("src.core.provider_manager.ProviderManager") as mock_provider_manager,
+        ):
+            mock_pm = mock_provider_manager.return_value
+            mock_pm._configs = {"openrouter": {}}
+
+            with patch("src.core.alias_config.AliasConfigLoader") as mock_config_loader:
+                mock_loader_instance = mock_config_loader.return_value
+                mock_loader_instance.load_config.return_value = {"providers": {}, "defaults": {}}
+                mock_loader_instance.get_defaults.return_value = {}
+                alias_manager = AliasManager()
+
+            # Model names with colons should be preserved as-is
+            assert (
+                alias_manager.resolve_alias("free", provider="openrouter")
+                == "kwaipilot/kat-coder-pro:free"
+            )

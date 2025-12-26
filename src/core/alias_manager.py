@@ -351,19 +351,31 @@ class AliasManager:
         is_exact = any(best_alias.lower() == variation for variation in model_variations)
         match_type = "exact" if is_exact else "substring"
 
-        # Return with provider prefix
-        # Use explicit provider if present, otherwise normalize provider name to lowercase
-        result_provider = explicit_provider if explicit_provider else best_provider.lower()
-        resolved_model = f"{result_provider}:{best_target}"
-
-        logger.info(
-            "[AliasManager] (%s match for '%s') '%s:%s' -> '%s'",
-            match_type,
-            model,
-            best_provider,
-            best_alias,
-            resolved_model,
-        )
+        # Return with provider prefix, but only if target doesn't already have one
+        # Cross-provider aliases have targets like "zai:haiku" which should be returned as-is
+        if ":" in best_target:
+            # Target already has provider prefix (cross-provider alias)
+            resolved_model = best_target
+            logger.info(
+                "[AliasManager] (cross-provider %s match for '%s') '%s:%s' -> '%s'",
+                match_type,
+                model,
+                best_provider,
+                best_alias,
+                resolved_model,
+            )
+        else:
+            # Target is bare model name, add provider prefix
+            result_provider = explicit_provider if explicit_provider else best_provider.lower()
+            resolved_model = f"{result_provider}:{best_target}"
+            logger.info(
+                "[AliasManager] (%s match for '%s') '%s:%s' -> '%s'",
+                match_type,
+                model,
+                best_provider,
+                best_alias,
+                resolved_model,
+            )
         match_details = [
             (
                 m[0],

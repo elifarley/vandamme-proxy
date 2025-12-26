@@ -224,3 +224,35 @@ class TestModelManager:
                 "Parsed provider: 'poe', actual model: 'grok-4.1-fast'" in record.message
                 for record in caplog.records
             )
+
+    @patch.dict(os.environ, {"XPOE_ALIAS_HAIKU": "zai:haiku"})
+    def test_cross_provider_alias_via_model_manager(self):
+        """Test cross-provider alias through full ModelManager flow."""
+        from src.core.alias_manager import AliasManager
+
+        # Mock provider manager
+        with patch("src.core.provider_manager.ProviderManager") as mock_provider_manager_class:
+            mock_provider_manager = mock_provider_manager_class.return_value
+            mock_provider_manager.default_provider = "xpoe"
+            mock_provider_manager._configs = {"xpoe": {}}
+            mock_provider_manager.parse_model_name.side_effect = lambda model: (
+                (model.split(":", 1)[0], model.split(":", 1)[1])
+                if ":" in model
+                else ("xpoe", model)
+            )
+
+            # Create real config with real alias manager
+            mock_config = Mock()
+            mock_config.provider_manager = mock_provider_manager
+            mock_config.alias_manager = AliasManager()
+
+            model_manager = ModelManager(mock_config)
+
+            # Request "haiku" with default provider "xpoe"
+            # Where xpoe.aliases.haiku = "zai:haiku"
+            # Should resolve to provider="zai", model="haiku" (not "xpoe:zai:haiku")
+            provider, actual_model = model_manager.resolve_model("haiku")
+
+            # The cross-provider alias "zai:haiku" should be parsed correctly
+            assert provider == "zai"
+            assert actual_model == "haiku"
