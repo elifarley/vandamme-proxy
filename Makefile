@@ -47,56 +47,69 @@ HAS_UV := $(shell command -v uv 2> /dev/null)
 HAS_DOCKER := $(shell command -v docker 2> /dev/null)
 HAS_GUM := $(shell command -v gum 2> /dev/null)
 
-# Colors for output
-BOLD := \033[1m
-RESET := \033[0m
-GREEN := \033[32m
-YELLOW := \033[33m
-BLUE := \033[34m
-CYAN := \033[36m
-RED := \033[31m
+# Terminal detection
+TERM_COLOR := $(shell tput colors 2>/dev/null)
+ifeq ($(TERM_COLOR),0)
+    # No color support
+    BOLD :=
+    RESET :=
+    GREEN :=
+    YELLOW :=
+    BLUE :=
+    CYAN :=
+    RED :=
+else
+    # Use ANSI codes with printf for better compatibility
+    BOLD := \033[1m
+    RESET := \033[0m
+    GREEN := \033[32m
+    YELLOW := \033[33m
+    BLUE := \033[34m
+    CYAN := \033[36m
+    RED := \033[31m
+endif
 
 # ============================================================================
 # Help
 # ============================================================================
 
 help: ## Show this help message
-	@echo "$(BOLD)$(CYAN)Vandamme Proxy - Makefile Commands$(RESET)"
-	@echo ""
-	@echo "$(BOLD)Quick Start:$(RESET)"
-	@echo "  $(GREEN)make init-dev$(RESET)       - Initialize development environment"
-	@echo "  $(GREEN)make install-dev$(RESET)    - Install in development mode"
-	@echo "  $(GREEN)make dev$(RESET)            - Start development server"
-	@echo "  $(GREEN)make validate$(RESET)       - Quick check + tests (fast)"
-	@echo ""
-	@echo "$(BOLD)Setup & Installation:$(RESET)"
+	@printf "$(BOLD)$(CYAN)Vandamme Proxy - Makefile Commands$(RESET)\n"
+	@printf "\n"
+	@printf "$(BOLD)Quick Start:$(RESET)\n"
+	@printf "  $(GREEN)make init-dev$(RESET)       - Initialize development environment\n"
+	@printf "  $(GREEN)make install-dev$(RESET)    - Install in development mode\n"
+	@printf "  $(GREEN)make dev$(RESET)            - Start development server\n"
+	@printf "  $(GREEN)make validate$(RESET)       - Quick check + tests (fast)\n"
+	@printf "\n"
+	@printf "$(BOLD)Setup & Installation:$(RESET)\n"
 	@grep -E '^(install|install-|deps-check|init-dev|check-install).*:.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-20s$(RESET) %s\n", $$1, $$2}'
-	@echo ""
-	@echo "$(BOLD)Development:$(RESET)"
+	@printf "\n"
+	@printf "$(BOLD)Development:$(RESET)\n"
 	@grep -E '^(run|dev|health|clean|watch):.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(BLUE)%-20s$(RESET) %s\n", $$1, $$2}'
-	@echo ""
-	@echo "$(BOLD)Code Quality:$(RESET)"
+	@printf "\n"
+	@printf "$(BOLD)Code Quality:$(RESET)\n"
 	@grep -E '^(format|lint|type-check|check|quick-check|security-check|validate|pre-commit):.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(YELLOW)%-20s$(RESET) %s\n", $$1, $$2}'
-	@echo ""
-	@echo "$(BOLD)Testing:$(RESET)"
+	@printf "\n"
+	@printf "$(BOLD)Testing:$(RESET)\n"
 	@grep -E '^test.*:.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(CYAN)%-20s$(RESET) %s\n", $$1, $$2}'
 	@grep -E '^coverage.*:.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(CYAN)%-20s$(RESET) %s\n", $$1, $$2}'
-	@echo ""
-	@echo "$(BOLD)Docker:$(RESET)"
+	@printf "\n"
+	@printf "$(BOLD)Docker:$(RESET)\n"
 	@grep -E '^docker-.*:.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(BLUE)%-20s$(RESET) %s\n", $$1, $$2}'
-	@echo ""
-	@echo "$(BOLD)Binary Builds:$(RESET)"
+	@printf "\n"
+	@printf "$(BOLD)Binary Builds:$(RESET)\n"
 	@grep -E '^(build-.*|clean-binaries):.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-20s$(RESET) %s\n", $$1, $$2}'
-	@echo ""
-	@echo "$(BOLD)CI/CD:$(RESET)"
+	@printf "\n"
+	@printf "$(BOLD)CI/CD:$(RESET)\n"
 	@grep -E '^(ci|build|all):.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-20s$(RESET) %s\n", $$1, $$2}'
-	@echo ""
-	@echo "$(BOLD)Release Management:$(RESET)"
+	@printf "\n"
+	@printf "$(BOLD)Release Management:$(RESET)\n"
 	@grep -E '^(version|tag-|release-).*:.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(CYAN)%-20s$(RESET) %s\n", $$1, $$2}'
-	@echo ""
-	@echo "$(BOLD)Utilities:$(RESET)"
+	@printf "\n"
+	@printf "$(BOLD)Utilities:$(RESET)\n"
 	@grep -E '^(info|env-template):.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(CYAN)%-20s$(RESET) %s\n", $$1, $$2}'
-	@echo ""
+	@printf "\n"
 
 # ============================================================================
 # Setup & Installation
