@@ -80,9 +80,12 @@ class ProviderManager:
                 )
         else:
             # No providers available at all
+            provider_upper = self.default_provider.upper()
             raise ValueError(
                 f"No providers configured. Please set at least one provider API key "
-                f"(e.g., {self.default_provider.upper()}_API_KEY)"
+                f"(e.g., {provider_upper}_API_KEY).\n"
+                f"Hint: If {provider_upper}_API_KEY is set in your shell, make sure to export it: "
+                f"'export {provider_upper}_API_KEY'"
             )
 
     def load_provider_configs(self) -> None:
