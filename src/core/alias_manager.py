@@ -38,6 +38,10 @@ class AliasManager:
         # Merge fallback aliases for any missing configurations
         self._merge_fallback_aliases()
 
+        # Print summary of all loaded aliases (ENV + TOML)
+        # Uses default_provider from _load_aliases() since this is called during init
+        self._print_alias_summary(self._default_provider)
+
     def _load_aliases(self) -> None:
         """
         Load provider-specific <PROVIDER>_ALIAS_* environment variables.
@@ -90,10 +94,9 @@ class AliasManager:
         if self.aliases:
             total_aliases = sum(len(aliases) for aliases in self.aliases.values())
             logger.info(
-                f"Loaded {total_aliases} model aliases from {len(self.aliases)} providers "
+                f"Loaded {total_aliases} explicit model aliases from {len(self.aliases)} providers "
                 f"({skipped_count} skipped)"
             )
-            self._print_alias_summary()
 
     def _validate_alias(self, alias: str, value: str) -> bool:
         """
@@ -533,37 +536,38 @@ class AliasManager:
         common_models = ["haiku", "sonnet", "opus"]
 
         # Store all mappings first to prevent log lines from appearing between header and rows
-        mappings = []
+        mappings: list[str] = []
 
         for model in common_models:
             # Resolve using default provider
             resolved = self.resolve_alias(model, provider=default_provider)
             if resolved and ":" in resolved:
                 provider, actual_model = resolved.split(":", 1)
-                # If the resolved provider is different from default_provider, show it
-                display_provider = provider if provider != default_provider else default_provider
-                mappings.append((model, display_provider, actual_model))
-            else:
-                # No alias found, check if it's a literal model name
-                if model in self.aliases.get(default_provider, {}):
-                    # Alias exists but resolution failed, show as configured but unresolved
-                    mappings.append(
-                        (model, default_provider, self.aliases[default_provider][model])
-                    )
+                # For cross-provider resolution, show: "poe:haiku → zai:GLM-4.5-Air"
+                # For same-provider, show: "poe:opus → gpt-5.1-codex-max"
+                if provider != default_provider:
+                    display_alias = f"{default_provider}:{model} → {provider}:{actual_model}"
                 else:
-                    # No alias configured for this model
-                    mappings.append((model, "N/A", "Not configured"))
+                    display_alias = f"{default_provider}:{model} → {actual_model}"
+                mappings.append(display_alias)
+            else:
+                # No alias found
+                mappings.append(f"{default_provider}:{model} → Not configured")
 
         # Now print everything at once
         print("\n📝 Common Model Mappings (using default provider):")
-        print(f"   {'Alias':<20} {'Actual Model'}")
-        print(f"   {'-' * 20} {'-' * 50}")
+        print(f"   {'Mapping':<50}")
+        print(f"   {'-' * 50}")
 
-        for model, provider, actual_model in mappings:
-            print(f"   {provider + ':' + model:<20} {actual_model}")
+        for mapping in mappings:
+            print(f"   {mapping:<50}")
 
-    def _print_alias_summary(self) -> None:
-        """Print an elegant summary of loaded model aliases grouped by provider"""
+    def _print_alias_summary(self, default_provider: str | None = None) -> None:
+        """Print an elegant summary of loaded model aliases grouped by provider.
+
+        Args:
+            default_provider: The default provider name to use for usage examples.
+        """
         if not self.aliases:
             return
 
@@ -630,15 +634,19 @@ class AliasManager:
         # Add usage examples
         print("\n   💡 Use aliases in your requests:")
         if self.aliases:
-            # Find the first provider with aliases
-            first_provider = sorted(self.aliases.keys())[0]
-            first_alias = sorted(self.aliases[first_provider].keys())[0]
-            first_target = self.aliases[first_provider][first_alias]
-            is_fallback = first_alias in self._fallback_aliases.get(first_provider, {})
+            # Try to use the default provider for the example
+            example_provider = default_provider if default_provider in self.aliases else None
+            if not example_provider:
+                # Fall back to the first provider with aliases (alphabetically)
+                example_provider = sorted(self.aliases.keys())[0]
+
+            first_alias = sorted(self.aliases[example_provider].keys())[0]
+            first_target = self.aliases[example_provider][first_alias]
+            is_fallback = first_alias in self._fallback_aliases.get(example_provider, {})
 
             print(
                 f"      Example: model='{first_alias}' → resolves to "
-                f"'{first_provider}:{first_target}'"
+                f"'{example_provider}:{first_target}'"
             )
             if is_fallback:
                 print("                (from configuration defaults)")

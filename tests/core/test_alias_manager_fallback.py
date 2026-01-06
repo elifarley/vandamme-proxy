@@ -1,8 +1,6 @@
 """Unit tests for AliasManager fallback functionality."""
 
 import os
-import shutil
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -33,9 +31,28 @@ class TestAliasManagerFallback:
 
     def test_fallback_aliases_loaded_by_default(self):
         """Test that fallback aliases are loaded when no environment variables are set."""
-        with patch("src.core.provider_manager.ProviderManager") as mock_provider_manager:
+        with (
+            patch("src.core.provider_manager.ProviderManager") as mock_provider_manager,
+            patch("src.core.alias_config.AliasConfigLoader") as mock_config_loader,
+        ):
             mock_pm = mock_provider_manager.return_value
             mock_pm._configs = {"poe": {}}
+
+            # Mock the config loader to provide fallback aliases
+            mock_loader_instance = mock_config_loader.return_value
+            mock_loader_instance.load_config.return_value = {
+                "providers": {
+                    "poe": {
+                        "aliases": {
+                            "haiku": "gpt-5.1-mini",
+                            "sonnet": "gpt-5.1-codex-mini",
+                            "opus": "gpt-5.1-codex-max",
+                        }
+                    }
+                },
+                "defaults": {"default-provider": "openai"},
+            }
+            mock_loader_instance.get_defaults.return_value = {"default-provider": "openai"}
 
             alias_manager = AliasManager()
 
@@ -60,9 +77,26 @@ class TestAliasManagerFallback:
                 },
             ),
             patch("src.core.provider_manager.ProviderManager") as mock_provider_manager,
+            patch("src.core.alias_config.AliasConfigLoader") as mock_config_loader,
         ):
             mock_pm = mock_provider_manager.return_value
             mock_pm._configs = {"poe": {}}
+
+            # Mock the config loader to provide fallback aliases
+            mock_loader_instance = mock_config_loader.return_value
+            mock_loader_instance.load_config.return_value = {
+                "providers": {
+                    "poe": {
+                        "aliases": {
+                            "haiku": "gpt-5.1-mini",
+                            "sonnet": "gpt-5.1-codex-mini",
+                            "opus": "gpt-5.1-codex-max",
+                        }
+                    }
+                },
+                "defaults": {"default-provider": "openai"},
+            }
+            mock_loader_instance.get_defaults.return_value = {"default-provider": "openai"}
 
             alias_manager = AliasManager()
 
@@ -76,9 +110,28 @@ class TestAliasManagerFallback:
 
     def test_fallback_resolution(self):
         """Test that fallback aliases are resolved correctly."""
-        with patch("src.core.provider_manager.ProviderManager") as mock_provider_manager:
+        with (
+            patch("src.core.provider_manager.ProviderManager") as mock_provider_manager,
+            patch("src.core.alias_config.AliasConfigLoader") as mock_config_loader,
+        ):
             mock_pm = mock_provider_manager.return_value
             mock_pm._configs = {"poe": {}}
+
+            # Mock the config loader to provide fallback aliases
+            mock_loader_instance = mock_config_loader.return_value
+            mock_loader_instance.load_config.return_value = {
+                "providers": {
+                    "poe": {
+                        "aliases": {
+                            "haiku": "gpt-5.1-mini",
+                            "sonnet": "gpt-5.1-codex-mini",
+                            "opus": "gpt-5.1-codex-max",
+                        }
+                    }
+                },
+                "defaults": {"default-provider": "openai"},
+            }
+            mock_loader_instance.get_defaults.return_value = {"default-provider": "openai"}
 
             alias_manager = AliasManager()
 
@@ -137,20 +190,17 @@ class TestAliasManagerFallback:
 
     def test_fallback_loading_error_handling(self):
         """Test graceful handling when fallback loading fails."""
+        with (
+            patch("src.core.provider_manager.ProviderManager") as mock_provider_manager,
+            patch("src.core.alias_config.AliasConfigLoader") as mock_config_loader,
+        ):
+            mock_pm = mock_provider_manager.return_value
+            mock_pm._configs = {}
 
-        # Temporarily move the defaults file to simulate loading error
-        defaults_path = Path(__file__).parent.parent.parent / "src" / "config" / "defaults.toml"
-        temp_path = defaults_path.with_suffix(".toml.bak")
-
-        try:
-            # Move the file temporarily
-            if defaults_path.exists():
-                shutil.move(str(defaults_path), str(temp_path))
-
-            # Clear the config cache to force reload
-            from src.core.alias_config import AliasConfigLoader
-
-            AliasConfigLoader.reset_cache()
+            # Mock the config loader to return empty config (simulating loading error)
+            mock_loader_instance = mock_config_loader.return_value
+            mock_loader_instance.load_config.return_value = {"providers": {}, "defaults": {}}
+            mock_loader_instance.get_defaults.return_value = {"default-provider": "openai"}
 
             alias_manager = AliasManager()
 
@@ -158,11 +208,6 @@ class TestAliasManagerFallback:
             aliases = alias_manager.get_all_aliases()
             # With no fallbacks, we get empty aliases
             assert aliases == {}
-
-        finally:
-            # Restore the file
-            if temp_path.exists():
-                shutil.move(str(temp_path), str(defaults_path))
 
     def test_has_aliases_with_fallbacks(self):
         """Test that has_aliases() returns True when only fallbacks exist."""

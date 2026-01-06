@@ -234,7 +234,12 @@ haiku = ["not", "a", "string"]
 """
             )
 
-            with patch("src.core.alias_config.Path.cwd", return_value=Path(tmpdir)):
+            with (
+                patch("src.core.alias_config.Path.cwd", return_value=Path(tmpdir)),
+                patch("src.core.alias_config.Path.home", return_value=Path(tmpdir)),
+            ):
+                # Reset cache to avoid picking up project config
+                AliasConfigLoader.reset_cache()
                 loader = AliasConfigLoader()
                 config = loader.load_config()
 

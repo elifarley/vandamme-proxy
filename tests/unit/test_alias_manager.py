@@ -280,9 +280,36 @@ class TestAliasManager:
 
     def test_resolve_alias_provider_scope_with_fallbacks(self):
         """Test provider-scoped resolution works with fallback aliases."""
-        with patch("src.core.provider_manager.ProviderManager") as mock_provider_manager:
+        with (
+            patch("src.core.provider_manager.ProviderManager") as mock_provider_manager,
+            patch("src.core.alias_config.AliasConfigLoader") as mock_config_loader,
+        ):
             mock_pm = mock_provider_manager.return_value
-            mock_pm._configs = {"poe": {}}
+            mock_pm._configs = {"poe": {}, "openai": {}}
+
+            # Mock the config loader to provide fallback aliases without project overrides
+            mock_loader_instance = mock_config_loader.return_value
+            mock_loader_instance.load_config.return_value = {
+                "providers": {
+                    "poe": {
+                        "aliases": {
+                            "haiku": "gpt-5.1-mini",
+                            "sonnet": "gpt-5.1-codex-mini",
+                            "opus": "gpt-5.1-codex-max",
+                        }
+                    },
+                    "openai": {
+                        "aliases": {
+                            "haiku": "gpt-5.1-mini",
+                            "sonnet": "gpt-5.1-codex",
+                            "opus": "gpt-5.2",
+                        }
+                    },
+                },
+                "defaults": {"default-provider": "openai"},
+            }
+            mock_loader_instance.get_defaults.return_value = {"default-provider": "openai"}
+
             alias_manager = AliasManager()
 
             assert alias_manager.resolve_alias("haiku", provider="poe") == "poe:gpt-5.1-mini"
