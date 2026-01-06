@@ -197,6 +197,82 @@ class AliasManager:
                     self.aliases[provider][alias] = target
                     logger.debug(f"Applied fallback alias: {provider}:{alias} -> {target}")
 
+    def _recursively_resolve(self, initial_model: str) -> tuple[str, int]:
+        """
+        Recursively resolve an alias through any chained references.
+
+        This method handles chained aliases like: fast -> sonnet -> gpt-4o-mini
+        It also detects and prevents cycles in the alias chain.
+
+        Args:
+            initial_model: The model to resolve (should have provider prefix)
+
+        Returns:
+            Tuple of (fully_resolved_model, step_count)
+            step_count represents the number of alias resolutions performed
+        """
+        resolved_model = initial_model
+        max_iterations = 10
+        seen: set[str] = set()  # Track visited aliases for cycle detection
+
+        for iteration in range(max_iterations):
+            if ":" not in resolved_model:
+                # No provider prefix - must be a concrete model
+                break
+
+            potential_provider, model_part = resolved_model.split(":", 1)
+
+            # Check if this provider has any aliases configured
+            maybe_aliases = self.aliases.get(potential_provider)
+            if maybe_aliases is None:
+                # Unknown provider - must be a concrete model
+                break
+
+            # Type narrowing: aliases_for_provider is now known to be dict[str, str]
+            aliases_for_provider: dict[str, str] = maybe_aliases
+
+            # Normalize for lookup (aliases are stored lowercase)
+            model_part_lower = model_part.lower()
+
+            # Check for cycle
+            if model_part_lower in seen:
+                logger.warning(
+                    "[AliasManager] Cycle detected in alias resolution: "
+                    f"{' -> '.join(seen)} -> {model_part}. "
+                    f"Stopping at current resolved model: '{resolved_model}'"
+                )
+                break
+
+            # Check if model_part is an alias key in this provider's aliases
+            if model_part_lower not in aliases_for_provider:
+                # Not an alias key - must be a concrete model name
+                break
+
+            # It's an alias! Resolve it and continue
+            seen.add(model_part_lower)
+            target = aliases_for_provider[model_part_lower]
+
+            logger.debug(
+                f"[AliasManager] Iteration {iteration + 1}: "
+                f"'{model_part}' is an alias -> '{target}'"
+            )
+
+            # Apply the same logic as the initial resolution
+            if ":" in target:
+                # Target has a provider prefix
+                target_provider, _ = target.split(":", 1)
+                if target_provider in self.aliases:
+                    # Valid cross-provider alias - use as-is
+                    resolved_model = target
+                else:
+                    # Model name with ':' but not a provider prefix
+                    resolved_model = f"{potential_provider}:{target}"
+            else:
+                # Bare model name - add provider prefix
+                resolved_model = f"{potential_provider}:{target}"
+
+        return resolved_model, len(seen)
+
     def resolve_alias(self, model: str, provider: str | None = None) -> str | None:
         """
         Resolve model name to alias value with case-insensitive substring matching.
@@ -410,69 +486,12 @@ class AliasManager:
 
         # Recursive alias resolution: check if resolved_model is itself an alias
         # This handles chained aliases like: fast -> sonnet -> gpt-4o-mini
-        max_iterations = 10
-        seen: set[str] = set()  # Track visited aliases for cycle detection
+        resolved_model, steps = self._recursively_resolve(resolved_model)
 
-        for iteration in range(max_iterations):
-            if ":" not in resolved_model:
-                # No provider prefix - must be a concrete model
-                break
-
-            potential_provider, model_part = resolved_model.split(":", 1)
-
-            # Check if this provider has any aliases configured
-            maybe_aliases = self.aliases.get(potential_provider)
-            if maybe_aliases is None:
-                # Unknown provider - must be a concrete model
-                break
-
-            # Type narrowing: aliases_for_provider is now known to be dict[str, str]
-            aliases_for_provider: dict[str, str] = maybe_aliases
-
-            # Normalize for lookup (aliases are stored lowercase)
-            model_part_lower = model_part.lower()
-
-            # Check for cycle
-            if model_part_lower in seen:
-                logger.warning(
-                    "[AliasManager] Cycle detected in alias resolution: "
-                    f"{' -> '.join(seen)} -> {model_part}. "
-                    f"Stopping at current resolved model: '{resolved_model}'"
-                )
-                break
-
-            # Check if model_part is an alias key in this provider's aliases
-            if model_part_lower not in aliases_for_provider:
-                # Not an alias key - must be a concrete model name
-                break
-
-            # It's an alias! Resolve it and continue
-            seen.add(model_part_lower)
-            target = aliases_for_provider[model_part_lower]
-
-            logger.debug(
-                f"[AliasManager] Iteration {iteration + 1}: "
-                f"'{model_part}' is an alias -> '{target}'"
-            )
-
-            # Apply the same logic as the initial resolution
-            if ":" in target:
-                # Target has a provider prefix
-                target_provider, _ = target.split(":", 1)
-                if target_provider in self.aliases:
-                    # Valid cross-provider alias - use as-is
-                    resolved_model = target
-                else:
-                    # Model name with ':' but not a provider prefix
-                    resolved_model = f"{potential_provider}:{target}"
-            else:
-                # Bare model name - add provider prefix
-                resolved_model = f"{potential_provider}:{target}"
-
-        if seen:
+        if steps:
             logger.info(
                 f"[AliasManager] Fully resolved '{model}' through "
-                f"{len(seen)} step(s) -> '{resolved_model}'"
+                f"{steps} step(s) -> '{resolved_model}'"
             )
 
         return resolved_model
@@ -539,16 +558,26 @@ class AliasManager:
         mappings: list[str] = []
 
         for model in common_models:
-            # Resolve using default provider
+            # Do initial resolution (handles alias matching)
             resolved = self.resolve_alias(model, provider=default_provider)
             if resolved and ":" in resolved:
+                # Count total resolution steps by resolving from the input model
+                # We construct what the first alias match would look like (provider:model)
+                # and then let _recursively_resolve count all steps from there
+                first_alias = f"{default_provider}:{model}"
+                _, steps = self._recursively_resolve(first_alias)
+
                 provider, actual_model = resolved.split(":", 1)
                 # For cross-provider resolution, show: "poe:haiku → zai:GLM-4.5-Air"
                 # For same-provider, show: "poe:opus → gpt-5.1-codex-max"
                 if provider != default_provider:
-                    display_alias = f"{default_provider}:{model} → {provider}:{actual_model}"
+                    base_display = f"{default_provider}:{model} → {provider}:{actual_model}"
                 else:
-                    display_alias = f"{default_provider}:{model} → {actual_model}"
+                    base_display = f"{default_provider}:{model} → {actual_model}"
+
+                # Add step count indicator if non-shallow (more than 1 step)
+                display_alias = f"{base_display} [{steps} steps]" if steps > 1 else base_display
+
                 mappings.append(display_alias)
             else:
                 # No alias found
@@ -556,11 +585,11 @@ class AliasManager:
 
         # Now print everything at once
         print("\n📝 Common Model Mappings (using default provider):")
-        print(f"   {'Mapping':<50}")
-        print(f"   {'-' * 50}")
+        print(f"   {'Mapping':<65}")
+        print(f"   {'-' * 65}")
 
         for mapping in mappings:
-            print(f"   {mapping:<50}")
+            print(f"   {mapping:<65}")
 
     def _print_alias_summary(self, default_provider: str | None = None) -> None:
         """Print an elegant summary of loaded model aliases grouped by provider.
