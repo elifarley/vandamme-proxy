@@ -110,127 +110,127 @@ help: ## Show this help message
 # ============================================================================
 
 dev-env-init: ## Initialize development environment (create .venv, install CLI)
-	@echo "$(BOLD)$(BLUE)🚀 Initializing development environment...$(RESET)"
-	@echo "$(CYAN)→ Creating virtual environment...$(RESET)"
+	@printf "$(BOLD)$(BLUE)🚀 Initializing development environment...$(RESET)\n"
+	@printf "$(CYAN)→ Creating virtual environment...$(RESET)\n"
 	@test -d .venv || $(UV) venv
-	@echo "$(CYAN)→ Installing CLI in editable mode...$(RESET)"
+	@printf "$(CYAN)→ Installing CLI in editable mode...$(RESET)\n"
 	$(UV) sync --extra cli --editable
-	@echo "$(CYAN)→ Verifying installation...$(RESET)"
+	@printf "$(CYAN)→ Verifying installation...$(RESET)\n"
 	$(MAKE) check-install
-	@echo ""
-	@echo "$(BOLD)$(GREEN)✅ Development environment initialized!$(RESET)"
-	@echo ""
-	@echo "$(BOLD)$(CYAN)Next steps:$(RESET)"
-	@echo "  $(CYAN)• The 'vdm' command is now available$(RESET)"
-	@echo "  $(CYAN)• Start server: make dev$(RESET)"
-	@echo "  $(CYAN)• Run tests: make test$(RESET)"
-	@echo "  $(CYAN)• Health check: make doctor$(RESET)"
+	@printf "\n"
+	@printf "$(BOLD)$(GREEN)✅ Development environment initialized!$(RESET)\n"
+	@printf "\n"
+	@printf "$(BOLD)$(CYAN)Next steps:$(RESET)\n"
+	@printf "  $(CYAN)• The 'vdm' command is now available$(RESET)\n"
+	@printf "  $(CYAN)• Start server: make dev$(RESET)\n"
+	@printf "  $(CYAN)• Run tests: make test$(RESET)\n"
+	@printf "  $(CYAN)• Health check: make doctor$(RESET)\n"
 
 dev-deps-sync: ## Reconcile dependencies (uv sync with dev tools)
-	@echo "$(BOLD)$(GREEN)Syncing dependencies...$(RESET)"
+	@printf "$(BOLD)$(GREEN)Syncing dependencies...$(RESET)\n"
 ifndef HAS_UV
 	$(error UV is not installed. Install with: curl -LsSf https://astral.sh/uv/install.sh | sh)
 endif
 	$(UV) sync
-	@echo "$(BOLD)$(CYAN)✅ Dependencies synced$(RESET)"
+	@printf "$(BOLD)$(CYAN)✅ Dependencies synced$(RESET)\n"
 
 dev-env-setup: dev-deps-sync ## Setup development environment (sync deps + install CLI)
-	@echo "$(BOLD)$(GREEN)Installing CLI in editable mode...$(RESET)"
+	@printf "$(BOLD)$(GREEN)Installing CLI in editable mode...$(RESET)\n"
 	$(UV) sync --extra cli --editable
-	@echo "$(BOLD)$(CYAN)✅ Development environment ready$(RESET)"
-	@echo "$(BOLD)$(YELLOW)💡 The 'vdm' command is now available$(RESET)"
+	@printf "$(BOLD)$(CYAN)✅ Development environment ready$(RESET)\n"
+	@printf "$(BOLD)$(YELLOW)💡 The 'vdm' command is now available$(RESET)\n"
 
 # ============================================================================
 # Development
 # ============================================================================
 
 run: ## Run the proxy server
-	@echo "$(BOLD)$(BLUE)Starting Vandamme Proxy...$(RESET)"
+	@printf "$(BOLD)$(BLUE)Starting Vandamme Proxy...$(RESET)\n"
 	$(PYTHON) start_proxy.py
 
 dev: dev-env-setup ## Setup dev environment and run server with hot reload
-	@echo "$(BOLD)$(BLUE)Starting development server with auto-reload...$(RESET)"
+	@printf "$(BOLD)$(BLUE)Starting development server with auto-reload...$(RESET)\n"
 	$(UV) run uvicorn src.main:app --host $(HOST) --port $(PORT) --reload --log-level $(shell echo $(LOG_LEVEL) | tr '[:upper:]' '[:lower:]')
 
 health: ## Check proxy server health
-	@echo "$(BOLD)$(CYAN)Checking server health...$(RESET)"
-	@curl -s http://localhost:$(PORT)/health | $(PYTHON) -m json.tool || echo "$(YELLOW)Server not running on port $(PORT)$(RESET)"
+	@printf "$(BOLD)$(CYAN)Checking server health...$(RESET)\n"
+	@curl -s http://localhost:$(PORT)/health | $(PYTHON) -m json.tool || printf "$(YELLOW)Server not running on port $(PORT)$(RESET)\n"
 
 check-install: ## Verify that installation was successful
-	@echo "$(BOLD)$(BLUE)🔍 Verifying installation...$(RESET)"
-	@echo "$(CYAN)Checking vdm command...$(RESET)"
+	@printf "$(BOLD)$(BLUE)🔍 Verifying installation...$(RESET)\n"
+	@printf "$(CYAN)Checking vdm command...$(RESET)\n"
 	@if [ -f ".venv/bin/vdm" ]; then \
-		echo "$(GREEN)✅ vdm command found$(RESET)"; \
+		printf "$(GREEN)✅ vdm command found$(RESET)\n"; \
 		.venv/bin/vdm version; \
 	else \
-		echo "$(RED)❌ vdm command not found$(RESET)"; \
-		echo "$(YELLOW)💡 Run 'make dev-env-init' to install CLI$(RESET)"; \
+		printf "$(RED)❌ vdm command not found$(RESET)\n"; \
+		printf "$(YELLOW)💡 Run 'make dev-env-init' to install CLI$(RESET)\n"; \
 		exit 1; \
 	fi
-	@echo "$(CYAN)Checking Python imports...$(RESET)"
+	@printf "$(CYAN)Checking Python imports...$(RESET)\n"
 ifndef HAS_UV
 	$(error UV is not installed. Install with: curl -LsSf https://astral.sh/uv/install.sh | sh)
 endif
 	@$(UV) run python -c "import src.cli.main; print('$(GREEN)✅ CLI module imports successfully$(RESET)')" || exit 1
-	@echo "$(BOLD)$(GREEN)✅ Installation verified successfully$(RESET)"
+	@printf "$(BOLD)$(GREEN)✅ Installation verified successfully$(RESET)\n"
 
 doctor: ## Run comprehensive environment health check (read-only)
-	@echo "$(BOLD)$(CYAN)🩺 Doctor - Environment Health Check$(RESET)"
-	@echo ""
-	@echo "$(BOLD)$(YELLOW)System Information:$(RESET)"
-	@echo "  OS:           $$(uname -s)"
-	@echo "  Architecture: $$(uname -m)"
-	@echo "  Kernel:       $$(uname -r)"
-	@echo ""
-	@echo "$(BOLD)$(YELLOW)Tool Availability:$(RESET)"
-	@command -v uv >/dev/null 2>&1 && echo "  UV:           $(GREEN)✓ installed$(RESET)" || echo "  UV:           $(RED)✗ not found$(RESET)"
-	@command -v python3 >/dev/null 2>&1 && echo "  Python 3:     $(GREEN)✓ installed$$($(PYTHON) --version 2>&1)$(RESET)" || echo "  Python 3:     $(RED)✗ not found$(RESET)"
-	@command -v docker >/dev/null 2>&1 && echo "  Docker:       $(GREEN)✓ installed$(RESET)" || echo "  Docker:       $(YELLOW)⚠ not found$(RESET)"
-	@command -v git >/dev/null 2>&1 && echo "  Git:          $(GREEN)✓ installed$$($(git) --version 2>&1)$(RESET)" || echo "  Git:          $(RED)✗ not found$(RESET)"
-	@echo ""
-	@echo "$(BOLD)$(YELLOW)Project State:$(RESET)"
+	@printf "$(BOLD)$(CYAN)🩺 Doctor - Environment Health Check$(RESET)\n"
+	@printf "\n"
+	@printf "$(BOLD)$(YELLOW)System Information:$(RESET)\n"
+	@printf "  OS:           $$(uname -s)\n"
+	@printf "  Architecture: $$(uname -m)\n"
+	@printf "  Kernel:       $$(uname -r)\n"
+	@printf "\n"
+	@printf "$(BOLD)$(YELLOW)Tool Availability:$(RESET)\n"
+	@command -v uv >/dev/null 2>&1 && printf "  UV:           $(GREEN)✓ installed$(RESET)\n" || printf "  UV:           $(RED)✗ not found$(RESET)\n"
+	@command -v python3 >/dev/null 2>&1 && printf "  Python 3:     $(GREEN)✓ installed$$($(PYTHON) --version 2>&1)$(RESET)\n" || printf "  Python 3:     $(RED)✗ not found$(RESET)\n"
+	@command -v docker >/dev/null 2>&1 && printf "  Docker:       $(GREEN)✓ installed$(RESET)\n" || printf "  Docker:       $(YELLOW)⚠ not found$(RESET)\n"
+	@command -v git >/dev/null 2>&1 && printf "  Git:          $(GREEN)✓ installed$$($(git) --version 2>&1)$(RESET)\n" || printf "  Git:          $(RED)✗ not found$(RESET)\n"
+	@printf "\n"
+	@printf "$(BOLD)$(YELLOW)Project State:$(RESET)\n"
 	@if [ -d ".venv" ]; then \
-		echo "  Virtual Env:  $(GREEN)✓ exists$(RESET)"; \
+		printf "  Virtual Env:  $(GREEN)✓ exists$(RESET)\n"; \
 	else \
-		echo "  Virtual Env:  $(RED)✗ not found (run make dev-env-init)$(RESET)"; \
+		printf "  Virtual Env:  $(RED)✗ not found (run make dev-env-init)$(RESET)\n"; \
 	fi
 	@if [ -f "uv.lock" ]; then \
-		echo "  UV Lock:      $(GREEN)✓ present$(RESET)"; \
+		printf "  UV Lock:      $(GREEN)✓ present$(RESET)\n"; \
 	else \
-		echo "  UV Lock:      $(YELLOW)⚠ not found (run make dev-deps-sync)$(RESET)"; \
+		printf "  UV Lock:      $(YELLOW)⚠ not found (run make dev-deps-sync)$(RESET)\n"; \
 	fi
-	@echo ""
-	@echo "$(BOLD)$(YELLOW)CLI Verification:$(RESET)"
+	@printf "\n"
+	@printf "$(BOLD)$(YELLOW)CLI Verification:$(RESET)\n"
 	@if [ -f ".venv/bin/vdm" ]; then \
-		echo "  vdm command:  $(GREEN)✓ installed$$($(shell pwd)/.venv/bin/vdm --version 2>&1 | head -1)$(RESET)"; \
+		printf "  vdm command:  $(GREEN)✓ installed$$($(shell pwd)/.venv/bin/vdm --version 2>&1 | head -1)$(RESET)\n"; \
 	else \
-		echo "  vdm command:  $(RED)✗ not found (run make dev-env-init)$(RESET)"; \
+		printf "  vdm command:  $(RED)✗ not found (run make dev-env-init)$(RESET)\n"; \
 	fi
-	@echo ""
-	@echo "$(BOLD)$(YELLOW)Dependency Status:$(RESET)"
-	@$(UV) pip check 2>/dev/null && echo "  Dependencies:  $(GREEN)✓ satisfied$(RESET)" || echo "  Dependencies:  $(RED)✗ conflicts detected$(RESET)"
-	@echo ""
-	@echo "$(BOLD)$(YELLOW)Git Status:$(RESET)"
+	@printf "\n"
+	@printf "$(BOLD)$(YELLOW)Dependency Status:$(RESET)\n"
+	@$(UV) pip check 2>/dev/null && printf "  Dependencies:  $(GREEN)✓ satisfied$(RESET)\n" || printf "  Dependencies:  $(RED)✗ conflicts detected$(RESET)\n"
+	@printf "\n"
+	@printf "$(BOLD)$(YELLOW)Git Status:$(RESET)\n"
 	@if [ -d ".git" ]; then \
 		BRANCH=$$(git branch --show-current 2>/dev/null); \
 		if [ -n "$$BRANCH" ]; then \
-			echo "  Branch:       $$(git branch --show-current)"; \
+			printf "  Branch:       $$(git branch --show-current)\n"; \
 			if git diff-index --quiet HEAD -- 2>/dev/null; then \
-				echo "  Status:       $(GREEN)✓ clean$(RESET)"; \
+				printf "  Status:       $(GREEN)✓ clean$(RESET)\n"; \
 			else \
-				echo "  Status:       $(YELLOW)⚠ uncommitted changes$(RESET)"; \
+				printf "  Status:       $(YELLOW)⚠ uncommitted changes$(RESET)\n"; \
 			fi \
 		else \
-			echo "  Git:          $(YELLOW)⚠ no commits yet$(RESET)"; \
+			printf "  Git:          $(YELLOW)⚠ no commits yet$(RESET)\n"; \
 		fi \
 	else \
-		echo "  Git:          $(YELLOW)⚠ not a git repository$(RESET)"; \
+		printf "  Git:          $(YELLOW)⚠ not a git repository$(RESET)\n"; \
 	fi
-	@echo ""
-	@echo "$(BOLD)$(GREEN)✓ Health check complete$(RESET)"
+	@printf "\n"
+	@printf "$(BOLD)$(GREEN)✓ Health check complete$(RESET)\n"
 
 clean: ## Clean temporary files and caches
-	@echo "$(BOLD)$(YELLOW)Cleaning temporary files...$(RESET)"
+	@printf "$(BOLD)$(YELLOW)Cleaning temporary files...$(RESET)\n"
 	@find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 	@find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
 	@find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
@@ -240,149 +240,149 @@ clean: ## Clean temporary files and caches
 	@find . -type f -name ".coverage" -delete 2>/dev/null || true
 	@rm -rf build/ dist/ 2>/dev/null || true
 	@$(MAKE) clean-binaries
-	@echo "$(GREEN)✓ Cleaned successfully$(RESET)"
+	@printf "$(GREEN)✓ Cleaned successfully$(RESET)\n"
 
 # ============================================================================
 # Code Quality
 # ============================================================================
 
 format: ## Auto-format code with ruff (includes type transformations)
-	@echo "$(BOLD)$(YELLOW)Formatting code...$(RESET)"
-	@echo "$(CYAN)→ ruff format$(RESET)"
+	@printf "$(BOLD)$(YELLOW)Formatting code...$(RESET)\n"
+	@printf "$(CYAN)→ ruff format$(RESET)\n"
 	@$(UV) run $(RUFF) format $(PYTHON_FILES)
-	@echo "$(CYAN)→ ruff check --fix (all auto-fixable rules)$(RESET)"
+	@printf "$(CYAN)→ ruff check --fix (all auto-fixable rules)$(RESET)\n"
 	@if $(UV) run $(RUFF) check --fix $(PYTHON_FILES); then \
-		echo "$(GREEN)✓ All fixes applied successfully$(RESET)"; \
+		printf "$(GREEN)✓ All fixes applied successfully$(RESET)\n"; \
 	else \
-		echo "$(YELLOW)⚠ Some issues require manual fixes$(RESET)"; \
-		echo "$(CYAN)→ Running additional unsafe fixes...$(RESET)"; \
+		printf "$(YELLOW)⚠ Some issues require manual fixes$(RESET)\n"; \
+		printf "$(CYAN)→ Running additional unsafe fixes...$(RESET)\n"; \
 		$(UV) run $(RUFF) check --fix $(PYTHON_FILES) --unsafe-fixes || true; \
-		echo "$(YELLOW)⚠ Remaining issues need manual intervention$(RESET)"; \
+		printf "$(YELLOW)⚠ Remaining issues need manual intervention$(RESET)\n"; \
 	fi
-	@echo "$(GREEN)✓ Code formatted$(RESET)"
+	@printf "$(GREEN)✓ Code formatted$(RESET)\n"
 
 lint: ## Run code linting checks (ruff - check only)
-	@echo "$(BOLD)$(YELLOW)Running linters...$(RESET)"
-	@echo "$(CYAN)→ ruff format --check$(RESET)"
-	@$(UV) run $(RUFF) format --check $(PYTHON_FILES) || (echo "$(YELLOW)⚠ Run 'make format' to fix formatting$(RESET)" && exit 1)
-	@echo "$(CYAN)→ ruff check$(RESET)"
-	@$(UV) run $(RUFF) check $(PYTHON_FILES) || (echo "$(YELLOW)⚠ Run 'make format' to fix issues$(RESET)" && exit 1)
-	@echo "$(GREEN)✓ Linting passed$(RESET)"
+	@printf "$(BOLD)$(YELLOW)Running linters...$(RESET)\n"
+	@printf "$(CYAN)→ ruff format --check$(RESET)\n"
+	@$(UV) run $(RUFF) format --check $(PYTHON_FILES) || (printf "$(YELLOW)⚠ Run 'make format' to fix formatting$(RESET)\n" && exit 1)
+	@printf "$(CYAN)→ ruff check$(RESET)\n"
+	@$(UV) run $(RUFF) check $(PYTHON_FILES) || (printf "$(YELLOW)⚠ Run 'make format' to fix issues$(RESET)\n" && exit 1)
+	@printf "$(GREEN)✓ Linting passed$(RESET)\n"
 
 type-check: ## Run type checking with mypy
-	@echo "$(BOLD)$(YELLOW)Running type checker...$(RESET)"
-	@$(UV) run $(MYPY) $(SRC_DIR) || (echo "$(YELLOW)⚠ Type checking found issues$(RESET)" && exit 1)
-	@echo "$(GREEN)✓ Type checking passed$(RESET)"
+	@printf "$(BOLD)$(YELLOW)Running type checker...$(RESET)\n"
+	@$(UV) run $(MYPY) $(SRC_DIR) || (printf "$(YELLOW)⚠ Type checking found issues$(RESET)\n" && exit 1)
+	@printf "$(GREEN)✓ Type checking passed$(RESET)\n"
 
 sanitize: format lint type-check ## Run all static checks (format + lint + typecheck, NO tests)
-	@echo "$(BOLD)$(GREEN)✓ Sanitize complete - all static checks passed$(RESET)"
+	@printf "$(BOLD)$(GREEN)✓ Sanitize complete - all static checks passed$(RESET)\n"
 
 quick-check: ## Fast check (format + lint only, skip type-check)
-	@echo "$(BOLD)$(YELLOW)Running quick checks (format + lint)...$(RESET)"
-	@$(UV) run $(RUFF) format --check $(PYTHON_FILES) || (echo "$(YELLOW)⚠ Run 'make format' to fix formatting$(RESET)" && exit 1)
-	@$(UV) run $(RUFF) check $(PYTHON_FILES) || (echo "$(YELLOW)⚠ Run 'make format' to fix issues$(RESET)" && exit 1)
-	@echo "$(GREEN)✓ Quick checks passed$(RESET)"
+	@printf "$(BOLD)$(YELLOW)Running quick checks (format + lint)...$(RESET)\n"
+	@$(UV) run $(RUFF) format --check $(PYTHON_FILES) || (printf "$(YELLOW)⚠ Run 'make format' to fix formatting$(RESET)\n" && exit 1)
+	@$(UV) run $(RUFF) check $(PYTHON_FILES) || (printf "$(YELLOW)⚠ Run 'make format' to fix issues$(RESET)\n" && exit 1)
+	@printf "$(GREEN)✓ Quick checks passed$(RESET)\n"
 
 security-check: ## Run security vulnerability checks
-	@echo "$(BOLD)$(YELLOW)Running security checks...$(RESET)"
-	@command -v bandit >/dev/null 2>&1 || { echo "$(YELLOW)Installing bandit...$(RESET)"; $(UV) pip install bandit; }
-	@$(UV) run bandit -r $(SRC_DIR) -ll || echo "$(GREEN)✓ No security issues found$(RESET)"
+	@printf "$(BOLD)$(YELLOW)Running security checks...$(RESET)\n"
+	@command -v bandit >/dev/null 2>&1 || { printf "$(YELLOW)Installing bandit...$(RESET)\n"; $(UV) pip install bandit; }
+	@$(UV) run bandit -r $(SRC_DIR) -ll || printf "$(GREEN)✓ No security issues found$(RESET)\n"
 
 validate: quick-check test-quick ## Fast validation (quick-check + quick tests)
-	@echo "$(BOLD)$(GREEN)✓ Validation complete$(RESET)"
+	@printf "$(BOLD)$(GREEN)✓ Validation complete$(RESET)\n"
 
 pre-commit: sanitize test-quick ## Run pre-commit checks (sanitize + quick tests)
-	@echo "$(BOLD)$(GREEN)✓ Pre-commit checks complete$(RESET)"
+	@printf "$(BOLD)$(GREEN)✓ Pre-commit checks complete$(RESET)\n"
 
 # ============================================================================
 # Testing
 # ============================================================================
 
 test: ## Run all tests except e2e (unit + integration, no API calls)
-	@echo "$(BOLD)$(CYAN)Running all tests (excluding e2e)...$(RESET)"
+	@printf "$(BOLD)$(CYAN)Running all tests (excluding e2e)...$(RESET)\n"
 	@# First run unit tests
 	@$(UV) run $(PYTEST) $(TEST_DIR) -v -m unit
 	@# Then try integration tests if server is running
 	@if curl -s http://localhost:$(PORT)/health > /dev/null 2>&1 || \
 	   curl -s http://localhost:18082/health > /dev/null 2>&1; then \
-		echo "$(YELLOW)Server detected, running integration tests...$(RESET)"; \
-		$(UV) run $(PYTEST) $(TEST_DIR) -v -m "integration and not e2e" || echo "$(YELLOW)⚠ Some integration tests failed$(RESET)"; \
+		printf "$(YELLOW)Server detected, running integration tests...$(RESET)\n"; \
+		$(UV) run $(PYTEST) $(TEST_DIR) -v -m "integration and not e2e" || printf "$(YELLOW)⚠ Some integration tests failed$(RESET)\n"; \
 	else \
-		echo "$(YELLOW)⚠ Server not running, skipping integration tests$(RESET)"; \
-		echo "$(CYAN)To run integration tests:$(RESET)"; \
-		echo "  1. Start server: make dev"; \
-		echo "  2. Run: make test-integration"; \
+		printf "$(YELLOW)⚠ Server not running, skipping integration tests$(RESET)\n"; \
+		printf "$(CYAN)To run integration tests:$(RESET)\n"; \
+		printf "  1. Start server: make dev\n"; \
+		printf "  2. Run: make test-integration\n"; \
 	fi
 
 test-unit: ## Run unit tests only (fast, no external deps)
-	@echo "$(BOLD)$(CYAN)Running unit tests...$(RESET)"
+	@printf "$(BOLD)$(CYAN)Running unit tests...$(RESET)\n"
 	@$(UV) run $(PYTEST) $(TEST_DIR) -v -m unit
 
 test-integration: ## Run integration tests (requires server, no API calls)
-	@echo "$(BOLD)$(CYAN)Running integration tests...$(RESET)"
-	@echo "$(YELLOW)Note: Ensure server is running$(RESET)"
+	@printf "$(BOLD)$(CYAN)Running integration tests...$(RESET)\n"
+	@printf "$(YELLOW)Note: Ensure server is running$(RESET)\n"
 	@if curl -s http://localhost:$(PORT)/health > /dev/null 2>&1 || \
 	   curl -s http://localhost:18082/health > /dev/null 2>&1; then \
 		$(UV) run $(PYTEST) $(TEST_DIR) -v -m "integration and not e2e"; \
 	else \
-		echo "$(RED)❌ Server not running. Start with 'make dev' first$(RESET)"; \
+		printf "$(RED)❌ Server not running. Start with 'make dev' first$(RESET)\n"; \
 		exit 1; \
 	fi
 
 test-e2e: ## Run end-to-end tests with real APIs (requires server and API keys)
-	@echo "$(BOLD)$(CYAN)Running end-to-end tests...$(RESET)"
-	@echo "$(YELLOW)⚠ These tests make real API calls and will incur costs$(RESET)"
-	@echo "$(YELLOW)Note: Ensure server is running and API keys are set in .env$(RESET)"
+	@printf "$(BOLD)$(CYAN)Running end-to-end tests...$(RESET)\n"
+	@printf "$(YELLOW)⚠ These tests make real API calls and will incur costs$(RESET)\n"
+	@printf "$(YELLOW)Note: Ensure server is running and API keys are set in .env$(RESET)\n"
 	@if curl -s http://localhost:$(PORT)/health > /dev/null 2>&1 || \
 	   curl -s http://localhost:18082/health > /dev/null 2>&1; then \
 		$(UV) run $(PYTEST) $(TEST_DIR) -v -m e2e; \
 	else \
-		echo "$(RED)❌ Server not running. Start with 'make dev' first$(RESET)"; \
+		printf "$(RED)❌ Server not running. Start with 'make dev' first$(RESET)\n"; \
 		exit 1; \
 	fi
 
 test-all: ## Run ALL tests including e2e (requires server and API keys)
-	@echo "$(BOLD)$(CYAN)Running ALL tests (unit + integration + e2e)...$(RESET)"
-	@echo "$(YELLOW)⚠ E2E tests make real API calls and will incur costs$(RESET)"
+	@printf "$(BOLD)$(CYAN)Running ALL tests (unit + integration + e2e)...$(RESET)\n"
+	@printf "$(YELLOW)⚠ E2E tests make real API calls and will incur costs$(RESET)\n"
 	@# First run unit tests
 	@$(UV) run $(PYTEST) $(TEST_DIR) -v -m unit
 	@# Then check if server is running for integration and e2e tests
 	@if curl -s http://localhost:$(PORT)/health > /dev/null 2>&1 || \
 	   curl -s http://localhost:18082/health > /dev/null 2>&1; then \
-		echo "$(YELLOW)Server detected, running integration tests...$(RESET)"; \
-		$(UV) run $(PYTEST) $(TEST_DIR) -v -m "integration and not e2e" || echo "$(YELLOW)⚠ Some integration tests failed$(RESET)"; \
-		echo "$(YELLOW)Running e2e tests...$(RESET)"; \
-		$(UV) run $(PYTEST) $(TEST_DIR) -v -m e2e || echo "$(YELLOW)⚠ Some e2e tests failed (check API keys)$(RESET)"; \
+		printf "$(YELLOW)Server detected, running integration tests...$(RESET)\n"; \
+		$(UV) run $(PYTEST) $(TEST_DIR) -v -m "integration and not e2e" || printf "$(YELLOW)⚠ Some integration tests failed$(RESET)\n"; \
+		printf "$(YELLOW)Running e2e tests...$(RESET)\n"; \
+		$(UV) run $(PYTEST) $(TEST_DIR) -v -m e2e || printf "$(YELLOW)⚠ Some e2e tests failed (check API keys)$(RESET)\n"; \
 	else \
-		echo "$(RED)❌ Server not running. Start with 'make dev' first$(RESET)"; \
+		printf "$(RED)❌ Server not running. Start with 'make dev' first$(RESET)\n"; \
 		exit 1; \
 	fi
 
 test-quick: ## Run tests without coverage (fast)
-	@echo "$(BOLD)$(CYAN)Running quick tests...$(RESET)"
+	@printf "$(BOLD)$(CYAN)Running quick tests...$(RESET)\n"
 	@$(UV) run $(PYTEST) $(TEST_DIR) -q --tb=short -m unit
 
 coverage: ## Run tests with coverage report
-	@echo "$(BOLD)$(CYAN)Running tests with coverage...$(RESET)"
-	@echo "$(CYAN)→ Ensuring pytest-cov is installed...$(RESET)"
+	@printf "$(BOLD)$(CYAN)Running tests with coverage...$(RESET)\n"
+	@printf "$(CYAN)→ Ensuring pytest-cov is installed...$(RESET)\n"
 	@$(UV) add --group dev pytest-cov 2>/dev/null || true
 	@# Check if server is running, if so run all tests, otherwise run only unit tests
 	@if curl -s http://localhost:$(PORT)/health > /dev/null 2>&1 || \
 	   curl -s http://localhost:18082/health > /dev/null 2>&1; then \
-		echo "$(YELLOW)Server detected, running coverage on all tests...$(RESET)"; \
+		printf "$(YELLOW)Server detected, running coverage on all tests...$(RESET)\n"; \
 		$(UV) run $(PYTEST) $(TEST_DIR) --cov=$(SRC_DIR) --cov-report=html --cov-report=term-missing; \
 	else \
-		echo "$(YELLOW)Server not running, running coverage on unit tests only...$(RESET)"; \
+		printf "$(YELLOW)Server not running, running coverage on unit tests only...$(RESET)\n"; \
 		$(UV) run $(PYTEST) $(TEST_DIR) --cov=$(SRC_DIR) --cov-report=html --cov-report=term-missing -m unit; \
 	fi
-	@echo "$(GREEN)✓ Coverage report generated in htmlcov/$(RESET)"
+	@printf "$(GREEN)✓ Coverage report generated in htmlcov/$(RESET)\n"
 
 # ============================================================================
 # Binary Builds (Nuitka)
 # ============================================================================
 
 build-cli: ## Build CLI binary for current platform
-	@echo "$(BOLD)$(GREEN)Building CLI binary...$(RESET)"
+	@printf "$(BOLD)$(GREEN)Building CLI binary...$(RESET)\n"
 	@# Ensure _version.py exists from hatch-vcs
 	@$(UV) build --wheel 2>/dev/null || true
 	@# Detect platform
@@ -405,7 +405,7 @@ build-cli: ## Build CLI binary for current platform
 	else \
 		BINARY_NAME="vdm$${BINARY_EXT}"; \
 	fi; \
-	echo "$(CYAN)Platform: $${PLATFORM} $${UNAME_M}$(RESET)"; \
+	printf "$(CYAN)Platform: $${PLATFORM} $${UNAME_M}$(RESET)\n"; \
 	$(NUITKA) --onefile --standalone \
 		--enable-plugin=anti-bloat \
 		--nofollow-import-to=tests \
@@ -415,43 +415,43 @@ build-cli: ## Build CLI binary for current platform
 		--output-filename=$${BINARY_NAME} \
 		--include-data-files=src/config/*.toml=src/config/ \
 		src/cli/main.py
-	@echo "$(GREEN)✓ CLI binary built: $(BUILD_DIR)/$$(ls $(BUILD_DIR)/vdm*)$(RESET)"
+	@printf "$(GREEN)✓ CLI binary built: $(BUILD_DIR)/$$(ls $(BUILD_DIR)/vdm*)$(RESET)\n"
 
 clean-binaries: ## Clean Nuitka build artifacts
-	@echo "$(BOLD)$(YELLOW)Cleaning Nuitka artifacts...$(RESET)"
+	@printf "$(BOLD)$(YELLOW)Cleaning Nuitka artifacts...$(RESET)\n"
 	@rm -rf $(BUILD_DIR) 2>/dev/null || true
 	@find . -type d -name "*.build" -exec rm -rf {} + 2>/dev/null || true
 	@find . -type d -name "*.dist" -exec rm -rf {} + 2>/dev/null || true
 	@find . -name "*.onefile-build" -exec rm -rf {} + 2>/dev/null || true
-	@echo "$(GREEN)✓ Binary artifacts cleaned$(RESET)"
+	@printf "$(GREEN)✓ Binary artifacts cleaned$(RESET)\n"
 
 # ============================================================================
 # Docker
 # ============================================================================
 
 docker-build: ## Build Docker image
-	@echo "$(BOLD)$(BLUE)Building Docker image...$(RESET)"
+	@printf "$(BOLD)$(BLUE)Building Docker image...$(RESET)\n"
 ifndef HAS_DOCKER
 	$(error Docker is not installed or not running)
 endif
 	docker compose build
 
 docker-up: ## Start services with Docker Compose
-	@echo "$(BOLD)$(BLUE)Starting Docker services...$(RESET)"
+	@printf "$(BOLD)$(BLUE)Starting Docker services...$(RESET)\n"
 ifndef HAS_DOCKER
 	$(error Docker is not installed or not running)
 endif
 	docker compose up -d
-	@echo "$(GREEN)✓ Services started$(RESET)"
-	@echo "$(CYAN)View logs: make docker-logs$(RESET)"
+	@printf "$(GREEN)✓ Services started$(RESET)\n"
+	@printf "$(CYAN)View logs: make docker-logs$(RESET)\n"
 
 docker-down: ## Stop Docker services
-	@echo "$(BOLD)$(BLUE)Stopping Docker services...$(RESET)"
+	@printf "$(BOLD)$(BLUE)Stopping Docker services...$(RESET)\n"
 ifndef HAS_DOCKER
 	$(error Docker is not installed or not running)
 endif
 	docker compose down
-	@echo "$(GREEN)✓ Services stopped$(RESET)"
+	@printf "$(GREEN)✓ Services stopped$(RESET)\n"
 
 docker-logs: ## Show Docker logs
 ifndef HAS_DOCKER
@@ -462,32 +462,32 @@ endif
 docker-restart: docker-down docker-up ## Restart Docker services
 
 docker-clean: docker-down ## Stop and remove Docker containers, volumes
-	@echo "$(BOLD)$(YELLOW)Cleaning Docker resources...$(RESET)"
+	@printf "$(BOLD)$(YELLOW)Cleaning Docker resources...$(RESET)\n"
 	docker compose down -v --remove-orphans
-	@echo "$(GREEN)✓ Docker resources cleaned$(RESET)"
+	@printf "$(GREEN)✓ Docker resources cleaned$(RESET)\n"
 
 # ============================================================================
 # Build & Distribution
 # ============================================================================
 
 build: clean ## Build distribution packages
-	@echo "$(BOLD)$(GREEN)Building distribution packages...$(RESET)"
+	@printf "$(BOLD)$(GREEN)Building distribution packages...$(RESET)\n"
 	$(UV) build
-	@echo "$(GREEN)✓ Build complete - check dist/$(RESET)"
+	@printf "$(GREEN)✓ Build complete - check dist/$(RESET)\n"
 
 # ============================================================================
 # CI/CD
 # ============================================================================
 
 ci: dev-env-setup sanitize test ## Run full CI pipeline (setup, sanitize, test)
-	@echo "$(BOLD)$(GREEN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(RESET)"
-	@echo "$(BOLD)$(GREEN)✓ CI Pipeline Complete$(RESET)"
-	@echo "$(BOLD)$(GREEN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(RESET)"
+	@printf "$(BOLD)$(GREEN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(RESET)\n"
+	@printf "$(BOLD)$(GREEN)✓ CI Pipeline Complete$(RESET)\n"
+	@printf "$(BOLD)$(GREEN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(RESET)\n"
 
 all: clean dev-env-setup sanitize test build ## Run everything (clean, setup, sanitize, test, build)
-	@echo "$(BOLD)$(GREEN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(RESET)"
-	@echo "$(BOLD)$(GREEN)✓ All Tasks Complete$(RESET)"
-	@echo "$(BOLD)$(GREEN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(RESET)"
+	@printf "$(BOLD)$(GREEN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(RESET)\n"
+	@printf "$(BOLD)$(GREEN)✓ All Tasks Complete$(RESET)\n"
+	@printf "$(BOLD)$(GREEN)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(RESET)\n"
 
 # ============================================================================
 # Release Management
@@ -502,8 +502,8 @@ version-set: ## Set new version interactively
 
 version-bump: ## Bump version interactively (or: make version-bump BUMP_TYPE=patch|minor|major)
 ifndef BUMP_TYPE
-	@echo "$(CYAN)💡 Tip: Skip interactive mode with: make version-bump BUMP_TYPE=patch|minor|major$(RESET)"
-	@echo ""
+	@printf "$(CYAN)💡 Tip: Skip interactive mode with: make version-bump BUMP_TYPE=patch|minor|major$(RESET)\n"
+	@printf "\n"
 	@$(UV) run python scripts/release.py full
 else
 	@$(UV) run python scripts/release.py version-bump $(BUMP_TYPE)
@@ -548,29 +548,29 @@ release-major: ## Quick major release
 
 .PHONY: info
 info: ## Show project information
-	@echo "$(BOLD)$(CYAN)Project Information$(RESET)"
-	@echo "  Name:         Vandamme Proxy"
-	@echo "  Version:      $$($(UV) run python -c 'from src import __version__; print(__version__)' 2>/dev/null || echo 'unknown')"
-	@echo "  Python:       >= 3.10"
-	@echo "  Source:       $(SRC_DIR)/"
-	@echo "  Tests:        $(TEST_DIR)/"
-	@echo "  Default Host: $(HOST)"
-	@echo "  Default Port: $(PORT)"
-	@echo ""
-	@echo "$(BOLD)$(CYAN)Environment$(RESET)"
-	@echo "  UV:           $(if $(HAS_UV),✓ installed,✗ not found)"
-	@echo "  Docker:       $(if $(HAS_DOCKER),✓ installed,✗ not found)"
-	@echo "  Python:       $$($(PYTHON) --version 2>&1)"
+	@printf "$(BOLD)$(CYAN)Project Information$(RESET)\n"
+	@printf "  Name:         Vandamme Proxy\n"
+	@printf "  Version:      $$($(UV) run python -c 'from src import __version__; print(__version__)' 2>/dev/null || echo 'unknown')\n"
+	@printf "  Python:       >= 3.10\n"
+	@printf "  Source:       $(SRC_DIR)/\n"
+	@printf "  Tests:        $(TEST_DIR)/\n"
+	@printf "  Default Host: $(HOST)\n"
+	@printf "  Default Port: $(PORT)\n"
+	@printf "\n"
+	@printf "$(BOLD)$(CYAN)Environment$(RESET)\n"
+	@printf "  UV:           $(if $(HAS_UV),✓ installed,✗ not found)\n"
+	@printf "  Docker:       $(if $(HAS_DOCKER),✓ installed,✗ not found)\n"
+	@printf "  Python:       $$($(PYTHON) --version 2>&1)\n"
 
 .PHONY: watch
 watch: ## Watch for file changes and auto-run tests
-	@echo "$(BOLD)$(CYAN)Watching for changes...$(RESET)"
-	@command -v watchexec >/dev/null 2>&1 || { echo "$(RED)Error: watchexec not installed. Install with: cargo install watchexec-cli$(RESET)"; exit 1; }
+	@printf "$(BOLD)$(CYAN)Watching for changes...$(RESET)\n"
+	@command -v watchexec >/dev/null 2>&1 || { printf "$(RED)Error: watchexec not installed. Install with: cargo install watchexec-cli$(RESET)\n"; exit 1; }
 	watchexec -e py -w $(SRC_DIR) -w $(TEST_DIR) -- make test-quick
 
 .PHONY: env-template
 env-template: ## Generate .env template file
-	@echo "$(BOLD)$(CYAN)Generating .env.template...$(RESET)"
+	@printf "$(BOLD)$(CYAN)Generating .env.template...$(RESET)\n"
 	@echo "# Claude Code Proxy Configuration" > .env.template
 	@echo "" >> .env.template
 	@echo "# Required: OpenAI API Key" >> .env.template
@@ -592,12 +592,12 @@ env-template: ## Generate .env template file
 	@echo "#HOST=0.0.0.0" >> .env.template
 	@echo "#PORT=8082" >> .env.template
 	@echo "#LOG_LEVEL=INFO" >> .env.template
-	@echo "$(GREEN)✓ Generated .env.template$(RESET)"
+	@printf "$(GREEN)✓ Generated .env.template$(RESET)\n"
 
 deps-check: ## Check for outdated dependencies
-	@echo "$(BOLD)$(YELLOW)Checking dependencies...$(RESET)"
+	@printf "$(BOLD)$(YELLOW)Checking dependencies...$(RESET)\n"
 ifdef HAS_UV
-	@$(UV) pip list --outdated || echo "$(GREEN)✓ All dependencies up to date$(RESET)"
+	@$(UV) pip list --outdated || printf "$(GREEN)✓ All dependencies up to date$(RESET)\n"
 else
-	@$(PYTHON) -m pip list --outdated || echo "$(GREEN)✓ All dependencies up to date$(RESET)"
+	@$(PYTHON) -m pip list --outdated || printf "$(GREEN)✓ All dependencies up to date$(RESET)\n"
 endif
