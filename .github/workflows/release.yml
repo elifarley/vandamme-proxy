@@ -31,7 +31,7 @@ jobs:
           cache-dependency-path: uv.lock
 
       - name: Install dependencies
-        run: make dev-env-setup
+        run: make dev-deps-sync
 
       - name: Get version from tag
         id: version
@@ -109,7 +109,7 @@ jobs:
           cache-dependency-path: uv.lock
 
       - name: Install dependencies
-        run: make dev-env-setup
+        run: make dev-deps-sync
 
       - name: Get version from tag
         id: version
