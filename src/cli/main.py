@@ -88,8 +88,7 @@ def version() -> None:
     """Show version information."""
     from src import __version__
 
-    # Use the logger instead of print
-    logger.info(f"vdm version {__version__}")
+    typer.echo(f"vdm version {__version__}")
 
 
 @app.callback()
