@@ -158,7 +158,12 @@ class AliasManager:
             self._fallback_aliases = {}
 
     def _merge_fallback_aliases(self) -> None:
-        """Merge fallback aliases for any missing configurations."""
+        """Merge fallback aliases for any missing configurations.
+
+        IMPORTANT: We load fallback aliases for all providers defined in config
+        to support AliasManager initialization without API keys. Filtering to
+        active providers happens at display time (get_all_aliases, _print_alias_summary).
+        """
         # Get available providers for validation.
         #
         # IMPORTANT: Alias management must not require provider API keys.
@@ -497,14 +502,33 @@ class AliasManager:
 
         return resolved_model
 
-    def get_all_aliases(self) -> dict[str, dict[str, str]]:
+    def get_all_aliases(self, active_only: bool = False) -> dict[str, dict[str, str]]:
         """
         Get all configured aliases grouped by provider.
+
+        Args:
+            active_only: If True, only return aliases for providers with API keys configured
 
         Returns:
             Dictionary of {provider: {alias_name: target_model}}
         """
-        return {provider: aliases.copy() for provider, aliases in self.aliases.items()}
+        if not active_only:
+            return {provider: aliases.copy() for provider, aliases in self.aliases.items()}
+
+        # Filter to only providers with API keys
+        from src.core.config import config
+
+        try:
+            active_providers = set(config.provider_manager.list_providers().keys())
+        except Exception:
+            # If provider_manager not initialized or fails, show all
+            active_providers = set(self.aliases.keys())
+
+        return {
+            provider: aliases.copy()
+            for provider, aliases in self.aliases.items()
+            if provider in active_providers
+        }
 
     def get_explicit_aliases(self) -> dict[str, dict[str, str]]:
         """
@@ -601,16 +625,36 @@ class AliasManager:
         if not self.aliases:
             return
 
-        total_aliases = sum(len(aliases) for aliases in self.aliases.values())
+        # Get active providers for filtering
+        from src.core.config import config
+
+        try:
+            active_providers = set(config.provider_manager.list_providers().keys())
+        except Exception:
+            # If provider_manager not initialized, show all
+            active_providers = set(self.aliases.keys())
+
+        # Filter aliases to only active providers
+        active_aliases = {
+            provider: aliases
+            for provider, aliases in self.aliases.items()
+            if provider in active_providers
+        }
+
+        if not active_aliases:
+            return
+
+        total_aliases = sum(len(aliases) for aliases in active_aliases.values())
 
         # Count fallback aliases
         total_fallbacks = sum(
             sum(1 for alias in aliases if alias in self._fallback_aliases.get(provider, {}))
-            for provider, aliases in self.aliases.items()
+            for provider, aliases in active_aliases.items()
         )
 
         print(
-            f"\n✨ Model Aliases ({total_aliases} configured across {len(self.aliases)} providers):"
+            f"\n✨ Model Aliases ({total_aliases} configured across "
+            f"{len(active_aliases)} providers):"
         )
 
         if total_fallbacks > 0:
@@ -628,8 +672,8 @@ class AliasManager:
         }
 
         # Sort providers by name for consistent display
-        for provider in sorted(self.aliases.keys()):
-            provider_aliases = self.aliases[provider]
+        for provider in sorted(active_aliases.keys()):
+            provider_aliases = active_aliases[provider]
             color = provider_colors.get(provider.lower(), "")
             reset = "\033[0m" if color else ""
             provider_display = f"{color}{provider}{reset}"
@@ -663,15 +707,15 @@ class AliasManager:
 
         # Add usage examples
         print("\n   💡 Use aliases in your requests:")
-        if self.aliases:
+        if active_aliases:
             # Try to use the default provider for the example
-            example_provider = default_provider if default_provider in self.aliases else None
+            example_provider = default_provider if default_provider in active_aliases else None
             if not example_provider:
                 # Fall back to the first provider with aliases (alphabetically)
-                example_provider = sorted(self.aliases.keys())[0]
+                example_provider = sorted(active_aliases.keys())[0]
 
-            first_alias = sorted(self.aliases[example_provider].keys())[0]
-            first_target = self.aliases[example_provider][first_alias]
+            first_alias = sorted(active_aliases[example_provider].keys())[0]
+            first_target = active_aliases[example_provider][first_alias]
             is_fallback = first_alias in self._fallback_aliases.get(example_provider, {})
 
             print(

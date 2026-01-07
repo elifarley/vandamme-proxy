@@ -1384,11 +1384,14 @@ async def list_models(
 async def list_aliases(_: None = Depends(validate_api_key)) -> JSONResponse:
     """List all configured model aliases grouped by provider.
 
+    Only shows aliases for active providers (those with API keys configured).
+
     Also includes a non-mutating overlay of "suggested" aliases derived from
     `/top-models`.
     """
     try:
-        aliases = config.alias_manager.get_all_aliases()
+        # Only show aliases for active providers (with API keys)
+        aliases = config.alias_manager.get_all_aliases(active_only=True)
 
         # Return aliases grouped by provider
         total_aliases = sum(len(provider_aliases) for provider_aliases in aliases.values())
