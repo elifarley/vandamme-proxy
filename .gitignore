@@ -180,3 +180,7 @@ pyrightconfig.json
 
 # Auto-generated version file
 src/_version.py
+/.claude/agent-responses/
+/.claude/qg-reports/
+/.claude/settings.local.json
+/vandamme-config.toml
