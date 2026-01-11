@@ -12,10 +12,6 @@ import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 
-from src.api.services.error_handling import (
-    build_streaming_error_response,
-    finalize_metrics_on_streaming_error,
-)
 from src.api.services.key_rotation import build_api_key_params
 from src.api.services.metrics_helper import populate_request_metrics
 from src.api.services.provider_context import resolve_provider_context
@@ -25,13 +21,13 @@ from src.api.services.streaming import (
     streaming_response,
     with_streaming_error_handling,
 )
+from src.api.services.streaming_handlers import get_streaming_handler
 from src.api.utils.yaml_formatter import format_health_yaml
 from src.conversion.anthropic_sse_to_openai import anthropic_sse_to_openai_chat_completions_sse
 from src.conversion.anthropic_to_openai import anthropic_message_to_openai_chat_completion
 from src.conversion.openai_to_anthropic import openai_chat_completions_to_anthropic_messages
 from src.conversion.request_converter import convert_claude_to_openai
 from src.conversion.response_converter import (
-    convert_openai_streaming_to_claude_with_cancellation,
     convert_openai_to_claude_response,
 )
 from src.core.config import config
@@ -533,133 +529,24 @@ async def create_message(
                 raise HTTPException(status_code=499, detail="Client disconnected")
 
             if request.stream:
-                # Streaming response
-                # Check if provider uses Anthropic format
+                # Streaming response - use strategy pattern to handle different formats
                 provider_config = config.provider_manager.get_provider_config(provider_name)
+                handler = get_streaming_handler(config, provider_config)
 
-                if provider_config and provider_config.is_anthropic_format:
-                    # Passthrough streaming for Anthropic-compatible APIs
-                    # Convert request to dict directly (no format conversion)
-                    resolved_model, claude_request_dict = build_anthropic_passthrough_request(
-                        request=request,
-                        provider_name=provider_name,
-                    )
-
-                    try:
-                        # Direct streaming with passthrough
-                        api_key_params = build_api_key_params(
-                            provider_config=provider_config,
-                            provider_name=provider_name,
-                            client_api_key=client_api_key,
-                            provider_api_key=provider_api_key,
-                        )
-                        anthropic_stream = openai_client.create_chat_completion_stream(
-                            claude_request_dict,
-                            request_id,
-                            **api_key_params,
-                        )
-
-                        return streaming_response(
-                            stream=with_streaming_error_handling(
-                                original_stream=anthropic_stream,
-                                http_request=http_request,
-                                request_id=request_id,
-                                provider_name=provider_name,
-                                metrics_enabled=LOG_REQUEST_METRICS,
-                            ),
-                            headers=sse_headers(),
-                        )
-                    except HTTPException as e:
-                        # Convert to proper error response for streaming
-                        await finalize_metrics_on_streaming_error(
-                            metrics=metrics,
-                            error=e.detail,
-                            tracker=tracker,
-                            request_id=request_id,
-                        )
-                        return build_streaming_error_response(
-                            exception=e,
-                            openai_client=openai_client,
-                            metrics=metrics,
-                            tracker=tracker,
-                            request_id=request_id,
-                        )
-                else:
-                    # OpenAI format streaming (existing logic)
-                    try:
-                        api_key_params = build_api_key_params(
-                            provider_config=provider_config,
-                            provider_name=provider_name,
-                            client_api_key=client_api_key,
-                            provider_api_key=provider_api_key,
-                        )
-                        openai_stream = openai_client.create_chat_completion_stream(
-                            openai_request,
-                            request_id,
-                            **api_key_params,
-                        )
-
-                        converted_stream = convert_openai_streaming_to_claude_with_cancellation(
-                            openai_stream,
-                            request,
-                            logger,
-                            http_request,
-                            openai_client,
-                            request_id,
-                            tool_name_map_inverse=tool_name_map_inverse,
-                        )
-
-                        stream_with_error_handling = with_streaming_error_handling(
-                            original_stream=converted_stream,
-                            http_request=http_request,
-                            request_id=request_id,
-                            provider_name=provider_name,
-                            metrics_enabled=LOG_REQUEST_METRICS,
-                        )
-
-                        # Apply middleware to streaming deltas (e.g., capture thought signatures)
-                        if hasattr(config.provider_manager, "middleware_chain"):
-                            from src.api.middleware_integration import (
-                                MiddlewareAwareRequestProcessor,
-                                MiddlewareStreamingWrapper,
-                            )
-
-                            processor = MiddlewareAwareRequestProcessor()
-                            processor.middleware_chain = config.provider_manager.middleware_chain
-
-                            wrapped_stream = MiddlewareStreamingWrapper(
-                                original_stream=stream_with_error_handling,
-                                request_context=RequestContext(
-                                    messages=openai_request.get("messages", []),
-                                    provider=provider_name,
-                                    model=request.model,
-                                    request_id=request_id,
-                                    conversation_id=None,
-                                    client_api_key=client_api_key,
-                                ),
-                                processor=processor,
-                            )
-
-                            return streaming_response(stream=wrapped_stream, headers=sse_headers())
-
-                        return streaming_response(
-                            stream=stream_with_error_handling, headers=sse_headers()
-                        )
-                    except HTTPException as e:
-                        # Convert to proper error response for streaming
-                        await finalize_metrics_on_streaming_error(
-                            metrics=metrics,
-                            error=e.detail,
-                            tracker=tracker,
-                            request_id=request_id,
-                        )
-                        return build_streaming_error_response(
-                            exception=e,
-                            openai_client=openai_client,
-                            metrics=metrics,
-                            tracker=tracker,
-                            request_id=request_id,
-                        )
+                return await handler.handle_streaming_request(
+                    request=request,
+                    openai_request=openai_request,
+                    provider_name=provider_name,
+                    client_api_key=client_api_key,
+                    provider_api_key=provider_api_key,
+                    tool_name_map_inverse=tool_name_map_inverse,
+                    openai_client=openai_client,
+                    http_request=http_request,
+                    request_id=request_id,
+                    metrics=metrics,
+                    tracker=tracker,
+                    config=config,
+                )
             else:
                 # Non-streaming response
                 # Check if provider uses Anthropic format
