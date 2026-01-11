@@ -55,9 +55,13 @@ def start(
         # Show provider summary
         config.provider_manager.print_provider_summary()
 
-        # Show common model mappings
+        # Show alias summary using presenter pattern
         if config.alias_service:
-            config.alias_service.print_alias_summary(config.default_provider)
+            from src.cli.presenters.aliases import AliasSummaryPresenter
+
+            summary = config.alias_service.get_alias_summary(config.default_provider)
+            presenter = AliasSummaryPresenter(console=console)
+            presenter.present_summary(summary)
 
     if daemon:
         _start_daemon(server_host, server_port, pid_file)

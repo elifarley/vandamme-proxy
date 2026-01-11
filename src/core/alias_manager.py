@@ -548,47 +548,11 @@ class AliasManager:
         """
         return sum(len(aliases) for aliases in self.aliases.values())
 
-    def print_common_model_mappings(self, default_provider: str) -> None:
-        """Print resolved mappings for common Claude model names.
+    def get_fallback_aliases(self) -> dict[str, dict[str, str]]:
+        """Get fallback aliases loaded from TOML configuration.
 
-        Args:
-            default_provider: The default provider name to use for resolution
+        Returns:
+            Copy of fallback aliases dict to prevent external mutation.
+            Maps provider name to their fallback alias definitions.
         """
-        common_models = ["haiku", "sonnet", "opus"]
-
-        # Store all mappings first to prevent log lines from appearing between header and rows
-        mappings: list[str] = []
-
-        for model in common_models:
-            # Do initial resolution (handles alias matching)
-            resolved = self.resolve_alias(model, provider=default_provider)
-            if resolved and ":" in resolved:
-                # Count total resolution steps by resolving from the input model
-                # We construct what the first alias match would look like (provider:model)
-                # and then let _recursively_resolve count all steps from there
-                first_alias = f"{default_provider}:{model}"
-                _, steps = self._recursively_resolve(first_alias)
-
-                provider, actual_model = resolved.split(":", 1)
-                # For cross-provider resolution, show: "poe:haiku → zai:GLM-4.5-Air"
-                # For same-provider, show: "poe:opus → gpt-5.1-codex-max"
-                if provider != default_provider:
-                    base_display = f"{default_provider}:{model} → {provider}:{actual_model}"
-                else:
-                    base_display = f"{default_provider}:{model} → {actual_model}"
-
-                # Add step count indicator if non-shallow (more than 1 step)
-                display_alias = f"{base_display} [{steps} steps]" if steps > 1 else base_display
-
-                mappings.append(display_alias)
-            else:
-                # No alias found
-                mappings.append(f"{default_provider}:{model} → Not configured")
-
-        # Now print everything at once
-        print("\n📝 Common Model Mappings (using default provider):")
-        print(f"   {'Mapping':<65}")
-        print(f"   {'-' * 65}")
-
-        for mapping in mappings:
-            print(f"   {mapping:<65}")
+        return {p: aliases.copy() for p, aliases in self._fallback_aliases.items()}

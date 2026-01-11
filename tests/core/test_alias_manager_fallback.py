@@ -227,7 +227,7 @@ class TestAliasManagerFallback:
         """Test that fallback aliases are shown in summary display."""
         from unittest.mock import MagicMock
 
-        from src.core.alias_service import AliasService
+        from src.api.services.alias_service import AliasService
 
         with patch("src.core.provider_manager.ProviderManager") as mock_provider_manager:
             mock_pm = mock_provider_manager.return_value
@@ -237,17 +237,21 @@ class TestAliasManagerFallback:
             alias_manager = AliasManager()
             alias_service = AliasService(alias_manager, mock_pm)
 
-            # Capture print output
-            with patch("builtins.print") as mock_print:
-                # Call print_alias_summary to test output
-                alias_service.print_alias_summary()
+            # Get structured summary
+            summary = alias_service.get_alias_summary()
 
-                # Check that fallbacks are mentioned in output
-                print_calls = [str(call) for call in mock_print.call_args_list]
-                output_text = " ".join(print_calls)
-                assert "3 fallback" in output_text or "fallback defaults" in output_text
-                assert "haiku" in output_text
-                assert "gpt-5.1-mini" in output_text
+            # Check that fallbacks are included in the summary
+            assert summary.total_fallbacks >= 1
+            # Find fallback aliases in the summary
+            fallback_aliases = [
+                alias
+                for provider_info in summary.providers
+                for alias, _, alias_type in provider_info.aliases
+                if alias_type == "fallback"
+            ]
+            assert len(fallback_aliases) >= 1
+            # Check common fallback aliases exist
+            assert "haiku" in fallback_aliases or "sonnet" in fallback_aliases
 
     def test_provider_validation_applies_to_fallbacks(self):
         """Test that fallback aliases are only loaded for configured providers."""

@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
+    from src.api.services.alias_service import AliasService
     from src.core.alias_manager import AliasManager
-    from src.core.alias_service import AliasService
     from src.core.provider_manager import ProviderManager
 
 
@@ -203,7 +203,7 @@ class Config:
         aliases filtered to active providers only.
         """
         if self._alias_service is None:
-            from src.core.alias_service import AliasService
+            from src.api.services.alias_service import AliasService
 
             self._alias_service = AliasService(
                 alias_manager=self.alias_manager,
