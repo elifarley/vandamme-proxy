@@ -18,40 +18,24 @@ if TYPE_CHECKING:
 logger = getLogger(__name__)
 
 
-# NOTE: Frozen Dataclasses with Mutable Fields
-#
-# This module uses @dataclass(frozen=True) to prevent field reassignment,
-# but some dataclasses contain mutable dict/list fields. This is a pragmatic
-# design choice that balances immutability benefits with Python's idiomatic
-# patterns.
-#
-# Our approach:
-# 1. Dataclass is frozen (fields cannot be reassigned)
-# 2. Dict/list contents are defensively copied on return
-# 3. Callers treat returned structures as immutable by convention
-
-
 @dataclass(frozen=True)
 class ActiveAliasesResult:
     """Result of get_active_aliases with status information.
 
     Attributes:
-        aliases: Dict mapping provider name to their aliases.
-                 NOTE: This is a defensive copy - callers should not mutate.
-                 The dataclass is frozen (fields cannot be reassigned).
+        aliases: Nested tuple of (provider_name, ((alias, target), ...))
+            for true immutability. The outer structure is ((provider, items), ...).
         is_success: True if the operation succeeded
         error_message: Optional error message if is_success is False
         provider_count: Number of active providers
         alias_count: Total number of aliases across all providers
 
     Note:
-        This dataclass is frozen to prevent field reassignment, but the
-        dict contents are mutable by Python's design. We defensively
-        copy these structures on return, and callers should treat them
-        as immutable by convention.
+        This dataclass is frozen and uses tuples for all collections,
+        ensuring true runtime immutability.
     """
 
-    aliases: dict[str, dict[str, str]]
+    aliases: tuple[tuple[str, tuple[tuple[str, str], ...]], ...]
     is_success: bool
     error_message: str | None = None
     provider_count: int = 0
@@ -66,19 +50,17 @@ class ProviderAliasInfo:
         provider: Provider name
         alias_count: Total number of aliases for this provider
         fallback_count: Number of aliases from fallback configuration
-        aliases: List of (alias_name, target_model, type) tuples.
-                 NOTE: This is a defensive copy - callers should not mutate.
+        aliases: Tuple of (alias_name, target_model, type) tuples.
 
     Note:
-        This dataclass is frozen to prevent field reassignment. The list
-        container is mutable by design, but we defensively copy on return.
-        Callers should treat the contents as immutable by convention.
+        This dataclass is frozen and uses a tuple for the aliases list,
+        ensuring true runtime immutability.
     """
 
     provider: str
     alias_count: int
     fallback_count: int
-    aliases: list[tuple[str, str, str]]  # (alias, target, type)
+    aliases: tuple[tuple[str, str, str], ...]  # (alias, target, type)
 
 
 @dataclass(frozen=True)
@@ -89,20 +71,18 @@ class AliasSummary:
         total_aliases: Total number of aliases across all providers
         total_providers: Number of active providers
         total_fallbacks: Total number of fallback aliases
-        providers: List of provider-specific alias information.
-                   NOTE: This is a defensive copy - callers should not mutate.
+        providers: Tuple of provider-specific alias information.
         default_provider: Default provider name if set
 
     Note:
-        This dataclass is frozen to prevent field reassignment. The list
-        container is mutable by design, but we defensively copy on return.
-        Callers should treat the contents as immutable by convention.
+        This dataclass is frozen and uses a tuple for the providers list,
+        ensuring true runtime immutability.
     """
 
     total_aliases: int
     total_providers: int
     total_fallbacks: int
-    providers: list[ProviderAliasInfo]
+    providers: tuple[ProviderAliasInfo, ...]
     default_provider: str | None
 
 
@@ -141,16 +121,17 @@ class AliasService:
             Returns empty set if ProviderManager is not available.
 
         Note:
-            This method handles AttributeError gracefully (expected during early init)
-            but lets all other exceptions propagate, including KeyboardInterrupt.
+            This method handles AttributeError gracefully (expected during early
+            initialization). All other exceptions propagate.
         """
         try:
-            return set(self.provider_manager.list_providers().keys())
+            providers = self.provider_manager.list_providers()
+            # Filter out empty provider names
+            return {name for name in providers if name}
         except AttributeError as e:
             # ProviderManager not initialized - expected during early init
             logger.debug("ProviderManager not initialized: %s", e)
             return set()
-        # All other exceptions (including KeyboardInterrupt) propagate
 
     def get_active_aliases(self) -> dict[str, dict[str, str]]:
         """Get aliases filtered to only active providers.
@@ -186,6 +167,10 @@ class AliasService:
     def get_active_aliases_result(self) -> ActiveAliasesResult:
         """Get aliases with unambiguous status information.
 
+        .. deprecated::
+            This method has no production callers. Use `get_active_aliases()`
+            instead. Will be removed in a future version.
+
         Returns:
             ActiveAliasesResult containing aliases and status information.
             Unlike get_active_aliases(), this distinguishes between "no active
@@ -196,11 +181,19 @@ class AliasService:
             during early initialization) propagate to the caller. Only
             AttributeError from provider initialization is handled gracefully.
         """
+        import warnings
+
+        warnings.warn(
+            "get_active_aliases_result() is deprecated and will be removed. "
+            "Use get_active_aliases() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         active_providers = self._get_active_provider_names()
 
         if not active_providers:
             return ActiveAliasesResult(
-                aliases={},
+                aliases=(),
                 is_success=False,
                 error_message="No active providers found",
                 provider_count=0,
@@ -219,13 +212,15 @@ class AliasService:
         alias_count = sum(len(aliases) for aliases in filtered_aliases.values())
 
         return ActiveAliasesResult(
-            aliases=filtered_aliases,
+            aliases=tuple(
+                (provider, tuple(sorted(aliases.items())))
+                for provider, aliases in filtered_aliases.items()
+            ),
             is_success=True,
             error_message=None,
             provider_count=provider_count,
             alias_count=alias_count,
         )
-        # Note: All exceptions (except AttributeError from helper) propagate
 
     def get_alias_summary(self, default_provider: str | None = None) -> AliasSummary:
         """Get structured alias summary for presentation.
@@ -247,7 +242,7 @@ class AliasService:
                 total_aliases=0,
                 total_providers=0,
                 total_fallbacks=0,
-                providers=[],
+                providers=(),
                 default_provider=default_provider,
             )
 
@@ -284,7 +279,7 @@ class AliasService:
                     provider=provider,
                     alias_count=len(provider_aliases),
                     fallback_count=fallback_count,
-                    aliases=alias_list,
+                    aliases=tuple(alias_list),
                 )
             )
 
@@ -292,6 +287,6 @@ class AliasService:
             total_aliases=total_aliases,
             total_providers=len(active_aliases),
             total_fallbacks=total_fallbacks,
-            providers=providers_info,
+            providers=tuple(providers_info),
             default_provider=default_provider,
         )

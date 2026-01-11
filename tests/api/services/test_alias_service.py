@@ -1,5 +1,6 @@
 """Tests for AliasService."""
 
+import warnings
 from unittest.mock import MagicMock
 
 import pytest
@@ -98,6 +99,27 @@ def test_get_active_aliases_all_providers_active(mock_alias_manager, mock_provid
 
 
 @pytest.mark.unit
+def test_get_active_aliases_filters_empty_provider_names(mock_alias_manager, mock_provider_manager):
+    """Test get_active_aliases filters out empty provider names."""
+    mock_alias_manager.get_all_aliases.return_value = {
+        "openai": {"haiku": "gpt-4o-mini"},
+        "": {"should_be_ignored": "model"},
+    }
+    mock_provider_manager.list_providers.return_value = {
+        "openai": MagicMock(),
+        "": MagicMock(),
+    }
+
+    service = AliasService(mock_alias_manager, mock_provider_manager)
+    result = service.get_active_aliases()
+
+    assert result == {
+        "openai": {"haiku": "gpt-4o-mini"},
+    }
+    assert "" not in result
+
+
+@pytest.mark.unit
 def test_get_active_aliases_result_success(mock_alias_manager, mock_provider_manager):
     """Test get_active_aliases_result returns success result."""
     mock_alias_manager.get_all_aliases.return_value = {
@@ -110,13 +132,24 @@ def test_get_active_aliases_result_success(mock_alias_manager, mock_provider_man
     }
 
     service = AliasService(mock_alias_manager, mock_provider_manager)
-    result = service.get_active_aliases_result()
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        result = service.get_active_aliases_result()
+
+        # Verify deprecation warning was raised
+        assert len(w) == 1
+        assert issubclass(w[0].category, DeprecationWarning)
+        assert "deprecated" in str(w[0].message).lower()
 
     assert result.is_success is True
     assert result.error_message is None
     assert result.provider_count == 2
     assert result.alias_count == 2
-    assert result.aliases == {
+    # Verify aliases is a tuple of tuples
+    assert isinstance(result.aliases, tuple)
+    # Convert back to dict for easier comparison
+    aliases_dict = {provider: dict(alias_items) for provider, alias_items in result.aliases}
+    assert aliases_dict == {
         "openai": {"haiku": "gpt-4o-mini"},
         "poe": {"sonnet": "glm-4.6"},
     }
@@ -128,13 +161,19 @@ def test_get_active_aliases_result_no_providers(mock_alias_manager, mock_provide
     mock_provider_manager.list_providers.return_value = {}
 
     service = AliasService(mock_alias_manager, mock_provider_manager)
-    result = service.get_active_aliases_result()
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        result = service.get_active_aliases_result()
+
+        # Verify deprecation warning was raised
+        assert len(w) == 1
+        assert issubclass(w[0].category, DeprecationWarning)
 
     assert result.is_success is False
     assert result.error_message == "No active providers found"
     assert result.provider_count == 0
     assert result.alias_count == 0
-    assert result.aliases == {}
+    assert result.aliases == ()
 
 
 @pytest.mark.unit
@@ -149,7 +188,7 @@ def test_get_alias_summary_no_aliases(mock_alias_manager, mock_provider_manager)
     assert summary.total_aliases == 0
     assert summary.total_providers == 0
     assert summary.total_fallbacks == 0
-    assert summary.providers == []
+    assert summary.providers == ()
 
 
 @pytest.mark.unit
@@ -227,8 +266,13 @@ def test_get_active_aliases_result_propagates_exceptions(mock_alias_manager, moc
 
     service = AliasService(mock_alias_manager, mock_provider_manager)
 
-    with pytest.raises(RuntimeError, match="Database error"):
-        service.get_active_aliases_result()
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        with pytest.raises(RuntimeError, match="Database error"):
+            service.get_active_aliases_result()
+        # Verify deprecation warning was raised before exception
+        assert len(w) == 1
+        assert issubclass(w[0].category, DeprecationWarning)
 
 
 @pytest.mark.unit
@@ -237,8 +281,14 @@ def test_get_active_aliases_result_attribute_error(mock_alias_manager, mock_prov
     mock_provider_manager.list_providers.side_effect = AttributeError("Not initialized")
 
     service = AliasService(mock_alias_manager, mock_provider_manager)
-    result = service.get_active_aliases_result()
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        result = service.get_active_aliases_result()
+
+        # Verify deprecation warning was raised
+        assert len(w) == 1
+        assert issubclass(w[0].category, DeprecationWarning)
 
     assert result.is_success is False
     assert result.error_message == "No active providers found"
-    assert result.aliases == {}
+    assert result.aliases == ()
