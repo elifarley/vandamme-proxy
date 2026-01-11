@@ -29,6 +29,7 @@ from src.conversion.response_converter import (
     convert_openai_to_claude_response,
 )
 from src.core.config import config
+from src.core.constants import Constants
 from src.core.logging import ConversationLogger
 from src.core.metrics.runtime import get_request_tracker
 from src.core.model_manager import get_model_manager
@@ -77,6 +78,20 @@ def _map_timeout_to_504() -> HTTPException:
     )
 
 
+def _log_traceback(log: Any = logger) -> None:
+    """Log full traceback for debugging.
+
+    This utility centralizes the traceback logging pattern that was
+    duplicated across multiple exception handlers.
+
+    Args:
+        log: The logger to use (defaults to module logger).
+    """
+    import traceback
+
+    log.error(traceback.format_exc())
+
+
 # Initialize models cache if enabled
 models_cache = None
 if config.models_cache_enabled and not os.environ.get("PYTEST_CURRENT_TEST"):
@@ -97,9 +112,9 @@ def count_tool_calls(request: ClaudeMessagesRequest) -> tuple[int, int]:
         if isinstance(message.content, list):
             for block in message.content:
                 if hasattr(block, "type"):
-                    if block.type == "tool_use":
+                    if block.type == Constants.CONTENT_TOOL_USE:
                         tool_use_count += 1
-                    elif block.type == "tool_result":
+                    elif block.type == Constants.CONTENT_TOOL_RESULT:
                         tool_result_count += 1
 
     return tool_use_count, tool_result_count
@@ -134,7 +149,7 @@ async def validate_api_key(
     return client_api_key
 
 
-def _is_error_response(response: dict) -> bool:
+def _is_error_response(response: dict[str, Any]) -> bool:
     """
     Detect if a provider response is an error format.
 
@@ -544,23 +559,6 @@ async def create_message(
 
                     try:
                         # Direct streaming with passthrough
-                        async def _next_provider_key(exclude: set[str]) -> str:
-                            if provider_config is None:
-                                raise HTTPException(
-                                    status_code=500, detail="Provider config missing"
-                                )
-                            keys = provider_config.get_api_keys()
-                            if len(exclude) >= len(keys):
-                                raise HTTPException(
-                                    status_code=429, detail="All provider API keys exhausted"
-                                )
-                            while True:
-                                k = await config.provider_manager.get_next_provider_api_key(
-                                    provider_name
-                                )
-                                if k not in exclude:
-                                    return k
-
                         anthropic_stream = openai_client.create_chat_completion_stream(
                             claude_request_dict,
                             request_id,
@@ -572,7 +570,14 @@ async def create_message(
                             next_api_key=(
                                 None
                                 if provider_config and provider_config.uses_passthrough
-                                else _next_provider_key
+                                else (
+                                    make_next_provider_key_fn(
+                                        provider_name=provider_name,
+                                        api_keys=provider_config.get_api_keys(),
+                                    )
+                                    if provider_config
+                                    else None
+                                )
                             ),
                         )
 
@@ -595,9 +600,7 @@ async def create_message(
                             await tracker.end_request(request_id)
 
                         logger.error(f"Streaming error: {e.detail}")
-                        import traceback
-
-                        logger.error(traceback.format_exc())
+                        _log_traceback()
 
                         error_message = openai_client.classify_openai_error(e.detail)
                         error_response = {
@@ -608,24 +611,6 @@ async def create_message(
                 else:
                     # OpenAI format streaming (existing logic)
                     try:
-
-                        async def _next_provider_key(exclude: set[str]) -> str:
-                            if provider_config is None:
-                                raise HTTPException(
-                                    status_code=500, detail="Provider config missing"
-                                )
-                            keys = provider_config.get_api_keys()
-                            if len(exclude) >= len(keys):
-                                raise HTTPException(
-                                    status_code=429, detail="All provider API keys exhausted"
-                                )
-                            while True:
-                                k = await config.provider_manager.get_next_provider_api_key(
-                                    provider_name
-                                )
-                                if k not in exclude:
-                                    return k
-
                         openai_stream = openai_client.create_chat_completion_stream(
                             openai_request,
                             request_id,
@@ -637,7 +622,14 @@ async def create_message(
                             next_api_key=(
                                 None
                                 if provider_config and provider_config.uses_passthrough
-                                else _next_provider_key
+                                else (
+                                    make_next_provider_key_fn(
+                                        provider_name=provider_name,
+                                        api_keys=provider_config.get_api_keys(),
+                                    )
+                                    if provider_config
+                                    else None
+                                )
                             ),
                         )
 
@@ -696,9 +688,7 @@ async def create_message(
                             await tracker.end_request(request_id)
 
                         logger.error(f"Streaming error: {e.detail}")
-                        import traceback
-
-                        logger.error(traceback.format_exc())
+                        _log_traceback()
 
                         error_message = openai_client.classify_openai_error(e.detail)
                         error_response = {
@@ -725,21 +715,6 @@ async def create_message(
                     claude_request_dict["model"] = resolved_model  # Use stripped model name
 
                     # Make API call
-                    async def _next_provider_key(exclude: set[str]) -> str:
-                        if provider_config is None:
-                            raise HTTPException(status_code=500, detail="Provider config missing")
-                        keys = provider_config.get_api_keys()
-                        if len(exclude) >= len(keys):
-                            raise HTTPException(
-                                status_code=429, detail="All provider API keys exhausted"
-                            )
-                        while True:
-                            k = await config.provider_manager.get_next_provider_api_key(
-                                provider_name
-                            )
-                            if k not in exclude:
-                                return k
-
                     anthropic_response = await openai_client.create_chat_completion(
                         claude_request_dict,
                         request_id,
@@ -751,7 +726,14 @@ async def create_message(
                         next_api_key=(
                             None
                             if provider_config and provider_config.uses_passthrough
-                            else _next_provider_key
+                            else (
+                                make_next_provider_key_fn(
+                                    provider_name=provider_name,
+                                    api_keys=provider_config.get_api_keys(),
+                                )
+                                if provider_config
+                                else None
+                            )
                         ),
                     )
 
@@ -792,21 +774,6 @@ async def create_message(
                     return JSONResponse(status_code=200, content=anthropic_response)
                 else:
                     # OpenAI format path (existing logic)
-                    async def _next_provider_key(exclude: set[str]) -> str:
-                        if provider_config is None:
-                            raise HTTPException(status_code=500, detail="Provider config missing")
-                        keys = provider_config.get_api_keys()
-                        if len(exclude) >= len(keys):
-                            raise HTTPException(
-                                status_code=429, detail="All provider API keys exhausted"
-                            )
-                        while True:
-                            k = await config.provider_manager.get_next_provider_api_key(
-                                provider_name
-                            )
-                            if k not in exclude:
-                                return k
-
                     openai_response = await openai_client.create_chat_completion(
                         openai_request,
                         request_id,
@@ -818,7 +785,14 @@ async def create_message(
                         next_api_key=(
                             None
                             if provider_config and provider_config.uses_passthrough
-                            else _next_provider_key
+                            else (
+                                make_next_provider_key_fn(
+                                    provider_name=provider_name,
+                                    api_keys=provider_config.get_api_keys(),
+                                )
+                                if provider_config
+                                else None
+                            )
                         ),
                     )
 
@@ -954,7 +928,6 @@ async def create_message(
                     metrics.end_time = time.time()
                     await tracker.end_request(request_id)
                 raise _map_timeout_to_504() from e
-            import traceback
 
             duration_ms = (time.time() - start_time) * 1000
 
@@ -978,10 +951,10 @@ async def create_message(
                 conversation_logger.error(
                     f"❌ ERROR | Duration: {duration_ms:.0f}ms | Error: {error_message}"
                 )
-                conversation_logger.error(traceback.format_exc())
+                _log_traceback(conversation_logger)
             else:
                 logger.error(f"Unexpected error processing request: {e}")
-                logger.error(traceback.format_exc())
+                _log_traceback()
 
             # End request tracking
             if LOG_REQUEST_METRICS:
