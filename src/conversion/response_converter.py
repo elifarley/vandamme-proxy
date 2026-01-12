@@ -41,6 +41,11 @@ class _UsageTracker:
         self.output_tokens: int = 0
         self.cache_read_tokens: int = 0
         self.chunk_count: int = 0
+        self._duration_ms: float | None = None
+
+    def set_duration_ms(self, duration_ms: float) -> None:
+        """Set the stream duration for completion logging."""
+        self._duration_ms = duration_ms
 
     def update(self, chunk: dict[str, Any]) -> dict[str, int]:
         """Extract and return usage data from chunk."""
@@ -72,7 +77,7 @@ class _UsageTracker:
 
     def log_completion(self) -> None:
         """Log stream completion with final stats."""
-        if hasattr(self, "_duration_ms"):
+        if self._duration_ms is not None:
             conversation_logger.info(
                 f"✅ STREAM COMPLETE | Duration: {self._duration_ms:.0f}ms | "
                 f"Chunks: {self.chunk_count} | "
@@ -287,10 +292,16 @@ async def convert_openai_streaming_to_claude(
         else None
     )
 
-    # Get request metrics for updating (if enabled)
+    # Get request metrics for updating (if enabled) - best-effort only
     if metrics is None and LOG_REQUEST_METRICS and http_request and request_id:
         tracker = get_request_tracker(http_request)
-        metrics = await tracker.get_request(request_id)
+        try:
+            metrics = await tracker.get_request(request_id)
+        except Exception as e:
+            logger.warning(
+                f"Failed to fetch metrics for request {request_id}: {e}. "
+                "Continuing without metrics."
+            )
 
     # Send initial events
     for ev in initial_events(message_id=message_id, model=original_request.model):
@@ -393,6 +404,5 @@ async def convert_openai_streaming_to_claude(
 
     # Optional: Log stream completion
     if metrics and usage_tracker:
-        duration_ms = metrics.duration_ms
-        usage_tracker._duration_ms = duration_ms  # type: ignore[attr-defined]
+        usage_tracker.set_duration_ms(metrics.duration_ms)
         usage_tracker.log_completion()
