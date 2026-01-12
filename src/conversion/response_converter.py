@@ -92,20 +92,14 @@ class _CancellationChecker:
         self._openai_client = openai_client
         self._request_id = request_id
         self._log = log
-        self._should_cancel = False
 
     async def check(self) -> bool:
         """Check if client disconnected. Returns True if cancellation occurred."""
         if await self._http_request.is_disconnected():
             self._log.info(f"Client disconnected, cancelling request {self._request_id}")
             self._openai_client.cancel_request(self._request_id)
-            self._should_cancel = True
             return True
         return False
-
-    @property
-    def is_cancelled(self) -> bool:
-        return self._should_cancel
 
 
 def _build_sse_error(error_type: str, message: str) -> str:
@@ -226,6 +220,7 @@ async def convert_openai_streaming_to_claude(
     openai_client: Any = None,
     request_id: str | None = None,
     metrics: Any = None,
+    enable_usage_tracking: bool | None = None,
 ) -> AsyncGenerator[str, None]:
     """Convert OpenAI streaming response to Claude streaming format.
 
@@ -236,6 +231,7 @@ async def convert_openai_streaming_to_claude(
     Features enabled by optional parameters:
     - http_request + openai_client + request_id: Enables cancellation detection
     - metrics + request_id: Enables metrics tracking and logging
+    - enable_usage_tracking: Explicit control (default: uses LOG_REQUEST_METRICS)
 
     Args:
         openai_stream: The OpenAI streaming response to convert.
@@ -275,8 +271,16 @@ async def convert_openai_streaming_to_claude(
     message_id = f"msg_{uuid.uuid4().hex[:24]}"
     tool_name_map_inverse = tool_name_map_inverse or {}
 
+    # Determine if usage tracking should be enabled
+    # Priority: explicit param > global config > implicit when metrics provided
+    should_track_usage = (
+        enable_usage_tracking
+        if enable_usage_tracking is not None
+        else (LOG_REQUEST_METRICS or metrics is not None)
+    )
+
     # Initialize optional feature helpers
-    usage_tracker = _UsageTracker() if metrics or LOG_REQUEST_METRICS else None
+    usage_tracker = _UsageTracker() if should_track_usage else None
     cancellation_checker = (
         _CancellationChecker(http_request, openai_client, request_id, logger)
         if http_request and openai_client and request_id
@@ -307,7 +311,15 @@ async def convert_openai_streaming_to_claude(
         async for line in openai_stream:
             # Optional: Check for client disconnection
             if cancellation_checker and await cancellation_checker.check():
-                break
+                # Handle cancellation in-band: emit SSE error, update metrics, skip final events
+                if metrics:
+                    metrics.error = "Request cancelled by client"
+                    metrics.error_type = "cancelled"
+                logger.info(
+                    f"Request {request_id or 'unknown'} was cancelled (client disconnected)"
+                )
+                yield _build_sse_error("cancelled", "Request was cancelled by client")
+                return
 
             # Parse SSE line
             chunk = parse_openai_sse_line(line)
@@ -350,14 +362,8 @@ async def convert_openai_streaming_to_claude(
     # Error handling (with optional metrics updates)
     # -------------------------------------------------------------------------
     except HTTPException as e:
-        # Special handling for cancellation status code
-        if e.status_code == 499 and metrics:
-            metrics.error = "Request cancelled by client"
-            metrics.error_type = "cancelled"
-            logger.info(f"Request {request_id} was cancelled")
-            yield _build_sse_error("cancelled", "Request was cancelled by client")
-            return
-
+        # Cancellation is now handled in-band (see loop above), so 499 should not reach here.
+        # If it does (e.g., from deeper layers), log and propagate as non-cancellation error.
         if metrics:
             metrics.error = f"HTTP exception: {e.detail}"
             metrics.error_type = "http_error"

@@ -192,6 +192,8 @@ class OpenAIStreamingHandler(StreamingHandler):
                 http_request=http_request,
                 openai_client=openai_client,
                 request_id=request_id,
+                metrics=metrics,
+                enable_usage_tracking=config.log_request_metrics,
             )
 
             stream_with_error_handling = with_streaming_error_handling(
