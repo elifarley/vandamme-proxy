@@ -1,4 +1,3 @@
-import json
 import logging
 import os
 import time
@@ -14,8 +13,8 @@ from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 
 from src.api.services.key_rotation import build_api_key_params
 from src.api.services.metrics_helper import populate_request_metrics
+from src.api.services.non_streaming_handlers import get_non_streaming_handler
 from src.api.services.provider_context import resolve_provider_context
-from src.api.services.request_builder import build_anthropic_passthrough_request
 from src.api.services.streaming import (
     sse_headers,
     streaming_response,
@@ -27,14 +26,11 @@ from src.conversion.anthropic_sse_to_openai import anthropic_sse_to_openai_chat_
 from src.conversion.anthropic_to_openai import anthropic_message_to_openai_chat_completion
 from src.conversion.openai_to_anthropic import openai_chat_completions_to_anthropic_messages
 from src.conversion.request_converter import convert_claude_to_openai
-from src.conversion.response_converter import (
-    convert_openai_to_claude_response,
-)
 from src.core.config import config
 from src.core.logging import ConversationLogger
 from src.core.metrics.runtime import get_request_tracker
 from src.core.model_manager import get_model_manager
-from src.middleware import RequestContext, ResponseContext
+from src.middleware import RequestContext
 from src.models.cache import ModelsDiskCache
 from src.models.claude import ClaudeMessagesRequest, ClaudeTokenCountRequest
 from src.models.openai import OpenAIChatCompletionsRequest
@@ -548,194 +544,28 @@ async def create_message(
                     config=config,
                 )
             else:
-                # Non-streaming response
-                # Check if provider uses Anthropic format
+                # Non-streaming response - use strategy pattern to handle different formats
                 provider_config = config.provider_manager.get_provider_config(provider_name)
+                non_streaming_handler = get_non_streaming_handler(config, provider_config)
 
-                if provider_config and provider_config.is_anthropic_format:
-                    # Passthrough mode for Anthropic-compatible APIs
-                    # Convert request to dict directly (no format conversion)
-                    resolved_model, claude_request_dict = build_anthropic_passthrough_request(
-                        request=request,
-                        provider_name=provider_name,
-                    )
-
-                    # Make API call
-                    api_key_params = build_api_key_params(
-                        provider_config=provider_config,
-                        provider_name=provider_name,
-                        client_api_key=client_api_key,
-                        provider_api_key=provider_api_key,
-                    )
-                    anthropic_response = await openai_client.create_chat_completion(
-                        claude_request_dict,
-                        request_id,
-                        **api_key_params,
-                    )
-
-                    # Apply middleware to response (e.g., extract thought signatures)
-                    if hasattr(config.provider_manager, "middleware_chain"):
-                        response_context = ResponseContext(
-                            response=anthropic_response,
-                            request_context=RequestContext(
-                                messages=claude_request_dict.get("messages", []),
-                                provider=provider_name,
-                                model=request.model,
-                                request_id=request_id,
-                            ),
-                            is_streaming=False,
-                        )
-                        processed_response = (
-                            await config.provider_manager.middleware_chain.process_response(
-                                response_context
-                            )
-                        )
-                        anthropic_response = processed_response.response
-
-                    # Update metrics
-                    if LOG_REQUEST_METRICS and metrics:
-                        response_json = json.dumps(anthropic_response)
-                        metrics.response_size = len(response_json)
-
-                        # Extract usage from response (if available)
-                        usage = anthropic_response.get("usage", {})
-                        metrics.input_tokens = usage.get("input_tokens", 0)
-                        metrics.output_tokens = usage.get("output_tokens", 0)
-                        metrics.cache_read_tokens = usage.get("cache_read_tokens", 0)
-                        metrics.cache_creation_tokens = usage.get("cache_creation_tokens", 0)
-
-                    # Direct passthrough - no conversion needed
-                    if LOG_REQUEST_METRICS and metrics:
-                        await tracker.end_request(request_id)
-                    return JSONResponse(status_code=200, content=anthropic_response)
-                else:
-                    # OpenAI format path (existing logic)
-                    api_key_params = build_api_key_params(
-                        provider_config=provider_config,
-                        provider_name=provider_name,
-                        client_api_key=client_api_key,
-                        provider_api_key=provider_api_key,
-                    )
-                    openai_response = await openai_client.create_chat_completion(
-                        openai_request,
-                        request_id,
-                        **api_key_params,
-                    )
-
-                    # Apply middleware to response (e.g., extract thought signatures)
-                    if hasattr(config.provider_manager, "middleware_chain"):
-                        response_context = ResponseContext(
-                            response=openai_response,
-                            request_context=RequestContext(
-                                messages=openai_request.get("messages", []),
-                                provider=provider_name,
-                                model=request.model,
-                                request_id=request_id,
-                                client_api_key=client_api_key,
-                            ),
-                            is_streaming=False,
-                        )
-                        processed_response = (
-                            await config.provider_manager.middleware_chain.process_response(
-                                response_context
-                            )
-                        )
-                        openai_response = processed_response.response
-
-                    # Add error detection before processing
-                    if _is_error_response(openai_response):
-                        error_msg = openai_response.get("msg", "Provider returned error response")
-                        error_code = openai_response.get("code", 500)
-                        logger.error(
-                            f"[{request_id}] Provider {provider_name} returned error: {error_msg}"
-                        )
-                        response_keys = list(openai_response.keys())
-                        logger.error(f"[{request_id}] Error response structure: {response_keys}")
-                        if LOG_REQUEST_METRICS:
-                            logger.error(f"[{request_id}] Full error response: {openai_response}")
-                        raise HTTPException(
-                            status_code=error_code if isinstance(error_code, int) else 500,
-                            detail=f"Provider error: {error_msg}",
-                        )
-
-                    # Add defensive check
-                    if openai_response is None:
-                        logger.error(f"Received None response from provider {provider_name}")
-                        logger.error(f"Request was: {openai_request}")
-                        raise HTTPException(
-                            status_code=500,
-                            detail=f"Provider {provider_name} returned None response",
-                        )
-
-                    # Calculate response size
-                    response_json = json.dumps(openai_response)
-                    response_size = len(response_json)
-
-                    # Extract token usage
-                    usage = openai_response.get("usage")
-                    if usage is None:
-                        # Handle missing usage field
-                        input_tokens = 0
-                        output_tokens = 0
-                        if LOG_REQUEST_METRICS:
-                            conversation_logger.warning("No usage information in response")
-                    else:
-                        input_tokens = usage.get("prompt_tokens", 0)
-                        output_tokens = usage.get("completion_tokens", 0)
-
-                    # Count tool calls in response (OpenAI function calls)
-                    choices = openai_response.get("choices") or []
-                    response_message = choices[0].get("message", {}) if choices else {}
-                    tool_calls = response_message.get("tool_calls", []) or []
-                    tool_call_count = len(tool_calls)
-
-                    # Update metrics
-                    if LOG_REQUEST_METRICS and metrics:
-                        metrics.response_size = response_size
-                        metrics.input_tokens = input_tokens
-                        metrics.output_tokens = output_tokens
-                        metrics.cache_creation_tokens = (
-                            usage.get("cache_creation_tokens", 0) if usage else 0
-                        )
-                        metrics.tool_call_count = tool_call_count
-
-                    # Debug: Log the response structure
-                    if LOG_REQUEST_METRICS:
-                        conversation_logger.debug(
-                            f"📡 RESPONSE STRUCTURE: {list(openai_response.keys())}"
-                        )
-                        conversation_logger.debug(f"📡 FULL RESPONSE: {openai_response}")
-
-                    claude_response = convert_openai_to_claude_response(
-                        openai_response,
-                        request,
-                        tool_name_map_inverse=tool_name_map_inverse,
-                    )
-
-                # Log successful completion
-                duration_ms = (time.time() - start_time) * 1000
-                if LOG_REQUEST_METRICS:
-                    # Get tool call count if available
-                    tool_call_display = ""
-                    if metrics and metrics.tool_call_count > 0:
-                        tool_call_display = f" | Tool Calls: {metrics.tool_call_count}"
-                    elif tool_use_count > 0 or tool_result_count > 0:
-                        tool_call_display = (
-                            f" | Tool Uses: {tool_use_count} | Tool Results: {tool_result_count}"
-                        )
-
-                    conversation_logger.info(
-                        f"✅ SUCCESS | Duration: {duration_ms:.0f}ms | "
-                        f"Tokens: {input_tokens:,}→{output_tokens:,} | "
-                        f"Size: {request_size:,}→{response_size:,} bytes"
-                        f"{tool_call_display}"
-                    )
-
-                # End request tracking
-                if LOG_REQUEST_METRICS:
-                    await tracker.end_request(request_id)
-
-                return JSONResponse(status_code=200, content=claude_response)
+                return await non_streaming_handler.handle_non_streaming_request(
+                    request=request,
+                    openai_request=openai_request,
+                    provider_name=provider_name,
+                    client_api_key=client_api_key,
+                    provider_api_key=provider_api_key,
+                    tool_name_map_inverse=tool_name_map_inverse,
+                    openai_client=openai_client,
+                    http_request=http_request,
+                    request_id=request_id,
+                    metrics=metrics,
+                    tracker=tracker,
+                    config=config,
+                    tool_use_count=tool_use_count,
+                    tool_result_count=tool_result_count,
+                    request_size=request_size,
+                    start_time=start_time,
+                )
 
         except HTTPException:
             # Re-raise HTTP exceptions as-is
@@ -756,10 +586,6 @@ async def create_message(
                 raise _map_timeout_to_504() from e
 
             duration_ms = (time.time() - start_time) * 1000
-
-            # Debug: Check if we have an openai_response when error occurs
-            if "openai_response" in locals() and openai_response is not None:
-                logger.error(f"Error occurred with response: {openai_response}")
 
             # Use openai_client if available, otherwise use a generic error message
             if openai_client is not None:
