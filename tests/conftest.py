@@ -162,6 +162,9 @@ def setup_test_environment_for_unit_tests():
             "src.core.alias_manager",
             "src.core.alias_config",
             "src.core.model_manager",
+            "src.api.services.key_rotation",  # Has module-level config import
+            "src.api.services.provider_context",  # Has module-level config import
+            "src.api.orchestrator.request_orchestrator",  # Has module-level config import
             "src.api.endpoints",
             "src.main",
         ]
