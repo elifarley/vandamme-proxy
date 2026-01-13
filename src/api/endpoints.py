@@ -12,7 +12,6 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 
 from src.api.services.key_rotation import build_api_key_params
-from src.api.services.metrics_helper import populate_request_metrics
 from src.api.services.non_streaming_handlers import get_non_streaming_handler
 from src.api.services.provider_context import resolve_provider_context
 from src.api.services.streaming import (
@@ -25,12 +24,10 @@ from src.api.utils.yaml_formatter import format_health_yaml
 from src.conversion.anthropic_sse_to_openai import anthropic_sse_to_openai_chat_completions_sse
 from src.conversion.anthropic_to_openai import anthropic_message_to_openai_chat_completion
 from src.conversion.openai_to_anthropic import openai_chat_completions_to_anthropic_messages
-from src.conversion.request_converter import convert_claude_to_openai
 from src.core.config import config
 from src.core.logging import ConversationLogger
 from src.core.metrics.runtime import get_request_tracker
 from src.core.model_manager import get_model_manager
-from src.middleware import RequestContext
 from src.models.cache import ModelsDiskCache
 from src.models.claude import ClaudeMessagesRequest, ClaudeTokenCountRequest
 from src.models.openai import OpenAIChatCompletionsRequest
@@ -380,233 +377,135 @@ async def create_message(
     http_request: Request,
     client_api_key: str | None = Depends(validate_api_key),
 ) -> JSONResponse | StreamingResponse:
-    # Generate unique request ID for tracking
-    request_id = str(uuid.uuid4())
+    """Process a Claude Messages API request.
 
-    # Start request tracking if metrics are enabled
-    if LOG_REQUEST_METRICS:
-        tracker = get_request_tracker(http_request)
+    This endpoint now delegates all initialization to the RequestOrchestrator,
+    making the endpoint code clean and focused on routing.
+    """
+    # Import orchestrator - placed here to avoid circular imports
+    from src.api.orchestrator.request_orchestrator import RequestOrchestrator
 
-        # Resolve early so active requests never show provider-prefixed aliases.
-        provider_name, resolved_model = get_model_manager().resolve_model(request.model)
+    # Create orchestrator
+    orchestrator = RequestOrchestrator(log_request_metrics=LOG_REQUEST_METRICS)
 
-        metrics = await tracker.start_request(
-            request_id=request_id,
-            claude_model=request.model,
-            is_streaming=request.stream or False,
-            provider=provider_name,
-            resolved_model=resolved_model,
-        )
-        await tracker.update_last_accessed(
-            provider=provider_name,
-            model=resolved_model,
-            timestamp=metrics.start_time_iso,
-        )
-
-        # Populate metrics with request details (message count, size, tool counts)
-        message_count, request_size, tool_use_count = populate_request_metrics(
-            metrics=metrics,
-            request=request,
-        )
-        tool_result_count = metrics.tool_result_count
-    else:
-        metrics = None
-        # Populate metrics even when disabled to get counts for logging
-        message_count, request_size, tool_use_count = populate_request_metrics(
-            metrics=None,
-            request=request,
-        )
-        tool_result_count = 0  # Not needed for logging when metrics disabled
+    # Prepare the complete request context
+    # This handles all initialization: metrics, provider resolution, conversion, etc.
+    ctx = await orchestrator.prepare_request_context(
+        request=request,
+        http_request=http_request,
+        client_api_key=client_api_key,
+    )
 
     # Use correlation context for all logs within this request
-    with ConversationLogger.correlation_context(request_id):
+    with ConversationLogger.correlation_context(ctx.request_id):
         # Log request start
-        if LOG_REQUEST_METRICS:
-            conversation_logger.info(
-                f"🚀 START | Model: {request.model} (resolved: {provider_name}:{resolved_model}) | "
-                f"Stream: {request.stream} | "
-                f"Messages: {message_count} | "
-                f"Max Tokens: {request.max_tokens} | "
-                f"Size: {request_size:,} bytes | "
-                f"Tools: {len(request.tools) if request.tools else 0} | "
-                f"Tool Uses: {tool_use_count} | "
-                f"Tool Results: {tool_result_count}"
-            )
-        else:
-            logger.debug(
-                f"Processing Claude request: model={request.model}, stream={request.stream}"
-            )
+        _log_request_start(ctx)
 
-        start_time = time.time()
-
-        # Initialize client variable to avoid UnboundLocalError
-        openai_client = None
-
+        # Route to appropriate handler based on streaming mode
         try:
-            # Convert Claude request to OpenAI format
-            openai_request = convert_claude_to_openai(request, get_model_manager())
-
-            # Extract provider from request
-            provider_name = openai_request.pop("_provider", "openai")
-            tool_name_map_inverse = openai_request.pop("_tool_name_map_inverse", None)
-
-            # Get provider config to check if passthrough is needed
-            provider_config = config.provider_manager.get_provider_config(provider_name)
-
-            if provider_config and provider_config.uses_passthrough:
-                if not client_api_key:
-                    raise HTTPException(
-                        status_code=401,
-                        detail=f"Provider '{provider_name}' requires API key passthrough, "
-                        f"but no client API key was provided",
-                    )
-                logger.debug(f"Using client API key for provider '{provider_name}'")
-
-            # Get the appropriate client for this provider
-            openai_client = config.provider_manager.get_client(provider_name, client_api_key)
-
-            # For non-passthrough providers, select a provider API key (supports multi-key rotation)
-            provider_api_key: str | None = None
-            if provider_config and not provider_config.uses_passthrough:
-                provider_api_key = await config.provider_manager.get_next_provider_api_key(
-                    provider_name
-                )
-
-            # Apply middleware to request (e.g., inject thought signatures)
-            if hasattr(config.provider_manager, "middleware_chain"):
-                request_context = RequestContext(
-                    messages=openai_request.get("messages", []),
-                    provider=provider_name,
-                    model=request.model,
-                    request_id=request_id,
-                    conversation_id=None,  # Could be extracted from request if needed
-                    client_api_key=client_api_key,  # Pass client API key to middleware
-                )
-                processed_context = await config.provider_manager.middleware_chain.process_request(
-                    request_context
-                )
-                if processed_context.messages != request_context.messages:
-                    openai_request["messages"] = processed_context.messages
-                    logger.debug(f"Request modified by middleware, provider={provider_name}")
-
-            # Metrics should always be recorded against the *resolved target model*
-            # (never the alias the user typed).
-            if LOG_REQUEST_METRICS and metrics:
-                resolved_model = str(openai_request.get("model", "unknown"))
-                metrics.provider = provider_name  # type: ignore[assignment]
-                metrics.openai_model = resolved_model
-
-                # Update last_accessed timestamp
-                await tracker.update_last_accessed(
-                    provider=provider_name,
-                    model=resolved_model,
-                    timestamp=metrics.start_time_iso,
-                )
-
-                logger.debug(
-                    "[metrics] messages model=%s resolved_provider=%s resolved_model=%s",
-                    request.model,
-                    provider_name,
-                    resolved_model,
-                )
-
-            # Check if client disconnected before processing
-            if await http_request.is_disconnected():
-                if LOG_REQUEST_METRICS and metrics:
-                    metrics.error = "Client disconnected before processing"
-                    metrics.error_type = "client_disconnect"
-                    await tracker.end_request(request_id)
-                raise HTTPException(status_code=499, detail="Client disconnected")
-
-            if request.stream:
-                # Streaming response - use strategy pattern to handle different formats
-                provider_config = config.provider_manager.get_provider_config(provider_name)
-                handler = get_streaming_handler(config, provider_config)
-
-                return await handler.handle_streaming_request(
-                    request=request,
-                    openai_request=openai_request,
-                    provider_name=provider_name,
-                    client_api_key=client_api_key,
-                    provider_api_key=provider_api_key,
-                    tool_name_map_inverse=tool_name_map_inverse,
-                    openai_client=openai_client,
-                    http_request=http_request,
-                    request_id=request_id,
-                    metrics=metrics,
-                    tracker=tracker,
-                    config=config,
-                )
+            if ctx.is_streaming:
+                return await _handle_streaming(ctx)
             else:
-                # Non-streaming response - use strategy pattern to handle different formats
-                provider_config = config.provider_manager.get_provider_config(provider_name)
-                non_streaming_handler = get_non_streaming_handler(config, provider_config)
-
-                return await non_streaming_handler.handle_non_streaming_request(
-                    request=request,
-                    openai_request=openai_request,
-                    provider_name=provider_name,
-                    client_api_key=client_api_key,
-                    provider_api_key=provider_api_key,
-                    tool_name_map_inverse=tool_name_map_inverse,
-                    openai_client=openai_client,
-                    http_request=http_request,
-                    request_id=request_id,
-                    metrics=metrics,
-                    tracker=tracker,
-                    config=config,
-                    tool_use_count=tool_use_count,
-                    tool_result_count=tool_result_count,
-                    request_size=request_size,
-                    start_time=start_time,
-                )
-
+                return await _handle_non_streaming(ctx)
         except HTTPException:
             # Re-raise HTTP exceptions as-is
-            if LOG_REQUEST_METRICS and metrics:
-                metrics.error = "HTTP exception"
-                metrics.error_type = "http_error"
-                metrics.end_time = time.time()
-                await tracker.end_request(request_id)
+            await _finalize_metrics_on_error(ctx, "http_error")
             raise
         except Exception as e:
-            # Check if this is a timeout error and map to 504
-            if _is_timeout_error(e):
-                if LOG_REQUEST_METRICS and metrics:
-                    metrics.error = "Upstream timeout"
-                    metrics.error_type = "timeout"
-                    metrics.end_time = time.time()
-                    await tracker.end_request(request_id)
-                raise _map_timeout_to_504() from e
+            # Handle unexpected errors
+            return await _handle_unexpected_error(ctx, e)
 
-            duration_ms = (time.time() - start_time) * 1000
 
-            # Use openai_client if available, otherwise use a generic error message
-            if openai_client is not None:
-                error_message = openai_client.classify_openai_error(str(e))
-            else:
-                error_message = str(e)
+def _log_request_start(ctx: Any) -> None:
+    """Log request start with metrics awareness."""
+    if LOG_REQUEST_METRICS:
+        conversation_logger.info(
+            f"🚀 START | Model: {ctx.request.model} "
+            f"(resolved: {ctx.provider_name}:{ctx.resolved_model}) | "
+            f"Stream: {ctx.is_streaming} | "
+            f"Messages: {ctx.message_count} | "
+            f"Max Tokens: {ctx.request.max_tokens} | "
+            f"Size: {ctx.request_size:,} bytes | "
+            f"Tools: {len(ctx.request.tools) if ctx.request.tools else 0} | "
+            f"Tool Uses: {ctx.tool_use_count} | "
+            f"Tool Results: {ctx.tool_result_count}"
+        )
+    else:
+        logger.debug(
+            f"Processing Claude request: model={ctx.request.model}, stream={ctx.is_streaming}"
+        )
 
-            # Update metrics with error
-            if LOG_REQUEST_METRICS and metrics:
-                metrics.error = error_message
-                metrics.error_type = "unexpected_error"
-                metrics.end_time = time.time()
 
-            if LOG_REQUEST_METRICS:
-                conversation_logger.error(
-                    f"❌ ERROR | Duration: {duration_ms:.0f}ms | Error: {error_message}"
-                )
-                _log_traceback(conversation_logger)
-            else:
-                logger.error(f"Unexpected error processing request: {e}")
-                _log_traceback()
+async def _handle_streaming(ctx: Any) -> StreamingResponse | JSONResponse:
+    """Handle streaming requests with context."""
+    provider_config = config.provider_manager.get_provider_config(ctx.provider_name)
+    handler = get_streaming_handler(config, provider_config)
 
-            # End request tracking
-            if LOG_REQUEST_METRICS:
-                await tracker.end_request(request_id)
+    # Use new context-based method
+    return await handler.handle_with_context(ctx)
 
-            raise HTTPException(status_code=500, detail=error_message) from e
+
+async def _handle_non_streaming(ctx: Any) -> JSONResponse:
+    """Handle non-streaming requests with context."""
+    provider_config = config.provider_manager.get_provider_config(ctx.provider_name)
+    handler = get_non_streaming_handler(config, provider_config)
+
+    # Use new context-based method
+    return await handler.handle_with_context(ctx)
+
+
+async def _finalize_metrics_on_error(ctx: Any, error_type: str) -> None:
+    """Finalize metrics when an HTTP exception occurs."""
+    if LOG_REQUEST_METRICS and ctx.metrics:
+        ctx.metrics.error = "HTTP exception"
+        ctx.metrics.error_type = error_type
+        ctx.metrics.end_time = time.time()
+        await ctx.tracker.end_request(ctx.request_id)
+
+
+async def _handle_unexpected_error(
+    ctx: Any,
+    exception: Exception,
+) -> JSONResponse:
+    """Handle unexpected errors with proper logging and metrics."""
+    duration_ms = (time.time() - ctx.start_time) * 1000
+
+    # Check for timeout
+    if _is_timeout_error(exception):
+        if LOG_REQUEST_METRICS and ctx.metrics:
+            ctx.metrics.error = "Upstream timeout"
+            ctx.metrics.error_type = "timeout"
+            ctx.metrics.end_time = time.time()
+            await ctx.tracker.end_request(ctx.request_id)
+        raise _map_timeout_to_504() from exception
+
+    # Classify error
+    if ctx.openai_client is not None:
+        error_message = ctx.openai_client.classify_openai_error(str(exception))
+    else:
+        error_message = str(exception)
+
+    # Update metrics
+    if LOG_REQUEST_METRICS and ctx.metrics:
+        ctx.metrics.error = error_message
+        ctx.metrics.error_type = "unexpected_error"
+        ctx.metrics.end_time = time.time()
+
+    # Log error
+    if LOG_REQUEST_METRICS:
+        conversation_logger.error(
+            f"❌ ERROR | Duration: {duration_ms:.0f}ms | Error: {error_message}"
+        )
+        _log_traceback(conversation_logger)
+    else:
+        logger.error(f"Unexpected error processing request: {exception}")
+        _log_traceback()
+
+    # Finalize metrics
+    if LOG_REQUEST_METRICS:
+        await ctx.tracker.end_request(ctx.request_id)
+
+    raise HTTPException(status_code=500, detail=error_message) from exception
 
 
 @router.post("/v1/messages/count_tokens")
