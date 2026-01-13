@@ -11,6 +11,7 @@ from src.middleware import MiddlewareChain, ThoughtSignatureMiddleware
 
 if TYPE_CHECKING:
     from src.core.anthropic_client import AnthropicClient
+    from src.core.config.middleware import MiddlewareConfig
 
 logger = logging.getLogger(__name__)
 
@@ -27,10 +28,17 @@ class ProviderLoadResult:
 
 
 class ProviderManager:
-    """Manages multiple OpenAI clients for different providers"""
+    """Manages multiple OpenAI clients for different providers.
+
+    The provider manager can be configured with an optional MiddlewareConfig
+    to avoid circular dependencies with the global config singleton.
+    """
 
     def __init__(
-        self, default_provider: str | None = None, default_provider_source: str | None = None
+        self,
+        default_provider: str | None = None,
+        default_provider_source: str | None = None,
+        middleware_config: "MiddlewareConfig | None" = None,
     ) -> None:
         # Use provided default_provider or fall back to "openai" for backward compatibility
         self.default_provider = default_provider if default_provider is not None else "openai"
@@ -43,6 +51,9 @@ class ProviderManager:
         # Process-global API key rotation state (per provider)
         self._api_key_locks: dict[str, asyncio.Lock] = {}
         self._api_key_indices: dict[str, int] = {}
+
+        # Store middleware config explicitly (dependency injection)
+        self._middleware_config = middleware_config
 
         # Initialize middleware chain
         self.middleware_chain = MiddlewareChain()
@@ -111,22 +122,24 @@ class ProviderManager:
         self._initialize_middleware()
 
     def _initialize_middleware(self) -> None:
-        """Initialize and register middleware based on loaded providers"""
+        """Initialize and register middleware based on loaded providers.
+
+        Uses injected middleware_config instead of runtime import to avoid
+        circular dependency with the global config singleton.
+        """
         if self._middleware_initialized:
             return
 
         # Register thought signature middleware if enabled
-        # The middleware will decide which requests to handle based on model names
-        from src.core.config import config as app_config
-
-        if app_config.gemini_thought_signatures_enabled:
-            # Create store with configuration options
+        # Use injected config instead of runtime import
+        if self._middleware_config and self._middleware_config.gemini_thought_signatures_enabled:
+            # Create store with configuration options from injected config
             from src.middleware.thought_signature import ThoughtSignatureStore
 
             store = ThoughtSignatureStore(
-                max_size=app_config.thought_signature_max_cache_size,
-                ttl_seconds=app_config.thought_signature_cache_ttl,
-                cleanup_interval=app_config.thought_signature_cleanup_interval,
+                max_size=self._middleware_config.thought_signature_max_cache_size,
+                ttl_seconds=self._middleware_config.thought_signature_cache_ttl,
+                cleanup_interval=self._middleware_config.thought_signature_cleanup_interval,
             )
             self.middleware_chain.add(ThoughtSignatureMiddleware(store=store))
 
