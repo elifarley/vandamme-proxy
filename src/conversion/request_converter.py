@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from src.conversion.conversion_metrics import collect_request_metrics, log_request_metrics
 from src.conversion.tool_schema import build_tool_name_maps_if_enabled, collect_all_tool_names
@@ -15,6 +15,9 @@ from src.models.claude import (
     ClaudeMessage,
     ClaudeMessagesRequest,
 )
+
+if TYPE_CHECKING:
+    from src.conversion.pipeline.base import ConversionContext
 
 LOG_REQUEST_METRICS = config.log_request_metrics
 conversation_logger = ConversationLogger.get_logger()
@@ -72,8 +75,12 @@ def _should_consume_tool_results(messages: list[ClaudeMessage], index: int) -> b
 def convert_claude_to_openai(
     claude_request: ClaudeMessagesRequest, model_manager: Any
 ) -> dict[str, Any]:
-    """Convert Claude API request format to OpenAI format."""
+    """Convert Claude API request format to OpenAI format.
 
+    This function now uses a composable pipeline of transformers, making the
+    conversion process more maintainable and testable. Each transformer handles
+    a single responsibility.
+    """
     # Resolve provider and model
     provider_name, openai_model = model_manager.resolve_model(claude_request.model)
 
@@ -81,117 +88,56 @@ def convert_claude_to_openai(
         metrics = collect_request_metrics(claude_request, provider_name=provider_name)
         log_request_metrics(conversation_logger, metrics)
 
-    # Delegate conversion to the existing implementation below.
-    # Keeping a single conversion path avoids divergent behaviors.
-    return _convert_claude_to_openai_impl(claude_request, model_manager)
+    # Build the initial conversion context
+    context = _build_initial_context(claude_request, provider_name, openai_model)
+
+    # Execute the conversion pipeline
+    from src.conversion.pipeline import RequestPipelineFactory
+
+    pipeline = RequestPipelineFactory.create_default()
+    return pipeline.execute(context)
 
 
-def _convert_claude_to_openai_impl(
-    claude_request: ClaudeMessagesRequest, model_manager: Any
-) -> dict[str, Any]:
-    """Convert Claude API request format to OpenAI format.
+def _build_initial_context(
+    claude_request: ClaudeMessagesRequest,
+    provider_name: str,
+    openai_model: str,
+) -> "ConversionContext":
+    """Build the initial conversion context for the pipeline.
 
-    This is the historical implementation that handles tool name sanitization,
-    tool result sequencing, and provider metadata fields.
+    Args:
+        claude_request: The Claude API request.
+        provider_name: The resolved provider name.
+        openai_model: The resolved OpenAI model name.
+
+    Returns:
+        A ConversionContext with all initial state populated.
     """
+    from src.conversion.pipeline.base import ConversionContext
 
-    provider_name, openai_model = model_manager.resolve_model(claude_request.model)
-
+    # Get provider config to check if tool name sanitization is enabled
     provider_config = config.provider_manager.get_provider_config(provider_name)
 
+    # Build tool name maps if sanitization is enabled
     tool_name_map, tool_name_map_inverse = build_tool_name_maps_if_enabled(
         enabled=bool(provider_config and provider_config.tool_name_sanitization),
         tool_names=collect_all_tool_names(claude_request),
     )
 
-    openai_messages = []
-
-    if claude_request.system:
-        system_text = ""
-        if isinstance(claude_request.system, str):
-            system_text = claude_request.system
-        elif isinstance(claude_request.system, list):
-            text_parts = []
-            for block in claude_request.system:
-                if hasattr(block, "type") and block.type == Constants.CONTENT_TEXT:
-                    text_parts.append(block.text)
-                elif isinstance(block, dict) and block.get("type") == Constants.CONTENT_TEXT:
-                    text_parts.append(block.get("text", ""))
-            system_text = "\n\n".join(text_parts)
-
-        if system_text.strip():
-            openai_messages.append({"role": Constants.ROLE_SYSTEM, "content": system_text.strip()})
-
-    i = 0
-    while i < len(claude_request.messages):
-        msg = claude_request.messages[i]
-
-        if msg.role == Constants.ROLE_USER:
-            openai_messages.append(convert_claude_user_message(msg))
-        elif msg.role == Constants.ROLE_ASSISTANT:
-            openai_messages.append(convert_claude_assistant_message(msg, tool_name_map))
-            # Consume tool results if present (lookahead pattern)
-            if _should_consume_tool_results(claude_request.messages, i):
-                i += 1
-                openai_messages.extend(convert_claude_tool_results(claude_request.messages[i]))
-
-        i += 1
-
+    # Initialize the OpenAI request with the base fields
     openai_request = {
         "model": openai_model,
-        "messages": openai_messages,
-        "max_tokens": min(
-            max(claude_request.max_tokens, config.min_tokens_limit),
-            config.max_tokens_limit,
-        ),
-        "temperature": claude_request.temperature,
-        "stream": claude_request.stream,
+        "messages": [],
     }
 
-    # Provider metadata for upstream selection.
-    openai_request["_provider"] = provider_name
-    if tool_name_map_inverse:
-        openai_request["_tool_name_map_inverse"] = tool_name_map_inverse
-
-    if claude_request.stop_sequences:
-        openai_request["stop"] = claude_request.stop_sequences
-    if claude_request.top_p is not None:
-        openai_request["top_p"] = claude_request.top_p
-
-    if claude_request.tools:
-        openai_tools = []
-        for tool in claude_request.tools:
-            if tool.name and tool.name.strip():
-                openai_tools.append(
-                    {
-                        "type": Constants.TOOL_FUNCTION,
-                        Constants.TOOL_FUNCTION: {
-                            "name": tool_name_map.get(tool.name, tool.name),
-                            "description": tool.description or "",
-                            "parameters": tool.input_schema,
-                        },
-                    }
-                )
-        if openai_tools:
-            openai_request["tools"] = openai_tools
-
-    if claude_request.tool_choice:
-        choice_type = claude_request.tool_choice.get("type")
-        if choice_type in ("auto", "any"):
-            openai_request["tool_choice"] = "auto"
-        elif choice_type == "tool" and "name" in claude_request.tool_choice:
-            openai_request["tool_choice"] = {
-                "type": Constants.TOOL_FUNCTION,
-                Constants.TOOL_FUNCTION: {
-                    "name": tool_name_map.get(
-                        claude_request.tool_choice["name"], claude_request.tool_choice["name"]
-                    )
-                },
-            }
-        else:
-            openai_request["tool_choice"] = "auto"
-
-    return openai_request
+    return ConversionContext(
+        claude_request=claude_request,
+        provider_name=provider_name,
+        openai_model=openai_model,
+        tool_name_map=tool_name_map,
+        tool_name_map_inverse=tool_name_map_inverse,
+        openai_request=openai_request,
+    )
 
 
 def convert_claude_user_message(msg: ClaudeMessage) -> dict[str, Any]:

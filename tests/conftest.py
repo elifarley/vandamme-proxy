@@ -189,6 +189,19 @@ def setup_test_environment_for_unit_tests():
 
         AliasConfigLoader.reset_cache()
 
+        # Reset process-global API key rotation state for test isolation
+        # This ensures multi-API-key tests start with clean rotation indices
+        from src.core.config import config as app_config
+
+        if hasattr(app_config, "provider_manager"):
+            if hasattr(app_config.provider_manager, "_api_key_indices"):
+                app_config.provider_manager._api_key_indices.clear()
+            if hasattr(app_config.provider_manager, "_api_key_locks"):
+                app_config.provider_manager._api_key_locks.clear()
+            # Clear cached HTTP clients to prevent SDK client reuse with stale keys
+            if hasattr(app_config.provider_manager, "_clients"):
+                app_config.provider_manager._clients.clear()
+
         # Force reload of modules that import config at module level
         # This ensures they get the new config instance after reset
         modules_to_reload = [
