@@ -9,7 +9,7 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any
 
-from fastapi import HTTPException, Request
+from fastapi import HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from src.api.services.error_handling import (
@@ -37,54 +37,11 @@ class StreamingHandler(ABC):
     """
 
     @abstractmethod
-    async def handle_streaming_request(
-        self,
-        *,
-        request: Any,
-        openai_request: dict[str, Any],
-        provider_name: str,
-        client_api_key: str | None,
-        provider_api_key: str | None,
-        tool_name_map_inverse: dict[str, str] | None,
-        openai_client: Any,
-        http_request: Request,
-        request_id: str,
-        metrics: Any | None,
-        tracker: Any,
-        config: Any,
-    ) -> StreamingResponse | JSONResponse:
-        """Handle a streaming request and return the response (LEGACY).
-
-        This method is maintained for backward compatibility during migration.
-        New code should use handle_with_context instead.
-
-        Args:
-            request: The Claude request object.
-            openai_request: The converted OpenAI request (for OpenAI format).
-            provider_name: The provider name.
-            client_api_key: The client API key for passthrough.
-            provider_api_key: The provider API key.
-            tool_name_map_inverse: Inverse tool name mapping.
-            openai_client: The OpenAI client instance.
-            http_request: The FastAPI request object.
-            request_id: Unique request identifier.
-            metrics: Request metrics object (may be None).
-            tracker: Request tracker instance.
-            config: Application config object.
-
-        Returns:
-            A StreamingResponse with the appropriate stream.
-        """
-        pass
-
     async def handle_with_context(
         self,
         context: Any,  # ApiRequestContext - use Any to avoid circular import
     ) -> StreamingResponse | JSONResponse:
         """Handle a streaming request with RequestContext.
-
-        Default implementation calls the legacy method for compatibility.
-        Subclasses should override this method directly.
 
         Args:
             context: The ApiRequestContext containing all request data.
@@ -92,20 +49,7 @@ class StreamingHandler(ABC):
         Returns:
             A StreamingResponse with the appropriate stream.
         """
-        return await self.handle_streaming_request(
-            request=context.request,
-            openai_request=context.openai_request,
-            provider_name=context.provider_name,
-            client_api_key=context.client_api_key,
-            provider_api_key=context.provider_api_key,
-            tool_name_map_inverse=context.tool_name_map_inverse,
-            openai_client=context.openai_client,
-            http_request=context.http_request,
-            request_id=context.request_id,
-            metrics=context.metrics,
-            tracker=context.tracker,
-            config=context.config,
-        )
+        pass
 
 
 class AnthropicStreamingHandler(StreamingHandler):
@@ -115,65 +59,52 @@ class AnthropicStreamingHandler(StreamingHandler):
     Anthropic-compatible API format (direct passthrough without conversion).
     """
 
-    async def handle_streaming_request(
+    async def handle_with_context(
         self,
-        *,
-        request: Any,
-        openai_request: dict[str, Any],
-        provider_name: str,
-        client_api_key: str | None,
-        provider_api_key: str | None,
-        tool_name_map_inverse: dict[str, str] | None,
-        openai_client: Any,
-        http_request: Request,
-        request_id: str,
-        metrics: Any | None,
-        tracker: Any,
-        config: Any,
+        context: Any,
     ) -> StreamingResponse | JSONResponse:
         """Handle Anthropic-format streaming with direct passthrough."""
-        provider_config = config.provider_manager.get_provider_config(provider_name)
         resolved_model, claude_request_dict = build_anthropic_passthrough_request(
-            request=request,
-            provider_name=provider_name,
+            request=context.request,
+            provider_name=context.provider_name,
         )
 
         try:
             api_key_params = build_api_key_params(
-                provider_config=provider_config,
-                provider_name=provider_name,
-                client_api_key=client_api_key,
-                provider_api_key=provider_api_key,
+                provider_config=context.provider_config,
+                provider_name=context.provider_name,
+                client_api_key=context.client_api_key,
+                provider_api_key=context.provider_api_key,
             )
-            anthropic_stream = openai_client.create_chat_completion_stream(
+            anthropic_stream = context.openai_client.create_chat_completion_stream(
                 claude_request_dict,
-                request_id,
+                context.request_id,
                 **api_key_params,
             )
 
             return streaming_response(
                 stream=with_streaming_error_handling(
                     original_stream=anthropic_stream,
-                    http_request=http_request,
-                    request_id=request_id,
-                    provider_name=provider_name,
-                    metrics_enabled=config.log_request_metrics,
+                    http_request=context.http_request,
+                    request_id=context.request_id,
+                    provider_name=context.provider_name,
+                    metrics_enabled=context.is_metrics_enabled,
                 ),
                 headers=sse_headers(),
             )
         except HTTPException as e:
             await finalize_metrics_on_streaming_error(
-                metrics=metrics,
+                metrics=context.metrics,
                 error=e.detail,
-                tracker=tracker,
-                request_id=request_id,
+                tracker=context.tracker,
+                request_id=context.request_id,
             )
             return build_streaming_error_response(
                 exception=e,
-                openai_client=openai_client,
-                metrics=metrics,
-                tracker=tracker,
-                request_id=request_id,
+                openai_client=context.openai_client,
+                metrics=context.metrics,
+                tracker=context.tracker,
+                request_id=context.request_id,
             )
 
 
@@ -184,78 +115,64 @@ class OpenAIStreamingHandler(StreamingHandler):
     OpenAI-compatible API format (with format conversion).
     """
 
-    async def handle_streaming_request(
+    async def handle_with_context(
         self,
-        *,
-        request: Any,
-        openai_request: dict[str, Any],
-        provider_name: str,
-        client_api_key: str | None,
-        provider_api_key: str | None,
-        tool_name_map_inverse: dict[str, str] | None,
-        openai_client: Any,
-        http_request: Request,
-        request_id: str,
-        metrics: Any | None,
-        tracker: Any,
-        config: Any,
+        context: Any,
     ) -> StreamingResponse | JSONResponse:
         """Handle OpenAI-format streaming with conversion to Claude format."""
-        provider_config = config.provider_manager.get_provider_config(provider_name)
-
         try:
             api_key_params = build_api_key_params(
-                provider_config=provider_config,
-                provider_name=provider_name,
-                client_api_key=client_api_key,
-                provider_api_key=provider_api_key,
+                provider_config=context.provider_config,
+                provider_name=context.provider_name,
+                client_api_key=context.client_api_key,
+                provider_api_key=context.provider_api_key,
             )
-            openai_stream = openai_client.create_chat_completion_stream(
-                openai_request,
-                request_id,
+            openai_stream = context.openai_client.create_chat_completion_stream(
+                context.openai_request,
+                context.request_id,
                 **api_key_params,
             )
 
             # Convert OpenAI SSE to Claude format
             converted_stream = convert_openai_streaming_to_claude(
                 openai_stream,
-                request,
+                context.request,
                 logger,
-                tool_name_map_inverse=tool_name_map_inverse,
-                http_request=http_request,
-                openai_client=openai_client,
-                request_id=request_id,
-                metrics=metrics,
-                enable_usage_tracking=config.log_request_metrics,
+                tool_name_map_inverse=context.tool_name_map_inverse,
+                http_request=context.http_request,
+                openai_client=context.openai_client,
+                request_id=context.request_id,
+                metrics=context.metrics,
+                enable_usage_tracking=context.is_metrics_enabled,
             )
 
             stream_with_error_handling = with_streaming_error_handling(
                 original_stream=converted_stream,
-                http_request=http_request,
-                request_id=request_id,
-                provider_name=provider_name,
-                metrics_enabled=config.log_request_metrics,
+                http_request=context.http_request,
+                request_id=context.request_id,
+                provider_name=context.provider_name,
+                metrics_enabled=context.is_metrics_enabled,
             )
 
             # Apply middleware to streaming deltas if configured
-            if hasattr(config.provider_manager, "middleware_chain"):
+            if hasattr(context.config.provider_manager, "middleware_chain"):
                 from src.api.middleware_integration import (
                     MiddlewareAwareRequestProcessor,
                     MiddlewareStreamingWrapper,
                 )
 
                 processor = MiddlewareAwareRequestProcessor()
-                processor.middleware_chain = config.provider_manager.middleware_chain
+                processor.middleware_chain = context.config.provider_manager.middleware_chain
 
                 wrapped_stream = MiddlewareStreamingWrapper(
                     original_stream=stream_with_error_handling,
                     request_context=RequestContext(
-                        messages=openai_request.get("messages", []),
-                        provider=provider_name,
-                        model=request.model,
-                        request_id=request_id,
+                        messages=context.openai_request.get("messages", []),
+                        provider=context.provider_name,
+                        model=context.request.model,
+                        request_id=context.request_id,
                         conversation_id=None,
-                        client_api_key=client_api_key,
+                        client_api_key=context.client_api_key,
                     ),
                     processor=processor,
                 )
@@ -265,17 +182,17 @@ class OpenAIStreamingHandler(StreamingHandler):
             return streaming_response(stream=stream_with_error_handling, headers=sse_headers())
         except HTTPException as e:
             await finalize_metrics_on_streaming_error(
-                metrics=metrics,
+                metrics=context.metrics,
                 error=e.detail,
-                tracker=tracker,
-                request_id=request_id,
+                tracker=context.tracker,
+                request_id=context.request_id,
             )
             return build_streaming_error_response(
                 exception=e,
-                openai_client=openai_client,
-                metrics=metrics,
-                tracker=tracker,
-                request_id=request_id,
+                openai_client=context.openai_client,
+                metrics=context.metrics,
+                tracker=context.tracker,
+                request_id=context.request_id,
             )
 
 
