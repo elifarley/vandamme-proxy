@@ -17,6 +17,7 @@ max-retries = 2
 haiku = "gpt-5.1-mini"
 sonnet = "gpt-5.1-codex"
 opus = "gpt-5.2"
+extract = "gpt-4o"
 
 # Poe provider defaults
 [poe]
@@ -32,6 +33,15 @@ sonnet = "gpt-5.1-codex-mini"
 opus = "gpt-5.1-codex-max"
 cheap = "glm-4.7"
 top = "gpt-5.2"
+# https://www.prollm.ai/leaderboard/entity-extraction
+extract  = "claude-sonnet-4"
+extract2 = "grok-4"
+extract3 = "gpt-4o"
+extract4 = "mistral-small-3.1"
+# https://www.prollm.ai/leaderboard/summarization?language=english&level=advanced,basic
+summary = "gpt-5"
+summary2 = "gpt-5-nano"
+
 
 # OpenRouter provider defaults
 [openrouter]
