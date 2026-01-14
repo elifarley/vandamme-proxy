@@ -1,6 +1,5 @@
 import logging
 import time
-import uuid
 from datetime import datetime
 from typing import Any
 
@@ -23,7 +22,6 @@ from src.core.config.accessors import log_request_metrics
 from src.core.config.runtime import get_config
 from src.core.error_types import ErrorType
 from src.core.logging import ConversationLogger
-from src.core.metrics.runtime import get_request_tracker
 from src.core.model_manager import ModelManager
 from src.core.model_manager_runtime import get_model_manager
 from src.models.cache import ModelsDiskCache
@@ -159,39 +157,24 @@ async def chat_completions(
     - If the resolved provider is Anthropic-format: translate OpenAI request to
       Anthropic Messages API and translate response back.
     """
-    request_id = str(uuid.uuid4())
+    from src.api.services.metrics_orchestrator import (
+        MetricsOrchestrator,
+        create_request_id,
+    )
 
-    # Start request tracking if metrics are enabled
-    if log_request_metrics():
-        tracker = get_request_tracker(http_request)
+    request_id = create_request_id()
+    orchestrator = MetricsOrchestrator(config=cfg)
 
-        # Resolve early so active requests never show provider-prefixed aliases.
-        provider_name, resolved_model = mm.resolve_model(request.model)
-
-        metrics = await tracker.start_request(
-            request_id=request_id,
-            claude_model=request.model,
-            is_streaming=request.stream or False,
-            provider=provider_name,
-            resolved_model=resolved_model,
-        )
-        await tracker.update_last_accessed(
-            provider=provider_name,
-            model=resolved_model,
-            timestamp=metrics.start_time_iso,
-        )
-
-        # /v1/chat/completions doesn't carry Claude tool_use/tool_result blocks.
-        # Tool call counts are derived from upstream usage where available.
-    else:
-        tracker = None
-        metrics = None
-        provider_name = None
-        resolved_model = None
+    # Initialize metrics for this request
+    metrics_ctx = await orchestrator.initialize_request_metrics(
+        request_id=request_id,
+        http_request=http_request,
+        model=request.model,
+        is_streaming=request.stream or False,
+        model_manager=mm,
+    )
 
     with ConversationLogger.correlation_context(request_id):
-        time.time()
-
         provider_ctx = await resolve_provider_context(
             model=request.model,
             client_api_key=client_api_key,
@@ -202,27 +185,12 @@ async def chat_completions(
         resolved_model = provider_ctx.resolved_model
         provider_config = provider_ctx.provider_config
 
-        if log_request_metrics() and metrics and tracker:
-            metrics.provider = provider_name  # type: ignore[assignment]
-
-            # Metrics must always use the resolved target model (no provider prefix).
-            # Some alias targets for providers like OpenRouter are configured as
-            # provider-scoped model IDs (e.g. "openai/gpt-5.2"), which are still a
-            # concrete model identifier; we should never record the alias token.
-            metrics.openai_model = resolved_model
-
-            await tracker.update_last_accessed(
-                provider=provider_name,
-                model=resolved_model,
-                timestamp=metrics.start_time_iso,
-            )
-
-            logger.debug(
-                "[metrics] chat.completions model=%s resolved_provider=%s resolved_model=%s",
-                request.model,
-                provider_name,
-                resolved_model,
-            )
+        # Update metrics with resolved provider context
+        await orchestrator.update_provider_resolution(
+            ctx=metrics_ctx,
+            provider_name=provider_name,
+            resolved_model=resolved_model,
+        )
 
         # Build upstream request dict and attach resolved model.
         openai_request: dict[str, Any] = request.model_dump(exclude_none=True)
@@ -247,17 +215,13 @@ async def chat_completions(
                 openai_client=openai_client,
                 request_id=request_id,
                 http_request=http_request,
-                is_metrics_enabled=log_request_metrics(),
-                metrics=metrics,
-                tracker=tracker,
+                is_metrics_enabled=metrics_ctx.is_enabled,
+                metrics=metrics_ctx.metrics,
+                tracker=metrics_ctx.tracker,
             )
         except Exception as e:
             if _is_timeout_error(e):
-                if log_request_metrics() and metrics and tracker:
-                    metrics.error = "Upstream timeout"
-                    metrics.error_type = ErrorType.TIMEOUT
-                    metrics.end_time = time.time()
-                    await tracker.end_request(request_id)
+                await orchestrator.finalize_on_timeout(metrics_ctx)
                 raise _map_timeout_to_504() from e
             raise
 
@@ -361,11 +325,14 @@ async def _handle_unexpected_error(
     exception: Exception,
 ) -> JSONResponse:
     """Handle unexpected errors with proper logging and metrics."""
+    from src.api.services.metrics_orchestrator import MetricsOrchestrator
+
     duration_ms = (time.time() - ctx.start_time) * 1000
+    MetricsOrchestrator(config=ctx.config)
 
     # Check for timeout
     if _is_timeout_error(exception):
-        if log_request_metrics() and ctx.metrics:
+        if log_request_metrics() and ctx.metrics and ctx.tracker:
             ctx.metrics.error = "Upstream timeout"
             ctx.metrics.error_type = ErrorType.TIMEOUT
             ctx.metrics.end_time = time.time()
@@ -378,11 +345,12 @@ async def _handle_unexpected_error(
     else:
         error_message = str(exception)
 
-    # Update metrics
+    # Update and finalize metrics
     if log_request_metrics() and ctx.metrics:
         ctx.metrics.error = error_message
         ctx.metrics.error_type = ErrorType.UNEXPECTED_ERROR
         ctx.metrics.end_time = time.time()
+        await ctx.tracker.end_request(ctx.request_id)
 
     # Log error
     if log_request_metrics():
@@ -393,10 +361,6 @@ async def _handle_unexpected_error(
     else:
         logger.error(f"Unexpected error processing request: {exception}")
         _log_traceback()
-
-    # Finalize metrics
-    if log_request_metrics():
-        await ctx.tracker.end_request(ctx.request_id)
 
     raise HTTPException(status_code=500, detail=error_message) from exception
 
