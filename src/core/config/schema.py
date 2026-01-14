@@ -126,7 +126,7 @@ class ConfigSchema:
 
     LOG_REQUEST_METRICS = EnvVarSpec(
         name="LOG_REQUEST_METRICS",
-        default=True,
+        default=False,
         type_hint=bool,
         description="Enable request metrics logging",
     )
@@ -158,7 +158,7 @@ class ConfigSchema:
 
     VDM_ACTIVE_REQUESTS_SSE_INTERVAL = EnvVarSpec(
         name="VDM_ACTIVE_REQUESTS_SSE_INTERVAL",
-        default=2.0,
+        default=0.5,
         type_hint=float,
         description="SSE broadcast interval in seconds",
         validator=lambda x: x > 0,
@@ -190,7 +190,7 @@ class ConfigSchema:
 
     MODELS_CACHE_TTL_HOURS = EnvVarSpec(
         name="MODELS_CACHE_TTL_HOURS",
-        default=1,
+        default=24,
         type_hint=int,
         description="Models cache TTL in hours",
         validator=lambda x: x > 0,
@@ -233,7 +233,7 @@ class ConfigSchema:
 
     THOUGHT_SIGNATURE_MAX_CACHE_SIZE = EnvVarSpec(
         name="THOUGHT_SIGNATURE_MAX_CACHE_SIZE",
-        default=1000,
+        default=10000,
         type_hint=int,
         description="Maximum entries in thought signature cache",
         validator=lambda x: x > 0,
@@ -259,7 +259,7 @@ class ConfigSchema:
 
     TOP_MODELS_SOURCE = EnvVarSpec(
         name="TOP_MODELS_SOURCE",
-        default="manual_rankings",
+        default="openrouter",
         type_hint=str,
         description="Source for top models: 'openrouter', 'manual_rankings', or 'disabled'",
         validator=lambda x: x in ["openrouter", "manual_rankings", "disabled"],
@@ -274,7 +274,7 @@ class ConfigSchema:
 
     TOP_MODELS_TIMEOUT_SECONDS = EnvVarSpec(
         name="TOP_MODELS_TIMEOUT_SECONDS",
-        default=30.0,
+        default=5.0,
         type_hint=float,
         description="Timeout in seconds for fetching top models from OpenRouter",
         validator=lambda x: x > 0,

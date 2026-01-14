@@ -58,8 +58,13 @@ class Config:
         self._middleware = MiddlewareSettings.load()
         self._top_models = TopModelsSettings.load()
 
-        # Lazy manager initialization
-        self._managers = LazyManagers()
+        # Lazy manager initialization with dependency injection
+        # Pass already-loaded configs to avoid double-loading
+        self._managers = LazyManagers(
+            provider_config=self._providers,
+            middleware_config=self._middleware,
+            cache_config=self._cache,
+        )
 
     # Server settings
     @property

@@ -109,7 +109,12 @@ class TestConfigureRootLogging:
         # Set up caplog
         caplog.set_level(logging.DEBUG)
 
-        # Verify the log level is set correctly
+        # Verify the log level is set correctly - re-import to get fresh reference
+        import importlib
+
+        import src.core.config
+
+        importlib.reload(src.core.config)
         from src.core.config import config
 
         assert config.log_level == "INFO"

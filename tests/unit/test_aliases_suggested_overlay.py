@@ -30,6 +30,14 @@ id = \"google/gemini-2.0-flash\"
 
     Config.reset_singleton()
 
+    # Reload modules to pick up new config after env var changes
+    import importlib
+    import sys
+
+    for module in ["src.core.config", "src.top_models.service", "src.main"]:
+        if module in sys.modules:
+            importlib.reload(sys.modules[module])
+
     from src.main import app
 
     # Use respx as a context manager to ensure proper mock lifecycle

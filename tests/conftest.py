@@ -148,6 +148,8 @@ def setup_test_environment_for_unit_tests():
             "LOG_REQUEST_METRICS": "true",
             # Ensure top-models endpoints work deterministically in unit tests.
             "TOP_MODELS_SOURCE": "manual_rankings",
+            # Set a default rankings file to avoid Path(".") issues when None
+            "TOP_MODELS_RANKINGS_FILE": "",
         }
 
         os.environ.update(test_env)
@@ -162,6 +164,7 @@ def setup_test_environment_for_unit_tests():
             "src.core.alias_manager",
             "src.core.alias_config",
             "src.core.model_manager",
+            "src.top_models.service",  # Has module-level config import
             "src.api.services.key_rotation",  # Has module-level config import
             "src.api.services.provider_context",  # Has module-level config import
             "src.api.orchestrator.request_orchestrator",  # Has module-level config import
@@ -208,6 +211,8 @@ def setup_test_environment_for_unit_tests():
         # Force reload of modules that import config at module level
         # This ensures they get the new config instance after reset
         modules_to_reload = [
+            "src.core.config",  # Must be deleted first so import reloads it
+            "src.top_models.service",  # Has module-level config import that gets stale
             "src.api.endpoints",
             "src.main",
         ]

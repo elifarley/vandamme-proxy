@@ -366,8 +366,8 @@ class TestListAliases:
             "openai": {"fast": "gpt-4o-mini"},
         }
 
-        # Patch the config in the endpoints module directly
-        with patch.object(endpoints_module.config, "_alias_service", mock_alias_service):
+        # Patch the config's alias_service property
+        with patch.object(type(endpoints_module.config), "alias_service", mock_alias_service):
             response = await list_aliases(_=None)
 
             assert response.status_code == 200
@@ -392,8 +392,8 @@ class TestListAliases:
         mock_alias_service = MagicMock()
         mock_alias_service.get_active_aliases.return_value = {}
 
-        # Patch the config in the endpoints module directly
-        with patch.object(endpoints_module.config, "_alias_service", mock_alias_service):
+        # Patch the config's alias_service property
+        with patch.object(type(endpoints_module.config), "alias_service", mock_alias_service):
             response = await list_aliases(_=None)
 
             assert response.status_code == 200
@@ -413,8 +413,8 @@ class TestListAliases:
         mock_alias_service = MagicMock()
         mock_alias_service.get_active_aliases.side_effect = Exception("Test error")
 
-        # Patch the config in the endpoints module directly
-        with patch.object(endpoints_module.config, "_alias_service", mock_alias_service):
+        # Patch the config's alias_service property
+        with patch.object(type(endpoints_module.config), "alias_service", mock_alias_service):
             response = await list_aliases(_=None)
 
             assert response.status_code == 500
