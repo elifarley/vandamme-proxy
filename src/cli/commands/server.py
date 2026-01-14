@@ -7,7 +7,7 @@ import uvicorn
 from rich.console import Console
 from rich.table import Table
 
-from src.core.config import config
+from src.core.config import Config
 
 app = typer.Typer(help="Server management")
 
@@ -27,9 +27,11 @@ def start(
     # Configure logging FIRST before any console output
     from src.core.logging.configuration import configure_root_logging
 
+    cfg = Config()
+
     # Override config if provided
-    server_host = host or config.host
-    server_port = port or config.port
+    server_host = host or cfg.host
+    server_port = port or cfg.port
 
     # When using systemd, configure logging immediately and suppress all console output
     console = None  # Initialize console to None
@@ -46,20 +48,20 @@ def start(
         table.add_column("Value", style="green")
 
         table.add_row("Server URL", f"http://{server_host}:{server_port}")
-        table.add_row("Default Provider", config.default_provider)
-        table.add_row(f"{config.default_provider.title()} Base URL", config.base_url)
-        table.add_row(f"{config.default_provider.title()} API Key", config.api_key_hash)
+        table.add_row("Default Provider", cfg.default_provider)
+        table.add_row(f"{cfg.default_provider.title()} Base URL", cfg.base_url)
+        table.add_row(f"{cfg.default_provider.title()} API Key", cfg.api_key_hash)
 
         console.print(table)
 
         # Show provider summary
-        config.provider_manager.print_provider_summary()
+        cfg.provider_manager.print_provider_summary()
 
         # Show alias summary using presenter pattern
-        if config.alias_service:
+        if cfg.alias_service:
             from src.cli.presenters.aliases import AliasSummaryPresenter
 
-            summary = config.alias_service.get_alias_summary(config.default_provider)
+            summary = cfg.alias_service.get_alias_summary(cfg.default_provider)
             presenter = AliasSummaryPresenter(console=console)
             presenter.present_summary(summary)
 

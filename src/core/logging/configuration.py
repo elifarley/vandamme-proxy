@@ -18,11 +18,7 @@ import logging
 import logging.handlers
 import os
 
-# Import directly from config.py to work around mypy bug where
-# `from src.core.config import config` causes:
-# "Module has no attribute 'log_level'" when analyzing entire src directory
-# due to mypy's file processing order with module-level singleton exports.
-from src.core.config.config import config
+from src.core.config import Config
 
 from .filters.http import HttpRequestLogDowngradeFilter
 from .formatters.correlation import CorrelationHashingFormatter
@@ -89,7 +85,7 @@ def get_logging_mode() -> dict[str, object]:
     }
 
 
-def configure_root_logging(*, use_systemd: bool = False) -> None:
+def configure_root_logging(*, use_systemd: bool = False, config: Config | None = None) -> None:
     """Configure root and uvicorn loggers.
 
     Why this function exists:
@@ -106,7 +102,8 @@ def configure_root_logging(*, use_systemd: bool = False) -> None:
         Calling this multiple times yields the same effective handler set.
     """
 
-    log_level = config.log_level.split()[0].upper()
+    _config = config or Config()
+    log_level = _config.log_level.split()[0].upper()
     valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
     if log_level not in valid_levels:
         log_level = "INFO"

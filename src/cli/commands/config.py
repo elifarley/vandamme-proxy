@@ -9,7 +9,7 @@ from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
-from src.core.config import config
+from src.core.config import Config
 
 app = typer.Typer(help="Configuration management")
 
@@ -18,6 +18,7 @@ app = typer.Typer(help="Configuration management")
 def show() -> None:
     """Display current configuration."""
     console = Console()
+    cfg = Config()
 
     table = Table(title="Current Configuration")
     table.add_column("Variable", style="cyan")
@@ -25,22 +26,20 @@ def show() -> None:
     table.add_column("Source", style="yellow")
 
     # Add rows with masked secrets
-    table.add_row(f"{config.default_provider.upper()}_API_KEY", config.api_key_hash, "Environment")
+    table.add_row(f"{cfg.default_provider.upper()}_API_KEY", cfg.api_key_hash, "Environment")
     table.add_row(
         "PROXY_API_KEY",
-        "***" if config.proxy_api_key else "<not set>",
+        "***" if cfg.proxy_api_key else "<not set>",
         "Environment",
     )
-    table.add_row(
-        f"{config.default_provider.upper()}_BASE_URL", config.base_url, "Environment/Default"
-    )
-    table.add_row("HOST", config.host, "Environment/Default")
-    table.add_row("PORT", str(config.port), "Environment/Default")
-    table.add_row("LOG_LEVEL", config.log_level, "Environment/Default")
-    table.add_row("MIN_TOKENS_LIMIT", str(config.min_tokens_limit), "Environment/Default")
-    table.add_row("MAX_TOKENS_LIMIT", str(config.max_tokens_limit), "Environment/Default")
-    table.add_row("MAX_RETRIES", str(config.max_retries), "Environment/Default")
-    table.add_row("REQUEST_TIMEOUT", str(config.request_timeout), "Environment/Default")
+    table.add_row(f"{cfg.default_provider.upper()}_BASE_URL", cfg.base_url, "Environment/Default")
+    table.add_row("HOST", cfg.host, "Environment/Default")
+    table.add_row("PORT", str(cfg.port), "Environment/Default")
+    table.add_row("LOG_LEVEL", cfg.log_level, "Environment/Default")
+    table.add_row("MIN_TOKENS_LIMIT", str(cfg.min_tokens_limit), "Environment/Default")
+    table.add_row("MAX_TOKENS_LIMIT", str(cfg.max_tokens_limit), "Environment/Default")
+    table.add_row("MAX_RETRIES", str(cfg.max_retries), "Environment/Default")
+    table.add_row("REQUEST_TIMEOUT", str(cfg.request_timeout), "Environment/Default")
 
     console.print(table)
 
@@ -49,13 +48,14 @@ def show() -> None:
 def validate() -> None:
     """Validate configuration."""
     console = Console()
+    cfg = Config()
 
     errors = []
 
     # Validate required settings
-    if not config.openai_api_key:
+    if not cfg.openai_api_key:
         errors.append("❌ OPENAI_API_KEY is required")
-    elif not config.validate_api_key():
+    elif not cfg.validate_api_key():
         errors.append("❌ OPENAI_API_KEY format is invalid")
 
     if errors:

@@ -5,8 +5,6 @@ if TYPE_CHECKING:
     from src.core.alias_manager import AliasManager
     from src.core.config import Config
 
-from src.core.config import config
-
 logger = logging.getLogger(__name__)
 
 
@@ -101,9 +99,11 @@ def get_model_manager() -> "ModelManager":
     validation. Provider configuration is loaded when the ModelManager is first
     requested (i.e., at runtime request handling), not during module import.
     """
+    from src.core.config import Config
+
     global _model_manager
     if _model_manager is None:
-        _model_manager = ModelManager(config)
+        _model_manager = ModelManager(Config())
     return _model_manager
 
 

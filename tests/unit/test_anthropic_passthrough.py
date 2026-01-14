@@ -1,7 +1,7 @@
 """Test Anthropic passthrough functionality."""
 
 import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -114,28 +114,41 @@ def test_anthropic_client_selection():
 @pytest.mark.unit
 def test_models_endpoint_openai_format():
     """Test /v1/models endpoint with OpenAI format provider."""
+    from unittest.mock import patch
+
     from fastapi import FastAPI
 
     from src.api.endpoints import router
+    from src.core.config import Config
 
     app = FastAPI()
     app.include_router(router)
-    client = TestClient(app)
 
-    # Mock config and provider manager
-    with (
-        patch("src.api.endpoints.config") as mock_config,
-        patch("src.api.endpoints.fetch_models_unauthenticated") as mock_fetch,
-    ):
-        # Setup mock provider config
-        mock_provider_config = MagicMock()
-        mock_provider_config.is_anthropic_format = False
-        mock_provider_config.api_format = "openai"
+    # Setup mock provider config
+    mock_provider_config = MagicMock()
+    mock_provider_config.is_anthropic_format = False
+    mock_provider_config.api_format = "openai"
 
-        # Mock OpenAI client
-        mock_client = MagicMock()
-        mock_client.base_url = "https://example.com/v1"
+    # Mock OpenAI client
+    mock_client = MagicMock()
+    mock_client.base_url = "https://example.com/v1"
 
+    mock_provider_manager = MagicMock()
+    mock_provider_manager.default_provider = "openai"
+    mock_provider_manager.list_providers.return_value = {"openai": mock_provider_config}
+    mock_provider_manager.get_client.return_value = mock_client
+    mock_provider_manager.get_provider_config.return_value = mock_provider_config
+
+    # Create a mock config
+    mock_config = MagicMock(spec=Config)
+    mock_config.provider_manager = mock_provider_manager
+    mock_config.proxy_api_key = None  # No client auth required
+
+    # Store config on app.state
+    app.state.config = mock_config
+
+    # Mock the fetch_models_unauthenticated function
+    with patch("src.api.endpoints.fetch_models_unauthenticated") as mock_fetch:
         mock_fetch.return_value = {
             "object": "list",
             "data": [
@@ -144,57 +157,52 @@ def test_models_endpoint_openai_format():
             ],
         }
 
-        mock_provider_manager = MagicMock()
-        mock_provider_manager.default_provider = "openai"
-        mock_provider_manager.list_providers.return_value = {"openai": mock_provider_config}
-        mock_provider_manager.get_client.return_value = mock_client
-        mock_provider_manager.get_provider_config.return_value = mock_provider_config
-        mock_config.provider_manager = mock_provider_manager
-        mock_config.proxy_api_key = None  # No client auth required
+        with TestClient(app) as client:
+            # Make request with mock auth header
+            response = client.get("/v1/models", headers={"x-api-key": "test-key"})
 
-        # Make request with mock auth header
-        response = client.get("/v1/models", headers={"x-api-key": "test-key"})
+            assert response.status_code == 200
+            data = response.json()
 
-        assert response.status_code == 200
-        data = response.json()
+            # Default format is OpenAI schema.
+            # Anthropic format requires format=anthropic or anthropic-version header.
+            assert data["object"] == "list"
+            assert isinstance(data.get("data"), list)
 
-        # Default format is OpenAI schema.
-        # Anthropic format requires format=anthropic or anthropic-version header.
-        assert data["object"] == "list"
-        assert isinstance(data.get("data"), list)
+            model_ids = [model["id"] for model in data["data"]]
+            assert "gpt-4o" in model_ids
+            assert "gpt-4o-mini" in model_ids
 
-        model_ids = [model["id"] for model in data["data"]]
-        assert "gpt-4o" in model_ids
-        assert "gpt-4o-mini" in model_ids
+            # OpenAI format is also supported explicitly
+            response_openai = client.get(
+                "/v1/models?format=openai", headers={"x-api-key": "test-key"}
+            )
+            assert response_openai.status_code == 200
+            data_openai = response_openai.json()
+            assert data_openai["object"] == "list"
+            assert isinstance(data_openai.get("data"), list)
 
-        # OpenAI format is also supported explicitly
-        response_openai = client.get("/v1/models?format=openai", headers={"x-api-key": "test-key"})
-        assert response_openai.status_code == 200
-        data_openai = response_openai.json()
-        assert data_openai["object"] == "list"
-        assert isinstance(data_openai.get("data"), list)
+            # Anthropic format is also supported
+            response_anthropic = client.get(
+                "/v1/models?format=anthropic", headers={"x-api-key": "test-key"}
+            )
+            assert response_anthropic.status_code == 200
+            data_anthropic = response_anthropic.json()
+            assert "first_id" in data_anthropic
+            assert "last_id" in data_anthropic
+            assert "has_more" in data_anthropic
+            assert isinstance(data_anthropic.get("data"), list)
 
-        # Anthropic format is also supported
-        response_anthropic = client.get(
-            "/v1/models?format=anthropic", headers={"x-api-key": "test-key"}
-        )
-        assert response_anthropic.status_code == 200
-        data_anthropic = response_anthropic.json()
-        assert "first_id" in data_anthropic
-        assert "last_id" in data_anthropic
-        assert "has_more" in data_anthropic
-        assert isinstance(data_anthropic.get("data"), list)
-
-        # Raw format returns the exact upstream payload
-        response_raw = client.get("/v1/models?format=raw", headers={"x-api-key": "test-key"})
-        assert response_raw.status_code == 200
-        assert response_raw.json() == {
-            "object": "list",
-            "data": [
-                {"id": "gpt-4o", "created": 1699905200},
-                {"id": "gpt-4o-mini", "created": 1699905200},
-            ],
-        }
+            # Raw format returns the exact upstream payload
+            response_raw = client.get("/v1/models?format=raw", headers={"x-api-key": "test-key"})
+            assert response_raw.status_code == 200
+            assert response_raw.json() == {
+                "object": "list",
+                "data": [
+                    {"id": "gpt-4o", "created": 1699905200},
+                    {"id": "gpt-4o-mini", "created": 1699905200},
+                ],
+            }
 
 
 @pytest.mark.unit

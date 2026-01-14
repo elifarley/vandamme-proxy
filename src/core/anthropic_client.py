@@ -13,10 +13,14 @@ from typing import Any
 import httpx
 from fastapi import HTTPException
 
-from src.core.config import config
+from src.core.config import Config
+from src.core.config.accessors import (
+    log_request_metrics,
+    streaming_connect_timeout,
+    streaming_read_timeout,
+)
 from src.core.logging import ConversationLogger
 
-LOG_REQUEST_METRICS = config.log_request_metrics
 conversation_logger = ConversationLogger.get_logger()
 
 NextApiKey = Callable[[set[str]], Awaitable[str]]
@@ -34,6 +38,7 @@ class AnthropicClient:
         base_url: str,
         timeout: int = 90,
         custom_headers: dict[str, str] | None = None,
+        config: Config | None = None,
     ) -> None:
         """Initialize Anthropic client."""
         self.base_url = base_url.rstrip("/")
@@ -42,8 +47,9 @@ class AnthropicClient:
         self.default_api_key = api_key
 
         # Get streaming timeout config (None means no read timeout for SSE)
-        self._streaming_read_timeout = config.streaming_read_timeout
-        self._streaming_connect_timeout = config.streaming_connect_timeout
+        _config = config or Config()
+        self._streaming_read_timeout = streaming_read_timeout()
+        self._streaming_connect_timeout = streaming_connect_timeout()
 
         # Don't create HTTP client yet - we'll create it per request
         # This allows us to use different API keys per request
@@ -126,7 +132,7 @@ class AnthropicClient:
             client = self._get_client(effective_api_key)
 
             # Log the request with API key hash
-            if LOG_REQUEST_METRICS:
+            if log_request_metrics():
                 key_hash = hashlib.sha256(effective_api_key.encode()).hexdigest()[:8]
                 conversation_logger.debug(f"🔑 API KEY HASH {key_hash} @ {self.base_url}")
                 conversation_logger.debug(
@@ -146,7 +152,7 @@ class AnthropicClient:
                 response_data: dict[str, Any] = response.json()
 
                 # Log timing
-                if LOG_REQUEST_METRICS:
+                if log_request_metrics():
                     duration_ms = (time.time() - start_time) * 1000
                     conversation_logger.debug(
                         f"📥 ANTHROPIC RESPONSE | Duration: {duration_ms:.0f}ms"
@@ -203,7 +209,7 @@ class AnthropicClient:
             # Get streaming client for this specific API key
             client = self._get_client(effective_api_key, for_streaming=True)
 
-            if LOG_REQUEST_METRICS:
+            if log_request_metrics():
                 key_hash = hashlib.sha256(effective_api_key.encode()).hexdigest()[:8]
                 conversation_logger.debug(f"🔑 API KEY HASH {key_hash} @ {self.base_url}")
                 conversation_logger.debug(

@@ -357,7 +357,8 @@ class TestListAliases:
     @pytest.mark.asyncio
     async def test_list_aliases_with_data(self):
         """Test listing aliases when aliases are configured."""
-        import src.api.endpoints as endpoints_module
+        from fastapi import Request
+
         from src.api.endpoints import list_aliases
 
         mock_alias_service = MagicMock()
@@ -366,9 +367,17 @@ class TestListAliases:
             "openai": {"fast": "gpt-4o-mini"},
         }
 
-        # Patch the config's alias_service property
-        with patch.object(type(endpoints_module.config), "alias_service", mock_alias_service):
-            response = await list_aliases(_=None)
+        # Create a mock request with config that has the mock alias_service
+        mock_request = MagicMock(spec=Request)
+        from src.core.config import Config
+
+        mock_config = MagicMock(spec=Config)
+        mock_config.alias_service = mock_alias_service
+        mock_request.app.state.config = mock_config
+
+        # Mock get_config to return our mock config
+        with patch("src.api.endpoints.get_config", return_value=mock_config):
+            response = await list_aliases(cfg=mock_config, _=None)
 
             assert response.status_code == 200
             content = json.loads(response.body)
@@ -386,15 +395,24 @@ class TestListAliases:
     @pytest.mark.asyncio
     async def test_list_aliases_no_data(self):
         """Test listing aliases when no aliases are configured."""
-        import src.api.endpoints as endpoints_module
+        from fastapi import Request
+
         from src.api.endpoints import list_aliases
 
         mock_alias_service = MagicMock()
         mock_alias_service.get_active_aliases.return_value = {}
 
-        # Patch the config's alias_service property
-        with patch.object(type(endpoints_module.config), "alias_service", mock_alias_service):
-            response = await list_aliases(_=None)
+        # Create a mock request with config that has the mock alias_service
+        mock_request = MagicMock(spec=Request)
+        from src.core.config import Config
+
+        mock_config = MagicMock(spec=Config)
+        mock_config.alias_service = mock_alias_service
+        mock_request.app.state.config = mock_config
+
+        # Mock get_config to return our mock config
+        with patch("src.api.endpoints.get_config", return_value=mock_config):
+            response = await list_aliases(cfg=mock_config, _=None)
 
             assert response.status_code == 200
             content = json.loads(response.body)
@@ -407,15 +425,24 @@ class TestListAliases:
     @pytest.mark.asyncio
     async def test_list_aliases_error_handling(self):
         """Test error handling in list_aliases endpoint."""
-        import src.api.endpoints as endpoints_module
+        from fastapi import Request
+
         from src.api.endpoints import list_aliases
 
         mock_alias_service = MagicMock()
         mock_alias_service.get_active_aliases.side_effect = Exception("Test error")
 
-        # Patch the config's alias_service property
-        with patch.object(type(endpoints_module.config), "alias_service", mock_alias_service):
-            response = await list_aliases(_=None)
+        # Create a mock request with config that has the mock alias_service
+        mock_request = MagicMock(spec=Request)
+        from src.core.config import Config
+
+        mock_config = MagicMock(spec=Config)
+        mock_config.alias_service = mock_alias_service
+        mock_request.app.state.config = mock_config
+
+        # Mock get_config to return our mock config
+        with patch("src.api.endpoints.get_config", return_value=mock_config):
+            response = await list_aliases(cfg=mock_config, _=None)
 
             assert response.status_code == 500
             content = json.loads(response.body)

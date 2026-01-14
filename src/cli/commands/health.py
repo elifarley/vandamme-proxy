@@ -9,7 +9,7 @@ from rich.console import Console
 from rich.status import Status
 from rich.table import Table
 
-from src.core.config import config
+from src.core.config import Config
 
 app = typer.Typer(help="Health checks")
 
@@ -22,8 +22,9 @@ def server(
 ) -> None:
     """Check proxy server health."""
     console = Console()
-    check_host = host or config.host
-    check_port = port or config.port
+    cfg = Config()
+    check_host = host or cfg.host
+    check_port = port or cfg.port
     url = f"http://{check_host}:{check_port}/health"
 
     try:
@@ -69,13 +70,14 @@ def upstream(
 ) -> None:
     """Check upstream API connectivity."""
     console = Console()
+    cfg = Config()
 
     with Status("Checking OpenAI API connectivity...", console=console):
         try:
             # Use existing client to test connectivity
             client = httpx.Client(
-                base_url=config.base_url,
-                headers={"Authorization": f"Bearer {config.openai_api_key}"},
+                base_url=cfg.base_url,
+                headers={"Authorization": f"Bearer {cfg.openai_api_key}"},
                 timeout=10.0,
             )
 
@@ -88,8 +90,8 @@ def upstream(
                     json.dumps(
                         {
                             "status": "healthy",
-                            "base_url": config.base_url,
-                            "api_key": config.api_key_hash,
+                            "base_url": cfg.base_url,
+                            "api_key": cfg.api_key_hash,
                         },
                         indent=2,
                     )
@@ -100,8 +102,8 @@ def upstream(
                 table.add_column("Value", style="green")
 
                 table.add_row("Status", "✅ Connected")
-                table.add_row("Base URL", config.base_url)
-                table.add_row("API Key", config.api_key_hash)
+                table.add_row("Base URL", cfg.base_url)
+                table.add_row("API Key", cfg.api_key_hash)
                 table.add_row("Response Time", f"{response.elapsed.total_seconds():.3f}s")
 
                 console.print(table)
@@ -114,7 +116,7 @@ def upstream(
                         {
                             "status": "error",
                             "message": msg,
-                            "base_url": config.base_url,
+                            "base_url": cfg.base_url,
                         },
                         indent=2,
                     )

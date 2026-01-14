@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from src.core.config import config as cfg
+from src.core.config import Config
 from src.top_models.manual_rankings import ManualRankingsConfig, ManualRankingsTopModelsSource
 from src.top_models.openrouter import OpenRouterTopModelsSource
 from src.top_models.source import TopModelsSourceConfig
@@ -31,6 +31,8 @@ def _parse_csv(value: str | None) -> tuple[str, ...]:
 
 
 def _default_service_config() -> TopModelsServiceConfig:
+    """Create default service config from Config singleton (fallback)."""
+    cfg = Config()
     source = cfg.top_models_source
     if source not in {"manual_rankings", "openrouter"}:
         raise ValueError(f"Unsupported top-models source: {source}")

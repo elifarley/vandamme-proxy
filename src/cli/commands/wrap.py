@@ -9,7 +9,7 @@ import typer
 
 from src.cli.wrap.proxy_manager import ProxyManager
 from src.cli.wrap.wrappers import BaseWrapper, get_wrapper
-from src.core.config import config
+from src.core.config import Config
 from src.core.logging.configuration import configure_root_logging
 
 
@@ -47,12 +47,13 @@ def execute_wrap(
     # Configure logging
     configure_root_logging(use_systemd=False)
     logger = logging.getLogger(__name__)
+    cfg = Config()
 
     # Get host and port from args or config
     if port is None:
-        port = int(config.port)
+        port = int(cfg.port)
     if host is None:
-        host = config.host or "127.0.0.1"
+        host = cfg.host or "127.0.0.1"
 
     logger.info(f"Wrapping tool '{tool}' with args: {tool_args}")
 

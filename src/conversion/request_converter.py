@@ -2,9 +2,15 @@ import json
 import logging
 from typing import TYPE_CHECKING, Any, cast
 
-from src.conversion.conversion_metrics import collect_request_metrics, log_request_metrics
+from src.conversion.conversion_metrics import (
+    collect_request_metrics,
+)
+from src.conversion.conversion_metrics import (
+    log_request_metrics as log_request_metrics_impl,
+)
 from src.conversion.tool_schema import build_tool_name_maps_if_enabled, collect_all_tool_names
-from src.core.config import config
+from src.core.config import Config
+from src.core.config.accessors import log_request_metrics
 from src.core.constants import Constants
 from src.core.logging import ConversationLogger
 from src.models.claude import (
@@ -19,7 +25,6 @@ from src.models.claude import (
 if TYPE_CHECKING:
     from src.conversion.pipeline.base import ConversionContext
 
-LOG_REQUEST_METRICS = config.log_request_metrics
 conversation_logger = ConversationLogger.get_logger()
 
 
@@ -84,9 +89,9 @@ def convert_claude_to_openai(
     # Resolve provider and model
     provider_name, openai_model = model_manager.resolve_model(claude_request.model)
 
-    if LOG_REQUEST_METRICS:
+    if log_request_metrics():
         metrics = collect_request_metrics(claude_request, provider_name=provider_name)
-        log_request_metrics(conversation_logger, metrics)
+        log_request_metrics_impl(conversation_logger, metrics)
 
     # Build the initial conversion context
     context = _build_initial_context(claude_request, provider_name, openai_model)
@@ -116,7 +121,8 @@ def _build_initial_context(
     from src.conversion.pipeline.base import ConversionContext
 
     # Get provider config to check if tool name sanitization is enabled
-    provider_config = config.provider_manager.get_provider_config(provider_name)
+    cfg = Config()
+    provider_config = cfg.provider_manager.get_provider_config(provider_name)
 
     # Build tool name maps if sanitization is enabled
     tool_name_map, tool_name_map_inverse = build_tool_name_maps_if_enabled(

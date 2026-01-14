@@ -7,7 +7,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from src.core.config import config
+from src.core.config import Config
 
 app = typer.Typer(help="Test commands")
 
@@ -16,20 +16,21 @@ app = typer.Typer(help="Test commands")
 def connection() -> None:
     """Test API connectivity."""
     console = Console()
+    cfg = Config()
 
     console.print("[bold cyan]Testing API Connectivity[/bold cyan]")
     console.print()
 
     # Test configuration
     try:
-        if not config.openai_api_key:
-            provider_upper = config.default_provider.upper()
+        if not cfg.openai_api_key:
+            provider_upper = cfg.default_provider.upper()
             console.print(f"[red]❌ {provider_upper}_API_KEY not configured[/red]")
             sys.exit(1)
 
-        console.print(f"✅ API Key configured: {config.api_key_hash}")
-        console.print(f"✅ Default Provider: {config.default_provider}")
-        console.print(f"✅ Base URL: {config.base_url}")
+        console.print(f"✅ API Key configured: {cfg.api_key_hash}")
+        console.print(f"✅ Default Provider: {cfg.default_provider}")
+        console.print(f"✅ Base URL: {cfg.base_url}")
 
         console.print()
         console.print(
@@ -49,14 +50,15 @@ def connection() -> None:
 def providers() -> None:
     """List all configured providers."""
     console = Console()
+    cfg = Config()
 
     console.print("[bold cyan]Provider Status[/bold cyan]")
     console.print()
 
     # Load providers
     try:
-        config.provider_manager.load_provider_configs()
-        load_results = config.provider_manager.get_load_results()
+        cfg.provider_manager.load_provider_configs()
+        load_results = cfg.provider_manager.get_load_results()
 
         if not load_results:
             console.print("[yellow]No providers configured[/yellow]")
@@ -86,7 +88,7 @@ def providers() -> None:
             else:  # partial
                 status = f"[yellow]⚠️ {result.message}[/yellow]"
 
-            is_default = "✓" if result.name == config.provider_manager.default_provider else ""
+            is_default = "✓" if result.name == cfg.provider_manager.default_provider else ""
             table.add_row(
                 result.name,
                 f"[dim]{result.api_key_hash}[/dim]",
@@ -106,11 +108,11 @@ def providers() -> None:
         console.print()
 
         # Show default provider
-        console.print(f"Default Provider: [bold]{config.provider_manager.default_provider}[/bold]")
+        console.print(f"Default Provider: [bold]{cfg.provider_manager.default_provider}[/bold]")
         console.print()
 
         # Show examples
-        default_provider = config.provider_manager.default_provider
+        default_provider = cfg.provider_manager.default_provider
         console.print(
             Panel(
                 f"Use providers with model prefixes:\n"

@@ -39,10 +39,9 @@ def test_multi_api_key_round_robin_and_retry_openai(mock_openai_api, openai_chat
 
     # Import app (autouse fixture will have set up test config)
     # Modify the provider config directly to use multiple keys
-    from src.core.config import config
     from src.main import app
 
-    provider = config.provider_manager.get_provider_config("openai")
+    provider = app.state.config.provider_manager.get_provider_config("openai")
     assert provider is not None, "OpenAI provider should be configured"
 
     # Override the provider's API keys with our test keys
@@ -55,7 +54,7 @@ def test_multi_api_key_round_robin_and_retry_openai(mock_openai_api, openai_chat
     assert keys == ["key1", "key2"], f"Expected ['key1', 'key2'], got {keys}"
 
     # Reset API key rotation state for this provider to ensure clean test
-    config.provider_manager._api_key_indices.pop("openai", None)
+    app.state.config.provider_manager._api_key_indices.pop("openai", None)
 
     with TestClient(app) as client:
         response = client.post(

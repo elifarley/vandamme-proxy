@@ -10,11 +10,10 @@ from fastapi import HTTPException
 from openai import AsyncAzureOpenAI, AsyncOpenAI
 from openai._exceptions import APIError, AuthenticationError, BadRequestError, RateLimitError
 
-from src.core.config import config
+from src.core.config.accessors import log_request_metrics
 from src.core.error_types import ErrorType
 from src.core.logging import ConversationLogger
 
-LOG_REQUEST_METRICS = config.log_request_metrics
 conversation_logger = ConversationLogger.get_logger()
 logger = logging.getLogger(__name__)
 
@@ -111,7 +110,7 @@ class OpenAIClient:
                 self.active_requests[request_id] = cancel_event
 
             # Log API call start
-            if LOG_REQUEST_METRICS:
+            if log_request_metrics():
                 model_name = request.get("model", "unknown")
                 timeout = client.timeout
                 conversation_logger.debug(f"📡 API CALL | Model: {model_name} | Timeout: {timeout}")
@@ -135,7 +134,7 @@ class OpenAIClient:
                 # Check if request was cancelled
                 if cancel_task in done:
                     completion_task.cancel()
-                    if LOG_REQUEST_METRICS and metrics:
+                    if log_request_metrics() and metrics:
                         metrics.error = "Request cancelled by client"
                         metrics.error_type = ErrorType.CANCELLED
                     raise HTTPException(status_code=499, detail="Request cancelled by client")
@@ -146,11 +145,11 @@ class OpenAIClient:
 
             # Log API call timing
             api_duration_ms = (time.time() - api_start) * 1000
-            if LOG_REQUEST_METRICS:
+            if log_request_metrics():
                 conversation_logger.debug(f"📡 API RESPONSE | Duration: {api_duration_ms:.0f}ms")
 
             # Debug: Log completion object before conversion
-            if LOG_REQUEST_METRICS:
+            if log_request_metrics():
                 conversation_logger.debug(f"📡 RAW RESPONSE TYPE: {type(completion)}")
                 conversation_logger.debug(f"📡 RAW RESPONSE: {completion}")
 
@@ -158,7 +157,7 @@ class OpenAIClient:
             response_dict = completion.model_dump()
 
             # Debug: Log converted response
-            if LOG_REQUEST_METRICS:
+            if log_request_metrics():
                 conversation_logger.debug(f"📡 CONVERTED RESPONSE TYPE: {type(response_dict)}")
 
             return cast(dict[str, Any], response_dict)
@@ -175,22 +174,22 @@ class OpenAIClient:
             try:
                 return await attempt_with_key(effective_api_key)
             except AuthenticationError as e:
-                if LOG_REQUEST_METRICS and metrics:
+                if log_request_metrics() and metrics:
                     metrics.error = "Authentication failed"
                     metrics.error_type = ErrorType.AUTH_ERROR
                 exc = HTTPException(status_code=401, detail=self.classify_openai_error(str(e)))
             except RateLimitError as e:
-                if LOG_REQUEST_METRICS and metrics:
+                if log_request_metrics() and metrics:
                     metrics.error = "Rate limit exceeded"
                     metrics.error_type = ErrorType.RATE_LIMIT
                 exc = HTTPException(status_code=429, detail=self.classify_openai_error(str(e)))
             except BadRequestError as e:
-                if LOG_REQUEST_METRICS and metrics:
+                if log_request_metrics() and metrics:
                     metrics.error = "Bad request"
                     metrics.error_type = ErrorType.BAD_REQUEST
                 exc = HTTPException(status_code=400, detail=self.classify_openai_error(str(e)))
             except APIError as e:
-                if LOG_REQUEST_METRICS and metrics:
+                if log_request_metrics() and metrics:
                     metrics.error = "OpenAI API error"
                     metrics.error_type = ErrorType.API_ERROR
                 status_code = getattr(e, "status_code", 500)
@@ -200,7 +199,7 @@ class OpenAIClient:
             except HTTPException as e:
                 exc = e
             except Exception as e:
-                if LOG_REQUEST_METRICS and metrics:
+                if log_request_metrics() and metrics:
                     metrics.error = f"Unexpected error: {str(e)}"
                     metrics.error_type = ErrorType.UNEXPECTED_ERROR
                 raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}") from e
