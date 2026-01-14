@@ -358,13 +358,29 @@ async def convert_openai_streaming_to_claude(
 
                 except ConversionError:
                     raise
-                except Exception:
-                    # Don't let usage parsing kill the stream
-                    logger.exception(
-                        "Streaming usage accounting error at chunk %d. Usage field: %s",
+                except Exception as e:
+                    # Usage accounting error - track warning but don't kill the stream
+                    logger.warning(
+                        "Streaming usage accounting error at chunk %d. Usage field: %s. Error: %s",
                         usage_tracker.chunk_count if usage_tracker else 0,
                         chunk.get("usage") if chunk else None,
+                        str(e),
                     )
+
+                    # Record warning in metrics for observability (non-blocking)
+                    # Note: We append to error field WITHOUT setting error_type,
+                    # so the request is not counted as an error but the warning is visible
+                    if metrics:
+                        warning_msg = (
+                            f"Usage accounting error at chunk {usage_tracker.chunk_count}: {str(e)}"
+                        )
+                        if metrics.error:
+                            metrics.error = f"{metrics.error}; {warning_msg}"
+                        else:
+                            metrics.error = warning_msg
+                        # Intentionally NOT setting metrics.error_type to avoid counting
+                        # this as an error in error_counts. The error field alone preserves
+                        # the information for dashboard visibility.
 
             # Convert and yield Claude-formatted events
             for out in ingest_openai_chunk(state, chunk):

@@ -40,5 +40,8 @@ class ErrorType(str, Enum):
     # Streaming errors
     STREAMING_ERROR = "streaming_error"  # Generic streaming error
 
+    # Non-fatal warnings (don't count as errors)
+    USAGE_WARNING = "usage_warning"  # Token counting errors (stream continues)
+
     # Catch-all
     UNEXPECTED_ERROR = "unexpected_error"  # Unhandled/unexpected error
