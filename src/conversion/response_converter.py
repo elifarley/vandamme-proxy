@@ -16,6 +16,7 @@ from src.conversion.openai_stream_to_claude_state_machine import (
 )
 from src.core.config import config
 from src.core.constants import Constants
+from src.core.error_types import ErrorType
 from src.core.logging import ConversationLogger
 from src.core.metrics.runtime import get_request_tracker
 from src.models.claude import ClaudeMessagesRequest
@@ -327,7 +328,7 @@ async def convert_openai_streaming_to_claude(
                 # Handle cancellation in-band: emit SSE error, update metrics, skip final events
                 if metrics:
                     metrics.error = "Request cancelled by client"
-                    metrics.error_type = "cancelled"
+                    metrics.error_type = ErrorType.CANCELLED
                 logger.info(
                     f"Request {request_id or 'unknown'} was cancelled (client disconnected)"
                 )
@@ -383,7 +384,7 @@ async def convert_openai_streaming_to_claude(
         # If it does (e.g., from deeper layers), log and propagate as non-cancellation error.
         if metrics:
             metrics.error = f"HTTP exception: {e.detail}"
-            metrics.error_type = "http_error"
+            metrics.error_type = ErrorType.HTTP_ERROR
         raise
 
     except ConversionError as e:
@@ -397,7 +398,7 @@ async def convert_openai_streaming_to_claude(
     except Exception as e:
         if metrics:
             metrics.error = f"Streaming error: {str(e)}"
-            metrics.error_type = "streaming_error"
+            metrics.error_type = ErrorType.STREAMING_ERROR
         logger.exception("Streaming error")
         yield _build_sse_error("api_error", f"Streaming error: {str(e)}")
         return

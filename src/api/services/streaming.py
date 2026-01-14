@@ -7,6 +7,7 @@ import httpx
 from fastapi import Request
 from fastapi.responses import StreamingResponse
 
+from src.core.error_types import ErrorType
 from src.core.logging import ConversationLogger
 from src.core.metrics.runtime import get_request_tracker
 
@@ -73,7 +74,7 @@ def with_streaming_metrics_finalizer(
 def _format_sse_error_event(
     *,
     message: str,
-    error_type: str = "upstream_timeout",
+    error_type: ErrorType = ErrorType.UPSTREAM_TIMEOUT,
     code: str = "read_timeout",
     suggestion: str | None = None,
 ) -> str:
@@ -91,7 +92,7 @@ def _format_sse_error_event(
     error_payload: dict[str, Any] = {
         "error": {
             "message": message,
-            "type": error_type,
+            "type": error_type.value,
             "code": code,
         }
     }
@@ -137,7 +138,7 @@ def with_sse_error_handler(
             )
             yield _format_sse_error_event(
                 message=f"Upstream read timeout: {str(e)}",
-                error_type="upstream_timeout",
+                error_type=ErrorType.UPSTREAM_TIMEOUT,
                 code="read_timeout",
                 suggestion=(
                     "Consider increasing REQUEST_TIMEOUT and/or STREAMING_READ_TIMEOUT_SECONDS"
@@ -153,7 +154,7 @@ def with_sse_error_handler(
             )
             yield _format_sse_error_event(
                 message=f"Upstream timeout: {str(e)}",
-                error_type="upstream_timeout",
+                error_type=ErrorType.UPSTREAM_TIMEOUT,
                 code="timeout",
                 suggestion=(
                     "Consider increasing REQUEST_TIMEOUT and/or STREAMING_READ_TIMEOUT_SECONDS"
@@ -172,7 +173,7 @@ def with_sse_error_handler(
             )
             yield _format_sse_error_event(
                 message=f"Upstream HTTP error: status {e.response.status_code}",
-                error_type="upstream_http_error",
+                error_type=ErrorType.UPSTREAM_HTTP_ERROR,
                 code=f"http_{e.response.status_code}",
                 suggestion=None,
             )
@@ -184,7 +185,7 @@ def with_sse_error_handler(
             )
             yield _format_sse_error_event(
                 message=f"Streaming error: {type(e).__name__}: {str(e)}",
-                error_type="streaming_error",
+                error_type=ErrorType.STREAMING_ERROR,
                 code="stream_error",
                 suggestion=None,
             )

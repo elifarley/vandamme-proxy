@@ -1,6 +1,8 @@
 import httpx
 import pytest
 
+from src.core.error_types import ErrorType
+
 
 @pytest.mark.unit
 @pytest.mark.asyncio
@@ -235,14 +237,14 @@ def test_format_sse_error_event():
 
     result = _format_sse_error_event(
         message="Test error",
-        error_type="test_error",
+        error_type=ErrorType.API_ERROR,
         code="TEST_001",
         suggestion="Try again later",
     )
 
     assert "data: " in result
     assert "Test error" in result
-    assert "test_error" in result
+    assert ErrorType.API_ERROR.value in result
     assert "TEST_001" in result
     assert "Try again later" in result
 
@@ -256,13 +258,13 @@ def test_format_sse_error_event_without_suggestion():
 
     result = _format_sse_error_event(
         message="Error without suggestion",
-        error_type="generic_error",
+        error_type=ErrorType.UNEXPECTED_ERROR,
         code="GEN_001",
     )
 
     assert "data: " in result
     assert "Error without suggestion" in result
-    assert "generic_error" in result
+    assert ErrorType.UNEXPECTED_ERROR.value in result
     assert "GEN_001" in result
     # Parse the JSON to check suggestion is not included
     data_start = result.find("data: ") + 6

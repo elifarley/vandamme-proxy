@@ -11,6 +11,7 @@ from openai import AsyncAzureOpenAI, AsyncOpenAI
 from openai._exceptions import APIError, AuthenticationError, BadRequestError, RateLimitError
 
 from src.core.config import config
+from src.core.error_types import ErrorType
 from src.core.logging import ConversationLogger
 
 LOG_REQUEST_METRICS = config.log_request_metrics
@@ -136,7 +137,7 @@ class OpenAIClient:
                     completion_task.cancel()
                     if LOG_REQUEST_METRICS and metrics:
                         metrics.error = "Request cancelled by client"
-                        metrics.error_type = "cancelled"
+                        metrics.error_type = ErrorType.CANCELLED
                     raise HTTPException(status_code=499, detail="Request cancelled by client")
 
                 completion = await completion_task
@@ -176,22 +177,22 @@ class OpenAIClient:
             except AuthenticationError as e:
                 if LOG_REQUEST_METRICS and metrics:
                     metrics.error = "Authentication failed"
-                    metrics.error_type = "auth_error"
+                    metrics.error_type = ErrorType.AUTH_ERROR
                 exc = HTTPException(status_code=401, detail=self.classify_openai_error(str(e)))
             except RateLimitError as e:
                 if LOG_REQUEST_METRICS and metrics:
                     metrics.error = "Rate limit exceeded"
-                    metrics.error_type = "rate_limit"
+                    metrics.error_type = ErrorType.RATE_LIMIT
                 exc = HTTPException(status_code=429, detail=self.classify_openai_error(str(e)))
             except BadRequestError as e:
                 if LOG_REQUEST_METRICS and metrics:
                     metrics.error = "Bad request"
-                    metrics.error_type = "bad_request"
+                    metrics.error_type = ErrorType.BAD_REQUEST
                 exc = HTTPException(status_code=400, detail=self.classify_openai_error(str(e)))
             except APIError as e:
                 if LOG_REQUEST_METRICS and metrics:
                     metrics.error = "OpenAI API error"
-                    metrics.error_type = "api_error"
+                    metrics.error_type = ErrorType.API_ERROR
                 status_code = getattr(e, "status_code", 500)
                 exc = HTTPException(
                     status_code=status_code, detail=self.classify_openai_error(str(e))
@@ -201,7 +202,7 @@ class OpenAIClient:
             except Exception as e:
                 if LOG_REQUEST_METRICS and metrics:
                     metrics.error = f"Unexpected error: {str(e)}"
-                    metrics.error_type = "unexpected_error"
+                    metrics.error_type = ErrorType.UNEXPECTED_ERROR
                 raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}") from e
             finally:
                 if request_id and request_id in self.active_requests:

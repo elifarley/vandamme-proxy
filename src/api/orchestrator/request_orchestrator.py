@@ -15,6 +15,7 @@ from src.api.context.request_context import RequestContext, RequestContextBuilde
 from src.api.services.metrics_helper import populate_request_metrics
 from src.conversion.request_converter import convert_claude_to_openai
 from src.core.config import config
+from src.core.error_types import ErrorType
 from src.core.metrics.runtime import get_request_tracker
 from src.core.model_manager import get_model_manager
 
@@ -281,6 +282,6 @@ class RequestOrchestrator:
         """Handle client disconnection before processing."""
         if self.log_request_metrics and metrics:
             metrics.error = "Client disconnected before processing"
-            metrics.error_type = "client_disconnect"
+            metrics.error_type = ErrorType.CLIENT_DISCONNECT
             await tracker.end_request(request_id)
         raise HTTPException(status_code=499, detail="Client disconnected")

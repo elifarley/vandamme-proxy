@@ -10,6 +10,8 @@ from typing import Any
 
 from fastapi.responses import JSONResponse
 
+from src.core.error_types import ErrorType
+
 logger = logging.getLogger(__name__)
 
 
@@ -30,7 +32,7 @@ async def finalize_metrics_on_streaming_error(
     """
     if metrics:
         metrics.error = error
-        metrics.error_type = "api_error"
+        metrics.error_type = ErrorType.API_ERROR
         metrics.end_time = __import__("time").time()
         await tracker.end_request(request_id)
 
@@ -72,7 +74,7 @@ def build_streaming_error_response(
     # Finalize metrics
     if metrics:
         metrics.error = exception.detail if hasattr(exception, "detail") else str(exception)
-        metrics.error_type = "api_error"
+        metrics.error_type = ErrorType.API_ERROR
         metrics.end_time = __import__("time").time()
         # Note: We can't await here because this is a sync function
 

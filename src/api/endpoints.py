@@ -25,6 +25,7 @@ from src.conversion.anthropic_sse_to_openai import anthropic_sse_to_openai_chat_
 from src.conversion.anthropic_to_openai import anthropic_message_to_openai_chat_completion
 from src.conversion.openai_to_anthropic import openai_chat_completions_to_anthropic_messages
 from src.core.config import config
+from src.core.error_types import ErrorType
 from src.core.logging import ConversationLogger
 from src.core.metrics.runtime import get_request_tracker
 from src.core.model_manager import get_model_manager
@@ -289,7 +290,7 @@ async def chat_completions(
             except Exception as e:
                 if LOG_REQUEST_METRICS and metrics:
                     metrics.error = str(e)
-                    metrics.error_type = "upstream_error"
+                    metrics.error_type = ErrorType.UPSTREAM_ERROR
                     await tracker.end_request(request_id)
                 # Map timeout errors to 504 Gateway Timeout
                 if _is_timeout_error(e):
@@ -350,7 +351,7 @@ async def chat_completions(
         except Exception as e:
             if LOG_REQUEST_METRICS and metrics:
                 metrics.error = str(e)
-                metrics.error_type = "upstream_error"
+                metrics.error_type = ErrorType.UPSTREAM_ERROR
                 await tracker.end_request(request_id)
             # Map timeout errors to 504 Gateway Timeout
             if _is_timeout_error(e):
@@ -474,7 +475,7 @@ async def _handle_unexpected_error(
     if _is_timeout_error(exception):
         if LOG_REQUEST_METRICS and ctx.metrics:
             ctx.metrics.error = "Upstream timeout"
-            ctx.metrics.error_type = "timeout"
+            ctx.metrics.error_type = ErrorType.TIMEOUT
             ctx.metrics.end_time = time.time()
             await ctx.tracker.end_request(ctx.request_id)
         raise _map_timeout_to_504() from exception
@@ -488,7 +489,7 @@ async def _handle_unexpected_error(
     # Update metrics
     if LOG_REQUEST_METRICS and ctx.metrics:
         ctx.metrics.error = error_message
-        ctx.metrics.error_type = "unexpected_error"
+        ctx.metrics.error_type = ErrorType.UNEXPECTED_ERROR
         ctx.metrics.end_time = time.time()
 
     # Log error

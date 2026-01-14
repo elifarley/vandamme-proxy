@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
+from src.core.error_types import ErrorType
+
 
 @dataclass
 class RequestMetrics:
@@ -31,7 +33,7 @@ class RequestMetrics:
     response_size: int = 0
     is_streaming: bool = False
     error: str | None = None
-    error_type: str | None = None
+    error_type: ErrorType | None = None
     tool_use_count: int = 0
     tool_result_count: int = 0
     tool_call_count: int = 0
