@@ -18,7 +18,11 @@ import logging
 import logging.handlers
 import os
 
-from src.core.config import config
+# Import directly from config.py to work around mypy bug where
+# `from src.core.config import config` causes:
+# "Module has no attribute 'log_level'" when analyzing entire src directory
+# due to mypy's file processing order with module-level singleton exports.
+from src.core.config.config import config
 
 from .filters.http import HttpRequestLogDowngradeFilter
 from .formatters.correlation import CorrelationHashingFormatter
