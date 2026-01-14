@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from src.core.config import Config
+from src.models.cache import ModelsDiskCache
 from src.top_models.manual_rankings import ManualRankingsConfig, ManualRankingsTopModelsSource
 from src.top_models.openrouter import OpenRouterTopModelsSource
 from src.top_models.source import TopModelsSourceConfig
@@ -100,10 +101,15 @@ def _suggest_aliases(models: tuple[TopModel, ...]) -> dict[str, str]:
 
 
 class TopModelsService:
-    def __init__(self, cfg: TopModelsServiceConfig | None = None) -> None:
+    def __init__(
+        self,
+        cfg: TopModelsServiceConfig | None = None,
+        models_cache: ModelsDiskCache | None = None,
+    ) -> None:
         # Do not capture env-derived config at import time; tests rely on resetting
         # src.core.config.config between cases.
         self._cfg = cfg or _default_service_config()
+        self._models_cache = models_cache
 
         self._source: TopModelsSource
         if self._cfg.source == "openrouter":
@@ -115,7 +121,7 @@ class TopModelsService:
             # fetch+cache semantics as `/v1/models`, while preserving OpenRouter
             # catalog metadata (pricing/context) that `/v1/models?format=openai`
             # intentionally strips.
-            from src.api.endpoints import fetch_models_unauthenticated, models_cache
+            from src.api.endpoints import fetch_models_unauthenticated
             from src.conversion.models_converter import raw_to_openai_models
 
             async def fetch_openrouter_openai_models(
@@ -132,8 +138,8 @@ class TopModelsService:
                 custom_headers: dict[str, str] = {}
 
                 raw: dict[str, Any] | None = None
-                if models_cache and not refresh:
-                    raw = models_cache.read_response_if_fresh(
+                if self._models_cache and not refresh:
+                    raw = self._models_cache.read_response_if_fresh(
                         provider=provider,
                         base_url=base_url,
                         custom_headers=custom_headers,
@@ -141,8 +147,8 @@ class TopModelsService:
 
                 if raw is None:
                     raw = await fetch_models_unauthenticated(base_url, custom_headers)
-                    if models_cache:
-                        models_cache.write_response(
+                    if self._models_cache:
+                        self._models_cache.write_response(
                             provider=provider,
                             base_url=base_url,
                             custom_headers=custom_headers,

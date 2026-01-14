@@ -1,15 +1,14 @@
 import logging
-import os
 import time
 import uuid
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 
+from src.api.models_cache_runtime import get_models_cache
 from src.api.services.non_streaming_handlers import get_non_streaming_handler
 from src.api.services.provider_context import resolve_provider_context
 from src.api.services.streaming_handlers import get_streaming_handler
@@ -71,32 +70,6 @@ def _log_traceback(log: Any = logger) -> None:
     import traceback
 
     log.error(traceback.format_exc())
-
-
-# Initialize models cache if enabled (lazy initialization via accessor)
-models_cache = None
-
-
-def get_models_cache() -> ModelsDiskCache | None:
-    """Get models cache instance (lazy initialization).
-
-    This avoids import-time coupling with the config singleton.
-    The cache is created on first access, not when the module is imported.
-    """
-    global models_cache
-    if models_cache is None:
-        from src.core.config.accessors import (
-            cache_dir,
-            models_cache_enabled,
-            models_cache_ttl_hours,
-        )
-
-        if models_cache_enabled() and not os.environ.get("PYTEST_CURRENT_TEST"):
-            models_cache = ModelsDiskCache(
-                cache_dir=Path(cache_dir()),
-                ttl_hours=models_cache_ttl_hours(),
-            )
-    return models_cache
 
 
 # Custom headers are now handled per provider
@@ -676,6 +649,7 @@ async def fetch_models_unauthenticated(
 @router.get("/v1/models")
 async def list_models(
     cfg: Config = Depends(get_config),
+    models_cache: ModelsDiskCache | None = Depends(get_models_cache),
     _: None = Depends(validate_api_key),
     provider: str | None = Query(
         None,
@@ -871,6 +845,7 @@ async def list_aliases(
 @router.get("/top-models")
 async def top_models(
     cfg: Config = Depends(get_config),
+    models_cache: ModelsDiskCache | None = Depends(get_models_cache),
     _: None = Depends(validate_api_key),
     limit: int = Query(10, ge=1, le=50),
     refresh: bool = Query(False),
@@ -884,7 +859,7 @@ async def top_models(
     from src.top_models.service import TopModelsService
     from src.top_models.types import top_model_to_api_dict
 
-    svc = TopModelsService()
+    svc = TopModelsService(models_cache=models_cache)
     result = await svc.get_top_models(limit=limit, refresh=refresh, provider=provider)
 
     models = [top_model_to_api_dict(m) for m in result.models]

@@ -1,4 +1,6 @@
+import os
 import sys
+from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI
@@ -8,8 +10,14 @@ from src.api.metrics import metrics_router
 from src.api.middleware_integration import MiddlewareAwareRequestProcessor
 from src.api.routers.v1 import router as api_router
 from src.core.config import Config
+from src.core.config.accessors import (
+    cache_dir,
+    models_cache_enabled,
+    models_cache_ttl_hours,
+)
 from src.core.metrics import create_request_tracker
 from src.core.model_manager import ModelManager
+from src.models.cache import ModelsDiskCache
 
 app = FastAPI(title="Vandamme Proxy", version=__version__)
 
@@ -19,6 +27,16 @@ app.state.request_tracker = create_request_tracker()
 app.state.config = Config()  # Eager initialization at startup
 app.state.model_manager = ModelManager(app.state.config)
 app.state.middleware_processor = MiddlewareAwareRequestProcessor()
+
+# Initialize models cache if enabled (not in pytest)
+_cache_dir = Path(cache_dir())
+if models_cache_enabled() and not os.environ.get("PYTEST_CURRENT_TEST"):
+    app.state.models_cache = ModelsDiskCache(
+        cache_dir=_cache_dir,
+        ttl_hours=models_cache_ttl_hours(),
+    )
+else:
+    app.state.models_cache = None
 
 app.include_router(api_router)
 app.include_router(metrics_router, prefix="/metrics", tags=["metrics"])
