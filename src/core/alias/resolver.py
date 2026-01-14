@@ -99,13 +99,22 @@ class AliasResolver(ABC):
     - Chained alias resolution
 
     Resolvers are composed into a chain that processes resolution
-    requests in order, similar to middleware.
+    requests in priority order (lower priority values execute first).
     """
 
     @property
     @abstractmethod
     def name(self) -> str:
         """Human-readable name for logging and debugging."""
+
+    @property
+    def priority(self) -> int:
+        """Execution priority (lower values execute earlier).
+
+        Default priority is 100. Subclasses should override to define
+        their execution order in the resolution chain.
+        """
+        return 100
 
     @abstractmethod
     def can_resolve(self, context: ResolutionContext) -> bool:
@@ -137,11 +146,17 @@ class LiteralPrefixResolver(AliasResolver):
 
     The '!' prefix allows users to bypass alias resolution and use
     the exact model name provided.
+
+    Priority: 10 (highest - executes first to handle bypass requests).
     """
 
     @property
     def name(self) -> str:
         return "LiteralPrefixResolver"
+
+    @property
+    def priority(self) -> int:
+        return 10
 
     def can_resolve(self, context: ResolutionContext) -> bool:
         return context.model.startswith("!")
@@ -180,9 +195,15 @@ class ChainedAliasResolver(AliasResolver):
 
     Cycle detection prevents infinite loops, and max_chain_length
     limits recursion depth.
+
+    Priority: 20 (second - handles provider:model format).
     """
 
     DEFAULT_MAX_CHAIN_LENGTH: int = 10
+
+    @property
+    def priority(self) -> int:
+        return 20
 
     def __init__(self, max_chain_length: int = DEFAULT_MAX_CHAIN_LENGTH) -> None:
         """Initialize chained alias resolver.
@@ -275,11 +296,17 @@ class SubstringMatcher(AliasResolver):
 
     Creates variations (underscores/hyphens) and finds all matching aliases.
     Stores matches in context metadata for the MatchRanker to use.
+
+    Priority: 30 (third - finds substring matches).
     """
 
     @property
     def name(self) -> str:
         return "SubstringMatcher"
+
+    @property
+    def priority(self) -> int:
+        return 30
 
     def can_resolve(self, context: ResolutionContext) -> bool:
         return bool(context.aliases) and not context.model.startswith("!")
@@ -329,8 +356,8 @@ class SubstringMatcher(AliasResolver):
         if not matches:
             return None
 
-        # Return a result with matches but was_resolved=False
-        # This signals to the chain that matches were found but need ranking
+        # Return matches in the result for the chain to pass to MatchRanker
+        # This is the elegant way - the chain extracts matches and updates context
         return ResolutionResult(
             resolved_model=context.model,
             provider=context.provider,
@@ -348,29 +375,40 @@ class MatchRanker(AliasResolver):
     2. Longest match
     3. Default provider preference
     4. Alphabetical (provider, alias)
+
+    Priority: 40 (fourth - ranks and selects best match from SubstringMatcher results).
     """
 
     @property
     def name(self) -> str:
         return "MatchRanker"
 
+    @property
+    def priority(self) -> int:
+        return 40
+
     def can_resolve(self, context: ResolutionContext) -> bool:
-        return False  # MatchRanker is called directly by the chain
+        """MatchRanker processes matches found by SubstringMatcher."""
+        return bool(context.metadata.get("substring_matches"))
 
     def resolve(
         self, context: ResolutionContext, matches: list[Match] | None = None
     ) -> ResolutionResult | None:
-        """Rank and select the best match.
+        """Rank and select the best match from context metadata.
 
         Args:
-            context: The resolution context
-            matches: Optional pre-fetched matches list
+            context: The resolution context containing matches in metadata
+            matches: Optional pre-fetched matches list (deprecated, use context.metadata)
 
         Returns:
             ResolutionResult with the best match
         """
+        # Read matches from context metadata (new way) or parameter (legacy compat)
         if not matches:
-            return None
+            matches_from_context = context.metadata.get("substring_matches")
+            if not matches_from_context:
+                return None
+            matches = list(matches_from_context)
 
         # Sort matches
         matches.sort(
@@ -415,26 +453,31 @@ class MatchRanker(AliasResolver):
 
 
 class AliasResolverChain:
-    """Orchestrates alias resolution through a chain of resolvers.
+    """Orchestrates alias resolution through a priority-based chain of resolvers.
 
     Inspired by MiddlewareChain in src/middleware/base.py.
 
     The chain processes resolution requests by passing the context
-    through each resolver in order. The first resolver to return
-    a non-None result wins.
+    through each resolver in priority order (lower priority values execute first).
+    Context metadata allows resolvers to communicate between phases.
+
+    The first resolver to return a non-None result wins.
     """
 
     def __init__(self, resolvers: list[AliasResolver]) -> None:
         """Initialize the resolver chain.
 
         Args:
-            resolvers: List of resolvers to execute in order
+            resolvers: List of resolvers to execute in priority order
         """
         self._resolvers = resolvers
         self._logger = getLogger(f"{__name__}.AliasResolverChain")
 
     def resolve(self, context: ResolutionContext) -> ResolutionResult:
-        """Resolve alias through the chain of resolvers.
+        """Resolve alias through the priority-based chain of resolvers.
+
+        Resolvers execute in priority order (lower values first).
+        Context metadata allows SubstringMatcher to pass matches to MatchRanker.
 
         Args:
             context: The resolution context
@@ -443,75 +486,77 @@ class AliasResolverChain:
             ResolutionResult from the first resolver that handles the request,
             or a default result if no resolver handles it
         """
-        # Phase 1: Try LiteralPrefixResolver (handles ! prefix)
-        for resolver in self._resolvers:
-            if isinstance(resolver, LiteralPrefixResolver) and resolver.can_resolve(context):
-                result = resolver.resolve(context)
-                if result is not None:
-                    return result
+        # Sort resolvers by priority (lower values execute first)
+        sorted_resolvers = sorted(self._resolvers, key=lambda r: r.priority)
 
-        # Phase 2: Try ChainedAliasResolver (for provider:model format)
-        for resolver in self._resolvers:
-            if isinstance(resolver, ChainedAliasResolver) and resolver.can_resolve(context):
-                result = resolver.resolve(context)
-                if result and result.was_resolved:
-                    return result
+        # Track the current context (updated by resolvers that return new contexts)
+        current_context = context
 
-        # Phase 3: Run SubstringMatcher to find matches
-        match_result: ResolutionResult | None = None
-        for resolver in self._resolvers:
-            if isinstance(resolver, SubstringMatcher) and resolver.can_resolve(context):
-                self._logger.debug(f"Running {resolver.name} to find matches")
-                match_result = resolver.resolve(context)
-                break
+        for resolver in sorted_resolvers:
+            if not resolver.can_resolve(current_context):
+                continue
 
-        # Phase 4: Apply ChainedAliasResolver to the matched result (follow chains)
-        if match_result and match_result.matches:
-            # We have matches - run ChainedAliasResolver on each to follow chains
-            best_match = None
+            self._logger.debug(
+                f"[{resolver.name}] (priority={resolver.priority}) "
+                f"Processing model='{current_context.model}' "
+                f"provider={current_context.provider}"
+            )
 
-            for resolver in self._resolvers:
-                if isinstance(resolver, MatchRanker):
-                    # First rank to find the best match
-                    matches_list = list(match_result.matches)
-                    ranked_result = resolver.resolve(context, matches_list)
-                    if ranked_result and ranked_result.was_resolved:
-                        best_match = ranked_result
-                        break
+            result = resolver.resolve(current_context)
 
-            if best_match:
-                # Now follow any chains on the best match
-                for resolver in self._resolvers:
-                    if isinstance(resolver, ChainedAliasResolver):
-                        # Create a new context with the matched model
-                        chain_context = ResolutionContext(
-                            model=best_match.resolved_model,
-                            provider=best_match.provider,
-                            default_provider=context.default_provider,
-                            aliases=context.aliases,
-                        )
-                        chain_result = resolver.resolve(chain_context)
-                        if chain_result and chain_result.was_resolved:
-                            # Merge the resolution paths
-                            merged_path = best_match.resolution_path + chain_result.resolution_path
-                            return ResolutionResult(
-                                resolved_model=chain_result.resolved_model,
-                                provider=chain_result.provider,
-                                was_resolved=True,
-                                resolution_path=merged_path,
+            # If resolver returned any result, handle it
+            if result is not None:
+                # If was_resolved=True (successful resolution), check for chains
+                if result.was_resolved:
+                    # After MatchRanker selects a match, check if it needs chain following
+                    # Look for ChainedAliasResolver and re-run on the resolved model
+                    for chain_resolver in sorted_resolvers:
+                        if isinstance(chain_resolver, ChainedAliasResolver):
+                            # Check if the resolved model might be an alias
+                            resolved_model = result.resolved_model
+                            provider = (
+                                result.provider
+                                or current_context.provider
+                                or current_context.default_provider
                             )
-                        else:
-                            # No chain to follow, return the best match
-                            return best_match
+                            if (
+                                ":" in resolved_model
+                                or resolved_model in current_context.aliases.get(provider, {})
+                            ):
+                                # Create a new context with the resolved model to follow chains
+                                chain_context = ResolutionContext(
+                                    model=resolved_model,
+                                    provider=provider,
+                                    default_provider=current_context.default_provider,
+                                    aliases=current_context.aliases,
+                                )
+                                chain_result = chain_resolver.resolve(chain_context)
+                                if chain_result and chain_result.was_resolved:
+                                    # Merge the resolution paths
+                                    merged_path = (
+                                        result.resolution_path + chain_result.resolution_path
+                                    )
+                                    return ResolutionResult(
+                                        resolved_model=chain_result.resolved_model,
+                                        provider=chain_result.provider,
+                                        was_resolved=True,
+                                        resolution_path=merged_path,
+                                    )
+                    return result
 
-        # Phase 5: Try MatchRanker if we have matches from SubstringMatcher
-        if match_result and match_result.matches:
-            for resolver in self._resolvers:
-                if isinstance(resolver, MatchRanker):
-                    matches_list = list(match_result.matches)
-                    result = resolver.resolve(context, matches_list)
-                    if result and result.was_resolved:
-                        return result
+                # If result has matches (from SubstringMatcher), store in context
+                # and continue to MatchRanker
+                if result.matches:
+                    current_context = current_context.with_updates(
+                        metadata={**current_context.metadata, "substring_matches": result.matches}
+                    )
+                    continue
+
+                # Special case: LiteralPrefixResolver returns was_resolved=False
+                # but with a modified resolved_model. This indicates "bypass" intent.
+                # We check if the resolved_model differs from input.
+                if result.resolved_model != current_context.model:
+                    return result
 
         # No resolver handled it - return original
         self._logger.debug(f"No resolver matched, returning original: '{context.model}'")

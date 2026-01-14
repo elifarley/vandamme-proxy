@@ -2,7 +2,6 @@ import logging
 import os
 import time
 import uuid
-from collections.abc import AsyncGenerator
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -11,19 +10,10 @@ import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 
-from src.api.services.key_rotation import build_api_key_params
 from src.api.services.non_streaming_handlers import get_non_streaming_handler
 from src.api.services.provider_context import resolve_provider_context
-from src.api.services.streaming import (
-    sse_headers,
-    streaming_response,
-    with_streaming_error_handling,
-)
 from src.api.services.streaming_handlers import get_streaming_handler
 from src.api.utils.yaml_formatter import format_health_yaml
-from src.conversion.anthropic_sse_to_openai import anthropic_sse_to_openai_chat_completions_sse
-from src.conversion.anthropic_to_openai import anthropic_message_to_openai_chat_completion
-from src.conversion.openai_to_anthropic import openai_chat_completions_to_anthropic_messages
 from src.core.config import Config
 from src.core.config.accessors import log_request_metrics
 from src.core.config.runtime import get_config
@@ -186,11 +176,10 @@ async def chat_completions(
 ) -> JSONResponse | StreamingResponse:
     """OpenAI-compatible chat completions endpoint.
 
+    Uses strategy pattern to handle different provider formats elegantly.
     - If the resolved provider is OpenAI-format: passthrough request/response.
-    - If the resolved provider is Anthropic-format: (future) translate OpenAI request to
+    - If the resolved provider is Anthropic-format: translate OpenAI request to
       Anthropic Messages API and translate response back.
-
-    For now, this endpoint supports OpenAI-format providers.
     """
     request_id = str(uuid.uuid4())
 
@@ -217,10 +206,13 @@ async def chat_completions(
         # /v1/chat/completions doesn't carry Claude tool_use/tool_result blocks.
         # Tool call counts are derived from upstream usage where available.
     else:
+        tracker = None
         metrics = None
+        provider_name = None
+        resolved_model = None
 
     with ConversationLogger.correlation_context(request_id):
-        start_time = time.time()
+        time.time()
 
         provider_ctx = await resolve_provider_context(
             model=request.model,
@@ -232,7 +224,7 @@ async def chat_completions(
         resolved_model = provider_ctx.resolved_model
         provider_config = provider_ctx.provider_config
 
-        if log_request_metrics() and metrics:
+        if log_request_metrics() and metrics and tracker:
             metrics.provider = provider_name  # type: ignore[assignment]
 
             # Metrics must always use the resolved target model (no provider prefix).
@@ -260,148 +252,36 @@ async def chat_completions(
 
         openai_client = cfg.provider_manager.get_client(provider_name, client_api_key)
 
-        provider_api_key = provider_ctx.provider_api_key
+        # Get appropriate handler and execute
+        from src.api.services.chat_completions_handlers import get_chat_completions_handler
 
-        if provider_config.is_anthropic_format:
-            # Translate OpenAI Chat Completions -> Anthropic Messages request.
-            anthropic_request = openai_chat_completions_to_anthropic_messages(
-                openai_request=openai_request,
-                resolved_model=resolved_model,
-            )
-
-            if request.stream:
-                api_key_params = build_api_key_params(
-                    provider_config=provider_config,
-                    provider_name=provider_name,
-                    client_api_key=client_api_key,
-                    provider_api_key=provider_api_key,
-                    config=cfg,
-                )
-                anthropic_stream = openai_client.create_chat_completion_stream(
-                    anthropic_request,
-                    request_id,
-                    **api_key_params,
-                )
-
-                async def anthropic_stream_as_openai() -> AsyncGenerator[str, None]:
-                    async for chunk in anthropic_sse_to_openai_chat_completions_sse(
-                        anthropic_sse_lines=anthropic_stream,
-                        model=resolved_model,
-                        completion_id=f"chatcmpl-{request_id}",
-                    ):
-                        yield chunk
-
-                return streaming_response(
-                    stream=with_streaming_error_handling(
-                        original_stream=anthropic_stream_as_openai(),
-                        http_request=http_request,
-                        request_id=request_id,
-                        provider_name=provider_name,
-                        metrics_enabled=log_request_metrics(),
-                    ),
-                    headers=sse_headers(),
-                )
-
-            # Non-streaming path: ensure metrics are finalized.
-            # Streaming finalization is handled by with_streaming_error_handling.
-            try:
-                api_key_params = build_api_key_params(
-                    provider_config=provider_config,
-                    provider_name=provider_name,
-                    client_api_key=client_api_key,
-                    provider_api_key=provider_api_key,
-                    config=cfg,
-                )
-                anthropic_response = await openai_client.create_chat_completion(
-                    anthropic_request,
-                    request_id,
-                    **api_key_params,
-                )
-            except Exception as e:
-                if log_request_metrics() and metrics:
-                    metrics.error = str(e)
-                    metrics.error_type = ErrorType.UPSTREAM_ERROR
-                    await tracker.end_request(request_id)
-                # Map timeout errors to 504 Gateway Timeout
-                if _is_timeout_error(e):
-                    raise _map_timeout_to_504() from e
-                raise
-
-            openai_response = anthropic_message_to_openai_chat_completion(
-                anthropic=anthropic_response
-            )
-
-            if log_request_metrics() and metrics:
-                await tracker.end_request(request_id)
-            return JSONResponse(status_code=200, content=openai_response)
-
-        # OpenAI-format providers: passthrough request/response.
-
-        if request.stream:
-            api_key_params = build_api_key_params(
-                provider_config=provider_config,
-                provider_name=provider_name,
-                client_api_key=client_api_key,
-                provider_api_key=provider_api_key,
-                config=cfg,
-            )
-            openai_stream = openai_client.create_chat_completion_stream(
-                openai_request,
-                request_id,
-                **api_key_params,
-            )
-
-            async def openai_stream_as_sse_lines() -> AsyncGenerator[str, None]:
-                async for chunk in openai_stream:
-                    # Ensure SSE lines end with newline for broad client compatibility.
-                    yield f"{chunk}\n"
-
-            return streaming_response(
-                stream=with_streaming_error_handling(
-                    original_stream=openai_stream_as_sse_lines(),
-                    http_request=http_request,
-                    request_id=request_id,
-                    provider_name=provider_name,
-                    metrics_enabled=log_request_metrics(),
-                ),
-                headers=sse_headers(),
-            )
+        handler = get_chat_completions_handler(provider_config)
 
         try:
-            api_key_params = build_api_key_params(
-                provider_config=provider_config,
+            return await handler.handle(
+                openai_request=openai_request,
+                resolved_model=resolved_model,
                 provider_name=provider_name,
+                provider_config=provider_config,
+                provider_api_key=provider_ctx.provider_api_key,
                 client_api_key=client_api_key,
-                provider_api_key=provider_api_key,
                 config=cfg,
-            )
-            openai_response = await openai_client.create_chat_completion(
-                openai_request,
-                request_id,
-                **api_key_params,
+                openai_client=openai_client,
+                request_id=request_id,
+                http_request=http_request,
+                is_metrics_enabled=log_request_metrics(),
+                metrics=metrics,
+                tracker=tracker,
             )
         except Exception as e:
-            if log_request_metrics() and metrics:
-                metrics.error = str(e)
-                metrics.error_type = ErrorType.UPSTREAM_ERROR
-                await tracker.end_request(request_id)
-            # Map timeout errors to 504 Gateway Timeout
             if _is_timeout_error(e):
+                if log_request_metrics() and metrics and tracker:
+                    metrics.error = "Upstream timeout"
+                    metrics.error_type = ErrorType.TIMEOUT
+                    metrics.end_time = time.time()
+                    await tracker.end_request(request_id)
                 raise _map_timeout_to_504() from e
             raise
-
-        # Basic timing log (metrics system is handled elsewhere for /v1/messages).
-        duration_ms = (time.time() - start_time) * 1000
-        logger.debug(
-            "OpenAI chat/completions completed in %.0fms (provider=%s model=%s)",
-            duration_ms,
-            provider_name,
-            resolved_model,
-        )
-
-        if log_request_metrics() and metrics:
-            await tracker.end_request(request_id)
-        return JSONResponse(status_code=200, content=openai_response)
 
 
 @router.post("/v1/messages", response_model=None)
