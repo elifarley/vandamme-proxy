@@ -126,9 +126,9 @@ class ConfigSchema:
 
     LOG_REQUEST_METRICS = EnvVarSpec(
         name="LOG_REQUEST_METRICS",
-        default=False,
+        default=True,
         type_hint=bool,
-        description="Enable request metrics logging",
+        description="Enable request metrics logging (enabled by default)",
     )
 
     MAX_TOKENS_LIMIT = EnvVarSpec(

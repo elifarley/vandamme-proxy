@@ -65,7 +65,7 @@ async def get_active_requests(
             content={
                 "disabled": True,
                 "message": "Request metrics logging is disabled",
-                "suggestion": "Set LOG_REQUEST_METRICS=true to enable tracking",
+                "suggestion": "Set LOG_REQUEST_METRICS=false to disable tracking",
                 "active_requests": [],
             },
             headers={"Cache-Control": "no-cache"},
@@ -103,7 +103,7 @@ async def stream_active_requests(
             data = {
                 "disabled": True,
                 "message": "Request metrics logging is disabled",
-                "suggestion": "Set LOG_REQUEST_METRICS=true to enable tracking",
+                "suggestion": "Set LOG_REQUEST_METRICS=false to disable tracking",
             }
             yield "event: disabled\n"
             yield f"data: {json.dumps(data)}\n\n"
@@ -213,7 +213,7 @@ async def get_running_totals(
             yaml_data = format_running_totals_yaml(
                 {
                     "# Message": "Request metrics logging is disabled",
-                    "# Suggestion": "Set LOG_REQUEST_METRICS=true to enable tracking",
+                    "# Suggestion": "Set LOG_REQUEST_METRICS=false to disable tracking",
                 }
             )
             return PlainTextResponse(content=yaml_data, media_type="text/yaml; charset=utf-8")
