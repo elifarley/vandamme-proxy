@@ -184,3 +184,4 @@ src/_version.py
 /.claude/qg-reports/
 /.claude/settings.local.json
 /vandamme-config.toml
+.tmp*

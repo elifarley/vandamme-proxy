@@ -1,6 +1,5 @@
 import logging
 import time
-from datetime import datetime
 from typing import Any
 
 import httpx
@@ -12,7 +11,9 @@ from src.api.services.endpoint_services import (
     AliasesListService,
     HealthCheckService,
     ModelsListService,
+    TestConnectionService,
     TokenCountService,
+    TopModelsEndpointService,
 )
 from src.api.services.non_streaming_handlers import get_non_streaming_handler
 from src.api.services.provider_context import resolve_provider_context
@@ -110,36 +111,6 @@ async def validate_api_key(
         )
 
     return client_api_key
-
-
-def _is_error_response(response: dict[str, Any]) -> bool:
-    """
-    Detect if a provider response is an error format.
-
-    Checks for common error response patterns across different providers:
-    - Explicit success: false flag
-    - Error code with missing choices
-    - Error field presence
-
-    Args:
-        response: The response dictionary from a provider
-
-    Returns:
-        True if this appears to be an error response
-    """
-    if not isinstance(response, dict):
-        return False
-
-    # Check explicit error indicators
-    if response.get("success") is False:
-        return True
-
-    # Check for error code with missing choices
-    if "code" in response and not response.get("choices"):
-        return True
-
-    # Check for error field
-    return "error" in response
 
 
 @router.post("/v1/chat/completions", response_model=None)
@@ -313,11 +284,21 @@ async def _handle_non_streaming(ctx: Any) -> JSONResponse:
 
 async def _finalize_metrics_on_error(ctx: Any, error_type: str) -> None:
     """Finalize metrics when an HTTP exception occurs."""
-    if log_request_metrics() and ctx.metrics:
-        ctx.metrics.error = "HTTP exception"
-        ctx.metrics.error_type = error_type
-        ctx.metrics.end_time = time.time()
-        await ctx.tracker.end_request(ctx.request_id)
+    from src.api.services.metrics_orchestrator import (
+        MetricsContext,
+        MetricsOrchestrator,
+    )
+
+    # Create MetricsContext from RequestContext for unified error handling
+    metrics_ctx = MetricsContext(
+        request_id=ctx.request_id,
+        tracker=ctx.tracker,
+        metrics=ctx.metrics,
+        is_enabled=log_request_metrics(),
+    )
+
+    orchestrator = MetricsOrchestrator(config=ctx.config)
+    await orchestrator.finalize_on_error(metrics_ctx, "HTTP exception", ErrorType(error_type))
 
 
 async def _handle_unexpected_error(
@@ -325,18 +306,25 @@ async def _handle_unexpected_error(
     exception: Exception,
 ) -> JSONResponse:
     """Handle unexpected errors with proper logging and metrics."""
-    from src.api.services.metrics_orchestrator import MetricsOrchestrator
+    from src.api.services.metrics_orchestrator import (
+        MetricsContext,
+        MetricsOrchestrator,
+    )
 
     duration_ms = (time.time() - ctx.start_time) * 1000
-    MetricsOrchestrator(config=ctx.config)
+    orchestrator = MetricsOrchestrator(config=ctx.config)
+
+    # Create MetricsContext from RequestContext for unified error handling
+    metrics_ctx = MetricsContext(
+        request_id=ctx.request_id,
+        tracker=ctx.tracker,
+        metrics=ctx.metrics,
+        is_enabled=log_request_metrics(),
+    )
 
     # Check for timeout
     if _is_timeout_error(exception):
-        if log_request_metrics() and ctx.metrics and ctx.tracker:
-            ctx.metrics.error = "Upstream timeout"
-            ctx.metrics.error_type = ErrorType.TIMEOUT
-            ctx.metrics.end_time = time.time()
-            await ctx.tracker.end_request(ctx.request_id)
+        await orchestrator.finalize_on_timeout(metrics_ctx)
         raise _map_timeout_to_504() from exception
 
     # Classify error
@@ -345,12 +333,8 @@ async def _handle_unexpected_error(
     else:
         error_message = str(exception)
 
-    # Update and finalize metrics
-    if log_request_metrics() and ctx.metrics:
-        ctx.metrics.error = error_message
-        ctx.metrics.error_type = ErrorType.UNEXPECTED_ERROR
-        ctx.metrics.end_time = time.time()
-        await ctx.tracker.end_request(ctx.request_id)
+    # Finalize metrics using orchestrator
+    await orchestrator.finalize_on_error(metrics_ctx, error_message, ErrorType.UNEXPECTED_ERROR)
 
     # Log error
     if log_request_metrics():
@@ -400,65 +384,11 @@ async def health_check(cfg: Config = Depends(get_config)) -> Response:
 
 
 @router.get("/test-connection")
-async def test_connection(cfg: Config = Depends(get_config)) -> JSONResponse:
-    """Test API connectivity to the default provider"""
-    try:
-        # Get the default provider client
-        default_client = cfg.provider_manager.get_client(cfg.provider_manager.default_provider)
-
-        # Simple test request to verify API connectivity
-        test_response = await default_client.create_chat_completion(
-            {
-                "model": "gpt-4o-mini",  # Use a common model that most providers support
-                "messages": [{"role": "user", "content": "Hello"}],
-                "max_tokens": 20,  # Minimum value that most providers accept
-            }
-        )
-
-        # Add defensive check
-        if test_response is None:
-            return JSONResponse(
-                status_code=503,
-                content={
-                    "status": "failed",
-                    "message": (
-                        f"Provider {cfg.provider_manager.default_provider} returned None response"
-                    ),
-                    "provider": cfg.provider_manager.default_provider,
-                    "error": "None response from provider",
-                },
-            )
-
-        return JSONResponse(
-            status_code=200,
-            content={
-                "status": "success",
-                "message": (
-                    f"Successfully connected to {cfg.provider_manager.default_provider} API"
-                ),
-                "provider": cfg.provider_manager.default_provider,
-                "model_used": "gpt-4o-mini",
-                "timestamp": datetime.now().isoformat(),
-                "response_id": test_response.get("id", "unknown"),
-            },
-        )
-
-    except Exception as e:
-        logger.error(f"API connectivity test failed: {e}")
-        return JSONResponse(
-            status_code=503,
-            content={
-                "status": "failed",
-                "error_type": "API Error",
-                "message": str(e),
-                "timestamp": datetime.now().isoformat(),
-                "suggestions": [
-                    "Check your OPENAI_API_KEY is valid",
-                    "Verify your API key has the necessary permissions",
-                    "Check if you have reached rate limits",
-                ],
-            },
-        )
+async def test_connection(cfg: Config = Depends(get_config)) -> Response:
+    """Test API connectivity to the default provider."""
+    service = TestConnectionService(config=cfg)
+    result = await service.execute()
+    return result.to_response()
 
 
 async def fetch_models_unauthenticated(
@@ -557,46 +487,19 @@ async def top_models(
     refresh: bool = Query(False),
     provider: str | None = Query(None),
     include_cache_info: bool = Query(False),
-) -> JSONResponse:
+) -> Response:
     """List curated top models (proxy metadata, not part of /v1 surface).
 
     This endpoint is intended as a dashboard-friendly discovery contract.
     """
-    from src.top_models.service import TopModelsService
-    from src.top_models.types import top_model_to_api_dict
-
-    svc = TopModelsService(models_cache=models_cache)
-    result = await svc.get_top_models(limit=limit, refresh=refresh, provider=provider)
-
-    models = [top_model_to_api_dict(m) for m in result.models]
-    providers_raw = [m.get("provider") for m in models if isinstance(m.get("provider"), str)]
-    providers: list[str] = sorted({p for p in providers_raw if isinstance(p, str)})
-
-    sub_providers_raw = [
-        m.get("sub_provider") for m in models if isinstance(m.get("sub_provider"), str)
-    ]
-    sub_providers: list[str] = sorted({p for p in sub_providers_raw if isinstance(p, str)})
-
-    meta: dict[str, Any] = {
-        "excluded_rules": list(svc._cfg.exclude),
-    }
-
-    if include_cache_info:
-        meta["rankings_file"] = str(svc._cfg.rankings_file)
-
-    return JSONResponse(
-        status_code=200,
-        content={
-            "object": "top_models",
-            "source": result.source,
-            "last_updated": result.last_updated.isoformat(),
-            "providers": providers,
-            "sub_providers": sub_providers,
-            "models": models,
-            "suggested_aliases": result.aliases,
-            "meta": meta,
-        },
+    service = TopModelsEndpointService(config=cfg, models_cache=models_cache)
+    result = await service.execute(
+        limit=limit,
+        refresh=refresh,
+        provider=provider,
+        include_cache_info=include_cache_info,
     )
+    return result.to_response()
 
 
 @router.get("/")

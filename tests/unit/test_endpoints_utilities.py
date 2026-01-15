@@ -123,66 +123,6 @@ class TestLogTraceback:
 
 
 @pytest.mark.unit
-class TestIsErrorResponse:
-    """Test the _is_error_response utility function."""
-
-    def test_returns_false_for_non_dict(self):
-        """Should return False for non-dict input."""
-        from src.api.endpoints import _is_error_response
-
-        result = _is_error_response("not a dict")
-        assert result is False
-
-        result = _is_error_response(None)
-        assert result is False
-
-        result = _is_error_response(123)
-        assert result is False
-
-    def test_returns_true_when_success_is_false(self):
-        """Should detect explicit success: false flag."""
-        from src.api.endpoints import _is_error_response
-
-        response = {"success": False, "data": {}}
-        assert _is_error_response(response) is True
-
-    def test_returns_false_when_success_is_true(self):
-        """Should return False when success is explicitly True."""
-        from src.api.endpoints import _is_error_response
-
-        response = {"success": True, "data": {}}
-        assert _is_error_response(response) is False
-
-    def test_returns_true_for_error_code_without_choices(self):
-        """Should detect error code in OpenAI-style responses."""
-        from src.api.endpoints import _is_error_response
-
-        response = {"error": {"code": "invalid_api_key"}, "choices": []}
-        assert _is_error_response(response) is True
-
-    def test_returns_true_for_error_field_presence(self):
-        """Should detect presence of error field."""
-        from src.api.endpoints import _is_error_response
-
-        response = {"error": {"message": "Something went wrong"}}
-        assert _is_error_response(response) is True
-
-    def test_returns_false_for_valid_response(self):
-        """Should return False for valid responses."""
-        from src.api.endpoints import _is_error_response
-
-        response = {"choices": [{"message": {"content": "Hello"}}]}
-        assert _is_error_response(response) is False
-
-    def test_returns_false_for_empty_dict(self):
-        """Should return False for empty dictionary."""
-        from src.api.endpoints import _is_error_response
-
-        result = _is_error_response({})
-        assert result is False
-
-
-@pytest.mark.unit
 class TestCountToolCalls:
     """Test the count_tool_calls utility function."""
 

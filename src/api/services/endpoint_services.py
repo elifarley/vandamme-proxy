@@ -583,3 +583,193 @@ class AliasesListService:
             pass
 
         return {}
+
+
+@dataclass(frozen=True, slots=True)
+class TestConnectionResult:
+    """Structured result from /test-connection endpoint."""
+
+    status: int
+    content: dict[str, Any]
+
+    def to_response(self) -> Response:
+        """Convert to FastAPI response."""
+        return JSONResponse(status_code=self.status, content=self.content)
+
+
+@dataclass(frozen=True, slots=True)
+class TopModelsEndpointResult:
+    """Structured result from /top-models endpoint."""
+
+    status: int
+    content: dict[str, Any]
+
+    def to_response(self) -> Response:
+        """Convert to FastAPI response."""
+        return JSONResponse(status_code=self.status, content=self.content)
+
+
+class TestConnectionService:
+    """Service for /test-connection endpoint logic.
+
+    Tests API connectivity to the default provider by making a minimal
+    chat completion request.
+    """
+
+    def __init__(self, config: Config) -> None:
+        """Initialize TestConnectionService.
+
+        Args:
+            config: Application configuration
+        """
+        self._config = config
+
+    async def execute(self) -> TestConnectionResult:
+        """Execute connectivity test to default provider.
+
+        Returns:
+            TestConnectionResult with test status and details
+        """
+        try:
+            default_provider = self._config.provider_manager.default_provider
+            default_client = self._config.provider_manager.get_client(default_provider)
+
+            # Minimal test request to verify API connectivity
+            test_response = await default_client.create_chat_completion(
+                {
+                    "model": "gpt-4o-mini",
+                    "messages": [{"role": "user", "content": "Hello"}],
+                    "max_tokens": 20,
+                }
+            )
+
+            # Defensive check for None response
+            if test_response is None:
+                return TestConnectionResult(
+                    status=503,
+                    content={
+                        "status": "failed",
+                        "message": f"Provider {default_provider} returned None response",
+                        "provider": default_provider,
+                        "error": "None response from provider",
+                    },
+                )
+
+            return TestConnectionResult(
+                status=200,
+                content={
+                    "status": "success",
+                    "message": f"Successfully connected to {default_provider} API",
+                    "provider": default_provider,
+                    "model_used": "gpt-4o-mini",
+                    "timestamp": datetime.now().isoformat(),
+                    "response_id": test_response.get("id", "unknown"),
+                },
+            )
+
+        except Exception as e:
+            return TestConnectionResult(
+                status=503,
+                content={
+                    "status": "failed",
+                    "error_type": "API Error",
+                    "message": str(e),
+                    "timestamp": datetime.now().isoformat(),
+                    "suggestions": [
+                        "Check your OPENAI_API_KEY is valid",
+                        "Verify your API key has the necessary permissions",
+                        "Check if you have reached rate limits",
+                    ],
+                },
+            )
+
+
+class TopModelsEndpointService:
+    """Service for /top-models endpoint logic.
+
+    Fetches curated top models and transforms them into the API response format.
+    """
+
+    def __init__(
+        self,
+        config: Config,
+        models_cache: ModelsDiskCache | None = None,
+    ) -> None:
+        """Initialize TopModelsEndpointService.
+
+        Args:
+            config: Application configuration
+            models_cache: Optional disk cache for models data
+        """
+        self._config = config
+        self._models_cache = models_cache
+
+    async def execute(
+        self,
+        limit: int = 10,
+        refresh: bool = False,
+        provider: str | None = None,
+        include_cache_info: bool = False,
+    ) -> TopModelsEndpointResult:
+        """Execute top models retrieval and transformation.
+
+        Args:
+            limit: Maximum number of models to return
+            refresh: Force refresh from upstream
+            provider: Filter by provider name
+            include_cache_info: Include cache metadata in response
+
+        Returns:
+            TopModelsEndpointResult with transformed models data
+        """
+        try:
+            from src.top_models.service import TopModelsService
+            from src.top_models.types import top_model_to_api_dict
+
+            svc = TopModelsService(models_cache=self._models_cache)
+            result = await svc.get_top_models(limit=limit, refresh=refresh, provider=provider)
+
+            models = [top_model_to_api_dict(m) for m in result.models]
+
+            # Extract unique providers and sub-providers
+            providers_raw = [
+                m.get("provider") for m in models if isinstance(m.get("provider"), str)
+            ]
+            providers: list[str] = sorted({p for p in providers_raw if isinstance(p, str)})
+
+            sub_providers_raw = [
+                m.get("sub_provider") for m in models if isinstance(m.get("sub_provider"), str)
+            ]
+            sub_providers: list[str] = sorted({p for p in sub_providers_raw if isinstance(p, str)})
+
+            # Build metadata
+            meta: dict[str, Any] = {"excluded_rules": list(svc._cfg.exclude)}
+            if include_cache_info:
+                meta["rankings_file"] = str(svc._cfg.rankings_file)
+
+            return TopModelsEndpointResult(
+                status=200,
+                content={
+                    "object": "top_models",
+                    "source": result.source,
+                    "last_updated": result.last_updated.isoformat(),
+                    "providers": providers,
+                    "sub_providers": sub_providers,
+                    "models": models,
+                    "suggested_aliases": result.aliases,
+                    "meta": meta,
+                },
+            )
+
+        except Exception as e:
+            # Return graceful error response
+            return TopModelsEndpointResult(
+                status=500,
+                content={
+                    "type": "error",
+                    "error": {
+                        "type": "api_error",
+                        "message": f"Failed to fetch top models: {str(e)}",
+                    },
+                },
+            )
