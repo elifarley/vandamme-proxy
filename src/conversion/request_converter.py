@@ -289,5 +289,6 @@ def parse_tool_result_content(content: Any) -> str:
 
     try:
         return str(content)
-    except Exception:
+    except (TypeError, ValueError, AttributeError, UnicodeError) as e:
+        logger.debug(f"Content string conversion failed: {type(e).__name__}: {e}")
         return "Unparseable content"
