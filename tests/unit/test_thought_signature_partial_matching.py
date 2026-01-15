@@ -37,7 +37,7 @@ async def test_retrieve_by_tool_calls_partial_match_uses_most_recent_in_conversa
     )
 
     got = await store.retrieve_by_tool_calls({"call_shared"}, conversation_id="conv_1")
-    assert got == [{"thought_signature": "new"}]
+    assert got == [{"thought_signature": "new", "tool_call_ids": {"call_shared", "call_b"}}]
 
 
 @pytest.mark.unit
@@ -73,5 +73,5 @@ async def test_retrieve_by_tool_calls_does_not_cross_conversations():
     got1 = await store.retrieve_by_tool_calls({"call_shared"}, conversation_id="conv_1")
     got2 = await store.retrieve_by_tool_calls({"call_shared"}, conversation_id="conv_2")
 
-    assert got1 == [{"thought_signature": "conv1"}]
-    assert got2 == [{"thought_signature": "conv2"}]
+    assert got1 == [{"thought_signature": "conv1", "tool_call_ids": {"call_shared"}}]
+    assert got2 == [{"thought_signature": "conv2", "tool_call_ids": {"call_shared"}}]

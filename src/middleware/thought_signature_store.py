@@ -76,6 +76,10 @@ class ThoughtSignatureStore:
         Supports incremental/partial sets by using **any-match** semantics and
         choosing the **most recent** valid entry among candidates.
 
+        Returns a list of reasoning_details dicts, each containing:
+        - thought_signature: str
+        - tool_call_ids: set[str] (the IDs this signature applies to)
+
         If conversation_id is provided, the match is scoped to that conversation.
         """
         if not tool_call_ids:
@@ -110,7 +114,29 @@ class ThoughtSignatureStore:
             if best is None:
                 return None
 
-            return best.reasoning_details
+            # Return reasoning_details, preserving original structure
+            # Only add tool_call_ids if not already present (for OpenAI format entries)
+            result = []
+            for rd in best.reasoning_details:
+                # If entry already has tool_call_ids, keep it as-is (OpenAI format)
+                # Otherwise, this is legacy format - add tool_call_ids for injection
+                if "tool_call_ids" in rd:
+                    # Already has tool_call_ids (OpenAI format from extraction)
+                    result.append(rd)
+                else:
+                    # Legacy format - add tool_call_ids for injection compatibility
+                    transformed = {
+                        "thought_signature": rd.get("thought_signature"),
+                        "tool_call_ids": set(best.tool_call_ids),
+                    }
+                    # Preserve any other fields from the original entry
+                    for k, v in rd.items():
+                        if k not in transformed:
+                            transformed[k] = v
+                    if transformed["thought_signature"]:
+                        result.append(transformed)
+
+            return result
 
     async def retrieve_by_conversation(self, conversation_id: str) -> list[ThoughtSignatureEntry]:
         async with self._lock:

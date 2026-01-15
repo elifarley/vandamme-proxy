@@ -75,7 +75,46 @@ class ThoughtSignatureMiddleware(Middleware):
                 )
                 if reasoning_details:
                     new_message = message.copy()
-                    new_message["reasoning_details"] = reasoning_details
+                    new_tool_calls = []
+
+                    for tc in new_message["tool_calls"]:
+                        tc_id = tc.get("id")
+                        if not tc_id:
+                            new_tool_calls.append(tc)
+                            continue
+
+                        # Find the reasoning_details entry for this tool_call
+                        matching_entry = None
+                        for rd in reasoning_details:
+                            rd_ids = rd.get("tool_call_ids", set())
+                            if tc_id in rd_ids:
+                                matching_entry = rd
+                                break
+
+                        if matching_entry and "thought_signature" in matching_entry:
+                            # Inject in OpenAI-compatible format
+                            new_tc = tc.copy()
+                            if "extra_content" not in new_tc:
+                                new_tc["extra_content"] = {}
+                            if "google" not in new_tc["extra_content"]:
+                                new_tc["extra_content"]["google"] = {}
+
+                            new_tc["extra_content"]["google"]["thought_signature"] = matching_entry[
+                                "thought_signature"
+                            ]
+
+                            # For parallel calls, only first gets the signature
+                            # Remove the entry so subsequent calls don't get it
+                            rd_ids = matching_entry.get("tool_call_ids", set())
+                            if len(rd_ids) > 1:
+                                # This is a parallel call entry - mark as used after first
+                                reasoning_details.remove(matching_entry)
+
+                            new_tool_calls.append(new_tc)
+                        else:
+                            new_tool_calls.append(tc)
+
+                    new_message["tool_calls"] = new_tool_calls
                     messages[i] = new_message
                     modified = True
 
@@ -93,21 +132,36 @@ class ThoughtSignatureMiddleware(Middleware):
         return context
 
     async def on_stream_chunk(self, context: StreamChunkContext) -> StreamChunkContext:
+        # Check for thought_signature in OpenAI format (extra_content.google.thought_signature)
+        if context.delta and "tool_calls" in context.delta:
+            tool_calls = context.delta["tool_calls"]
+            if tool_calls:
+                current_ids = context.accumulated_metadata.get("tool_call_ids", set())
+                for tool_call in tool_calls:
+                    # Track tool call IDs
+                    if tool_call.get("id"):
+                        current_ids.add(tool_call["id"])
+
+                    # Look for extra_content.google.thought_signature in delta
+                    extra_content = tool_call.get("extra_content", {})
+                    google = extra_content.get("google", {})
+                    thought_sig = google.get("thought_signature")
+
+                    if thought_sig:
+                        # Store the thought signature in the expected format
+                        current_details = context.accumulated_metadata.get("reasoning_details", [])
+                        current_details.append({"thought_signature": thought_sig})
+                        context.accumulated_metadata["reasoning_details"] = current_details
+
+                context.accumulated_metadata["tool_call_ids"] = current_ids
+
+        # Legacy support for message-level reasoning_details
         if context.delta and "reasoning_details" in context.delta:
             reasoning_details = context.delta["reasoning_details"]
             if reasoning_details:
                 current_details = context.accumulated_metadata.get("reasoning_details", [])
                 current_details.extend(reasoning_details)
                 context.accumulated_metadata["reasoning_details"] = current_details
-
-        if context.delta and "tool_calls" in context.delta:
-            tool_calls = context.delta["tool_calls"]
-            if tool_calls:
-                current_ids = context.accumulated_metadata.get("tool_call_ids", set())
-                for tool_call in tool_calls:
-                    if tool_call.get("id"):
-                        current_ids.add(tool_call["id"])
-                context.accumulated_metadata["tool_call_ids"] = current_ids
 
         return context
 

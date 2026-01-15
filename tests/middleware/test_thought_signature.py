@@ -242,7 +242,7 @@ class TestThoughtSignatureMiddleware:
 
     @pytest.mark.asyncio
     async def test_before_request_injection(self, middleware, mock_store):
-        """Test injecting thought signatures into requests."""
+        """Test injecting thought signatures into requests using OpenAI-compatible format."""
         # Pre-populate store with thought signatures
         entry = ThoughtSignatureEntry(
             message_id="msg_123",
@@ -280,11 +280,16 @@ class TestThoughtSignatureMiddleware:
         # Process request
         processed = await middleware.before_request(context)
 
-        # Check that thought signatures were injected
+        # Check that thought signatures were injected in OpenAI-compatible format
         assistant_message = processed.messages[1]
-        assert "reasoning_details" in assistant_message
-        assert len(assistant_message["reasoning_details"]) == 1
-        assert assistant_message["reasoning_details"][0]["thought_signature"] == "test_signature"
+        # Should NOT have message-level reasoning_details (that's the old format)
+        assert "reasoning_details" not in assistant_message
+        # Should have extra_content.google.thought_signature on the tool_call
+        tool_call = assistant_message["tool_calls"][0]
+        assert "extra_content" in tool_call
+        assert "google" in tool_call["extra_content"]
+        assert "thought_signature" in tool_call["extra_content"]["google"]
+        assert tool_call["extra_content"]["google"]["thought_signature"] == "test_signature"
 
     @pytest.mark.asyncio
     async def test_after_response_extraction(self, middleware, mock_store):

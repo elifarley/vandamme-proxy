@@ -40,9 +40,9 @@ async def test_thought_signature_streaming_persists_and_injects_from_middleware_
 
     # Ensure persistence happened
     stored = await store.retrieve_by_tool_calls({"call_123"}, conversation_id="conv_1")
-    assert stored == [{"thought_signature": "sig1", "data": "x"}]
+    assert stored == [{"thought_signature": "sig1", "data": "x", "tool_call_ids": {"call_123"}}]
 
-    # Ensure injection happens on subsequent request
+    # Ensure injection happens on subsequent request (in OpenAI format)
     next_req = RequestContext(
         messages=[
             {
@@ -58,9 +58,11 @@ async def test_thought_signature_streaming_persists_and_injects_from_middleware_
     )
 
     injected_ctx = await middleware.before_request(next_req)
-    assert injected_ctx.messages[0]["reasoning_details"] == [
-        {"thought_signature": "sig1", "data": "x"}
-    ]
+    # Should inject in OpenAI format: extra_content.google.thought_signature
+    tool_call = injected_ctx.messages[0]["tool_calls"][0]
+    assert "extra_content" in tool_call
+    assert "google" in tool_call["extra_content"]
+    assert tool_call["extra_content"]["google"]["thought_signature"] == "sig1"
 
     await middleware.cleanup()
 

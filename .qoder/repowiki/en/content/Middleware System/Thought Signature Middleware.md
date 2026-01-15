@@ -23,7 +23,9 @@
 9. [Conclusion](#conclusion)
 
 ## Introduction
-This document explains the Thought Signature Middleware feature designed for Google Gemini models. It enables seamless function calling across multi-turn conversations by persisting reasoning details extracted from model responses and injecting them back into assistant messages that include tool calls. The middleware supports both non-streaming and streaming responses, accumulating partial data during streaming and finalizing storage upon completion.
+This document explains the Thought Signature Middleware feature designed for Google Gemini models. It enables seamless function calling across multi-turn conversations by persisting thought signatures extracted from model responses and injecting them back into tool calls in subsequent requests. The middleware supports both non-streaming and streaming responses, accumulating partial data during streaming and finalizing storage upon completion.
+
+The middleware uses **Google's OpenAI-compatible format** for thought signatures, injecting them as `extra_content.google.thought_signature` on each tool_call rather than at the message level. This ensures compatibility with OpenAI-format proxies and direct Google API access.
 
 The middleware is provider-agnostic in its interface but activates automatically for Gemini-related models. It relies on a lightweight in-memory store with TTL-based eviction and conversation-scoped indexing to ensure correctness and performance.
 
@@ -328,6 +330,72 @@ Recommendations:
 - Monitor store statistics to detect cache pressure and adjust parameters accordingly.
 
 [No sources needed since this section provides general guidance]
+
+## OpenAI-Compatible Format
+
+The middleware implements Google's OpenAI compatibility mode for thought signatures as specified in [Google's Thought Signature documentation](https://ai.google.dev/gemini-api/docs/thought-signatures).
+
+### Injection Format
+
+When injecting thought signatures into requests, the middleware uses the following format:
+
+```json
+{
+  "tool_calls": [
+    {
+      "id": "call_abc123",
+      "type": "function",
+      "function": {"name": "get_weather", "arguments": "{}"},
+      "extra_content": {
+        "google": {
+          "thought_signature": "signature_string_here"
+        }
+      }
+    }
+  ]
+}
+```
+
+**Key points:**
+- Thought signatures are injected on each `tool_call` object, not at the message level
+- The `extra_content.google.thought_signature` path follows Google's OpenAI compatibility specification
+- For parallel function calls, only the first tool_call receives the thought signature (per Google's specification)
+- For sequential (multi-step) function calls, each tool_call gets its own thought signature
+
+### Extraction Format
+
+The middleware extracts thought signatures from responses in two formats:
+
+1. **OpenAI format** (priority): Extracts from `tool_call.extra_content.google.thought_signature`
+2. **Legacy format** (fallback): Extracts from message-level `reasoning_details` field
+
+This dual-format support ensures backward compatibility while implementing the correct OpenAI-compatible format.
+
+### Example Flow
+
+```mermaid
+sequenceDiagram
+    participant User as User
+    participant Proxy as Vandamme Proxy
+    participant Google as Google Gemini API
+
+    Note over User,Google: First request (function call)
+    User->>Proxy: Claude API request with tools
+    Proxy->>Google: OpenAI-format request
+    Google-->>Proxy: Response with thought_signature in tool_call.extra_content.google
+    Proxy->>Proxy: Extract and cache thought_signature
+
+    Note over User,Google: Second request (with conversation history)
+    User->>Proxy: Claude API request with conversation history
+    Proxy->>Proxy: Inject thought_signature into tool_call.extra_content.google
+    Proxy->>Google: OpenAI-format request with thought signatures
+    Google-->>Proxy: Success (no validation error)
+    Proxy-->>User: Final response
+```
+
+**Section sources**
+- [thought_signature.py](file://src/middleware/thought_signature.py#L56-L121)
+- [thought_signature_extract.py](file://src/middleware/thought_signature_extract.py#L30-L84)
 
 ## Troubleshooting Guide
 
