@@ -1,9 +1,10 @@
 import os
 import sys
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 
 from src import __version__
 from src.api.metrics import metrics_router
@@ -12,6 +13,7 @@ from src.api.routers.v1 import router as api_router
 from src.core.config import Config
 from src.core.config.accessors import (
     cache_dir,
+    config_context_middleware,
     models_cache_enabled,
     models_cache_ttl_hours,
 )
@@ -37,6 +39,31 @@ if models_cache_enabled() and not os.environ.get("PYTEST_CURRENT_TEST"):
     )
 else:
     app.state.models_cache = None
+
+
+@app.middleware("http")
+async def config_context_middleware_handler(
+    request: Request,
+    call_next: Callable[[Request], Awaitable[Response]],
+) -> Response:
+    """Set request-scoped config context for O(1) accessor lookup.
+
+    This middleware replaces the expensive stack inspection approach with
+    ContextVar-based config propagation, eliminating the performance penalty
+    of walking the call stack on every config access.
+
+    The config is available to all accessor functions via _config_context.get()
+    in src/core/config/accessors.py without any stack inspection.
+    """
+    config = getattr(request.app.state, "config", None)
+    if config is None:
+        # No config on app state, proceed without context
+        return await call_next(request)
+
+    async with config_context_middleware(config):
+        response = await call_next(request)
+        return response
+
 
 app.include_router(api_router)
 app.include_router(metrics_router, prefix="/metrics", tags=["metrics"])

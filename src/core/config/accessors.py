@@ -4,6 +4,11 @@ These functions provide config values at runtime without requiring
 direct config imports. They're used to replace module-level constants
 that would otherwise create import-time coupling.
 
+Config Context Propagation:
+    Config is propagated via ContextVar for O(1) lookup without stack
+    inspection. The config_context_middleware in src/main.py sets the
+    request-scoped config at the start of each HTTP request.
+
 Usage:
     # Instead of:
     LOG_REQUEST_METRICS = config.log_request_metrics
@@ -17,6 +22,9 @@ Usage:
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -24,42 +32,20 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Request-scoped config context (async-safe, O(1) lookup)
+# Set by config_context_middleware in src/main.py
+_config_context: ContextVar[Config | None] = ContextVar("config_context", default=None)
+
 
 def _get_config_from_context() -> Config | None:
-    """Get config from FastAPI request context if available.
+    """Get config from request context via ContextVar (O(1) lookup).
 
     Returns None if not in a request context (e.g., CLI, tests).
     This allows the same functions to work in multiple contexts.
 
-    In tests, config is provided via dependency injection fixtures.
-    In CLI, config is created explicitly per command.
-
-    Stack inspection is expensive and fragile, so we use specific exceptions
-    and log failures to aid debugging. This function is called frequently
-    during request processing, so failures are logged at DEBUG level.
+    The ContextVar is set by config_context_middleware in src/main.py.
     """
-    try:
-        # Try to get from FastAPI request context by inspecting the call stack
-        import inspect
-
-        for frame_info in inspect.stack():
-            try:
-                frame_locals = frame_info.frame.f_locals
-            except (AttributeError, ValueError, RuntimeError):
-                # Frame unavailable or corrupted - stop iterating
-                break
-
-            if "request" in frame_locals:
-                from fastapi import Request
-
-                request = frame_locals["request"]
-                if isinstance(request, Request):
-                    return getattr(request.app.state, "config", None)
-    except (AttributeError, ValueError, RuntimeError, ImportError) as e:
-        # Stack inspection failed - expected in non-request contexts
-        # Log at DEBUG to avoid noise while still providing visibility
-        logger.debug(f"Stack inspection for config context failed: {type(e).__name__}: {e}")
-    return None
+    return _config_context.get(None)
 
 
 def _get_global_fallback() -> Config:
@@ -174,3 +160,56 @@ def active_requests_sse_heartbeat() -> float:
     if cfg is None:
         cfg = _get_global_fallback()
     return cfg.active_requests_sse_heartbeat
+
+
+# Context management functions for testing and manual control
+
+
+def set_config_context(config: Config) -> None:
+    """Manually set config context (useful for testing).
+
+    In production, this is handled automatically by config_context_middleware.
+    Use this in tests to provide config without going through the full request stack.
+
+    Example:
+        from src.core.config import Config
+        from src.core.config.accessors import set_config_context
+
+        def test_something():
+            cfg = Config(log_request_metrics=True)
+            set_config_context(cfg)
+            assert log_request_metrics() is True
+    """
+    _config_context.set(config)
+
+
+def clear_config_context() -> None:
+    """Clear config context (useful for testing).
+
+    Resets the config context to None, causing subsequent accessor calls
+    to fall back to _get_global_fallback().
+    """
+    _config_context.set(None)
+
+
+@asynccontextmanager
+async def config_context_middleware(config: Config) -> AsyncGenerator[None, None]:
+    """Context manager for setting config context (for middleware use).
+
+    Usage in middleware:
+        from src.core.config.accessors import config_context_middleware
+
+        @app.middleware("http")
+        async def middleware(request, call_next):
+            cfg = getattr(request.app.state, "config", None)
+            if cfg is None:
+                return await call_next(request)
+
+            async with config_context_middleware(cfg):
+                return await call_next(request)
+    """
+    token = _config_context.set(config)
+    try:
+        yield
+    finally:
+        _config_context.reset(token)
