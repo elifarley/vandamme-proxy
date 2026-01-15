@@ -3,9 +3,10 @@ import time
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
+from src.api.models.endpoint_requests import ModelsListRequest, TopModelsRequest
 from src.api.models_cache_runtime import get_models_cache
 from src.api.services.endpoint_services import (
     AliasesListService,
@@ -411,53 +412,16 @@ async def fetch_models_unauthenticated(
 
 @router.get("/v1/models")
 async def list_models(
+    request: ModelsListRequest = Depends(ModelsListRequest.from_fastapi),
     cfg: Config = Depends(get_config),
     models_cache: ModelsDiskCache | None = Depends(get_models_cache),
     _: None = Depends(validate_api_key),
-    provider: str | None = Query(
-        None,
-        description="Provider name to fetch models from (defaults to configured default provider)",
-    ),
-    format: str | None = Query(
-        None,
-        description=(
-            "Response format selector (takes precedence over headers): "
-            "anthropic, openai, or raw. If omitted, inferred from headers."
-        ),
-    ),
-    refresh: bool = Query(
-        False,
-        description="Force refresh model list from upstream (bypass models cache)",
-    ),
-    provider_header: str | None = Header(
-        None,
-        alias="provider",
-        description="Provider override (header takes precedence over query/default)",
-    ),
-    anthropic_version: str | None = Header(
-        None,
-        alias="anthropic-version",
-        description=(
-            "If present and no explicit format=... was provided, the response format may be "
-            "inferred as Anthropic for /v1/models compatibility"
-        ),
-    ),
 ) -> Response:
     """List available models from the specified provider or default provider."""
     service = ModelsListService(
         config=cfg, models_cache=models_cache, fetch_fn=fetch_models_unauthenticated
     )
-
-    # Resolve provider (header takes precedence over query param)
-    provider_candidate = provider_header or provider
-
-    result = await service.execute(
-        provider_candidate=provider_candidate,
-        format_requested=format,
-        refresh=refresh,
-        anthropic_version=anthropic_version,
-    )
-
+    result = await service.execute_with_request(request)
     return result.to_response()
 
 
@@ -480,25 +444,17 @@ async def list_aliases(
 
 @router.get("/top-models")
 async def top_models(
+    request: TopModelsRequest = Depends(TopModelsRequest.from_fastapi),
     cfg: Config = Depends(get_config),
     models_cache: ModelsDiskCache | None = Depends(get_models_cache),
     _: None = Depends(validate_api_key),
-    limit: int = Query(10, ge=1, le=50),
-    refresh: bool = Query(False),
-    provider: str | None = Query(None),
-    include_cache_info: bool = Query(False),
 ) -> Response:
     """List curated top models (proxy metadata, not part of /v1 surface).
 
     This endpoint is intended as a dashboard-friendly discovery contract.
     """
     service = TopModelsEndpointService(config=cfg, models_cache=models_cache)
-    result = await service.execute(
-        limit=limit,
-        refresh=refresh,
-        provider=provider,
-        include_cache_info=include_cache_info,
-    )
+    result = await service.execute_with_request(request)
     return result.to_response()
 
 

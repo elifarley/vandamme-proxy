@@ -20,6 +20,7 @@ from typing import Any
 import httpx
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
 
+from src.api.models.endpoint_requests import ModelsListRequest, TopModelsRequest
 from src.api.utils.yaml_formatter import format_health_yaml
 from src.core.config import Config
 from src.models.cache import ModelsDiskCache
@@ -149,6 +150,24 @@ class ModelsListService:
 
         except Exception as e:
             return self._error_response(str(e))
+
+    async def execute_with_request(self, request: ModelsListRequest) -> ModelsListResult:
+        """Execute using ModelsListRequest DTO.
+
+        This method provides a cleaner API when using DTOs from the endpoint layer.
+
+        Args:
+            request: ModelsListRequest DTO containing all parameters
+
+        Returns:
+            ModelsListResult with status code and content
+        """
+        return await self.execute(
+            provider_candidate=request.provider,
+            format_requested=request.format_requested,
+            refresh=request.refresh,
+            anthropic_version=request.anthropic_version,
+        )
 
     def _resolve_provider(self, candidate: str | None) -> str:
         """Resolve provider name from candidate or default."""
@@ -773,3 +792,21 @@ class TopModelsEndpointService:
                     },
                 },
             )
+
+    async def execute_with_request(self, request: TopModelsRequest) -> TopModelsEndpointResult:
+        """Execute using TopModelsRequest DTO.
+
+        This method provides a cleaner API when using DTOs from the endpoint layer.
+
+        Args:
+            request: TopModelsRequest DTO containing all parameters
+
+        Returns:
+            TopModelsEndpointResult with transformed models data
+        """
+        return await self.execute(
+            limit=request.limit,
+            refresh=request.refresh,
+            provider=request.provider,
+            include_cache_info=request.include_cache_info,
+        )
