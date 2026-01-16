@@ -258,7 +258,7 @@ validate: sanitize test coverage ## Full release validation (static + tests + co
 # Pre-commit hook target - customize as needed for your project
 # Default: runs fast checks (sanitize + quick tests)
 # Alternatives: use 'sanitize' (faster), 'check' (slower), or add custom steps
-pre-commit: sanitize test-quick ## Run pre-commit hooks (customizable)
+pre-commit: sanitize test ## Run pre-commit hooks (customizable)
 	@printf "$(BOLD)$(GREEN)✓ Pre-commit checks complete$(RESET)\n"
 
 # ============================================================================

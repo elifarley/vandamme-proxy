@@ -2,7 +2,7 @@
 
 import os
 import sys
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -55,6 +55,24 @@ def mock_provider_config():
     provider_config.api_format = "openai"
     provider_config.api_version = None
     return provider_config
+
+
+@pytest.fixture
+def mock_http_request_with_app_state():
+    """Create a mock HTTP request with properly configured app.state.request_tracker.
+
+    This fixture provides a mock request object that has all required
+    app.state attributes including request_tracker for metrics tracking.
+    Use this in tests that need to pass a mock HTTP request to RequestOrchestrator
+    or other components that access request.app.state.
+    """
+    from src.core.metrics import create_request_tracker
+
+    mock_request = MagicMock()
+    mock_request.app = MagicMock()
+    mock_request.app.state.request_tracker = create_request_tracker()
+    mock_request.is_disconnected = AsyncMock(return_value=False)
+    return mock_request
 
 
 @pytest.fixture(scope="session")
@@ -157,6 +175,7 @@ def setup_test_environment_for_unit_tests():
         # Clear module cache for modules that need fresh import
         modules_to_clear = [
             "src.core.config",
+            "src.core.dependencies",
             "src.core.provider_manager",
             "src.core.provider_config",
             "src.core.client",
@@ -167,7 +186,8 @@ def setup_test_environment_for_unit_tests():
             "src.top_models.service",  # Has module-level config import
             "src.api.services.key_rotation",  # Has module-level config import
             "src.api.services.provider_context",  # Has module-level config import
-            "src.api.orchestrator.request_orchestrator",  # Has module-level config import
+            # NOTE: request_orchestrator removed from clearing to fix mock issues
+            # "src.api.orchestrator.request_orchestrator",
             "src.api.endpoints",
             "src.main",
         ]

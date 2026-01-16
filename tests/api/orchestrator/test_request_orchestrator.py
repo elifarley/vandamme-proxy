@@ -64,6 +64,64 @@ def _create_mock_model_manager(provider: str = "openai", model: str = "gpt-4o") 
     return mm
 
 
+def _create_mock_config(
+    provider_config: Mock | None = None,
+    client: Mock | None = None,
+    api_key: str | None = "sk-prov-key",
+    has_middleware: bool = False,
+    middleware_chain: Mock | None = None,
+    log_request_metrics: bool = False,
+) -> Mock:
+    """Create a mock config with provider_manager and proper delegation.
+
+    Args:
+        provider_config: Mock provider config to return
+        client: Mock client to return
+        api_key: API key to return from get_next_provider_api_key
+        has_middleware: Whether to include middleware_chain attribute
+        middleware_chain: Mock middleware chain to use
+        log_request_metrics: Whether request metrics are enabled
+
+    Returns:
+        A properly configured mock config that delegates to provider_manager
+    """
+    mock_provider_manager = _create_mock_provider_manager(
+        provider_config=provider_config,
+        client=client,
+        api_key=api_key,
+        has_middleware=has_middleware,
+        middleware_chain=middleware_chain,
+    )
+    # Build spec_set based on whether middleware is needed
+    if has_middleware:
+        spec = [
+            "log_request_metrics",
+            "provider_manager",
+            "get_provider_config",
+            "get_client",
+            "get_next_provider_api_key",
+            "middleware_chain",
+        ]
+    else:
+        spec = [
+            "log_request_metrics",
+            "provider_manager",
+            "get_provider_config",
+            "get_client",
+            "get_next_provider_api_key",
+        ]
+    mock_config = MagicMock(spec_set=spec)
+    mock_config.log_request_metrics = log_request_metrics
+    mock_config.provider_manager = mock_provider_manager
+    # Delegate client_factory methods to provider_manager
+    mock_config.get_provider_config = mock_provider_manager.get_provider_config
+    mock_config.get_client = mock_provider_manager.get_client
+    mock_config.get_next_provider_api_key = mock_provider_manager.get_next_provider_api_key
+    if has_middleware:
+        mock_config.middleware_chain = middleware_chain
+    return mock_config
+
+
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_orchestrator_prepares_basic_context() -> None:
@@ -76,22 +134,27 @@ async def test_orchestrator_prepares_basic_context() -> None:
 
     mock_http_request = MagicMock()
     mock_http_request.is_disconnected = AsyncMock(return_value=False)
+    # Set up app.state with proper request_tracker to satisfy get_request_tracker
+    from src.core.metrics import create_request_tracker
+
+    mock_http_request.app = MagicMock()
+    mock_http_request.app.state.request_tracker = create_request_tracker()
 
     # Create mock config with provider_manager
-    mock_provider_config = MagicMock(
-        name="openai", uses_passthrough=False, is_anthropic_format=False
-    )
-    mock_config = MagicMock(
+    mock_provider_config = MagicMock()
+    mock_provider_config.name = "openai"
+    mock_provider_config.uses_passthrough = False
+    mock_provider_config.is_anthropic_format = False
+    mock_config = _create_mock_config(
+        provider_config=mock_provider_config,
+        client=MagicMock(),
+        api_key="sk-prov-key",
+        has_middleware=False,
         log_request_metrics=False,
-        provider_manager=_create_mock_provider_manager(
-            provider_config=mock_provider_config,
-            client=MagicMock(),
-            api_key="sk-prov-key",
-            has_middleware=False,
-        ),
     )
 
     mock_model_manager = _create_mock_model_manager()
+
     orchestrator = RequestOrchestrator(config=mock_config, model_manager=mock_model_manager)
 
     with (
@@ -128,6 +191,11 @@ async def test_orchestrator_with_metrics_enabled() -> None:
 
     mock_http_request = MagicMock()
     mock_http_request.is_disconnected = AsyncMock(return_value=False)
+    # Set up app.state with proper request_tracker to satisfy get_request_tracker
+    from src.core.metrics import create_request_tracker
+
+    mock_http_request.app = MagicMock()
+    mock_http_request.app.state.request_tracker = create_request_tracker()
 
     mock_tracker = MagicMock()
     mock_metrics = MagicMock(start_time_iso="2024-01-01T00:00:00Z", tool_result_count=0)
@@ -136,21 +204,19 @@ async def test_orchestrator_with_metrics_enabled() -> None:
     mock_tracker.end_request = AsyncMock()
 
     # Create mock config with provider_manager
-    mock_provider_config = MagicMock(
-        name="openai", uses_passthrough=False, is_anthropic_format=False
-    )
-    mock_config = MagicMock(
+    mock_provider_config = MagicMock()
+    mock_provider_config.name = "openai"
+    mock_provider_config.uses_passthrough = False
+    mock_provider_config.is_anthropic_format = False
+    mock_config = _create_mock_config(
+        provider_config=mock_provider_config,
+        client=MagicMock(),
+        api_key="sk-prov-key",
+        has_middleware=False,
         log_request_metrics=True,
-        provider_manager=_create_mock_provider_manager(
-            provider_config=mock_provider_config,
-            client=MagicMock(),
-            api_key="sk-prov-key",
-            has_middleware=False,
-        ),
     )
 
     mock_model_manager = _create_mock_model_manager()
-    orchestrator = RequestOrchestrator(config=mock_config, model_manager=mock_model_manager)
 
     with (
         patch(
@@ -163,6 +229,10 @@ async def test_orchestrator_with_metrics_enabled() -> None:
             return_value=(1, 100, 0),
         ),
     ):
+        # Import RequestOrchestrator AFTER patches are applied to ensure proper patching
+        from src.api.orchestrator.request_orchestrator import RequestOrchestrator
+
+        orchestrator = RequestOrchestrator(config=mock_config, model_manager=mock_model_manager)
         mock_convert.return_value = {
             "model": "gpt-4o",
             "messages": [{"role": "user", "content": "Hello"}],
@@ -196,22 +266,22 @@ async def test_orchestrator_passthrough_validation_requires_client_key() -> None
     mock_http_request.is_disconnected = AsyncMock(return_value=False)
 
     # Create mock config with provider_manager for passthrough provider
-    mock_provider_config = MagicMock(
-        name="anthropic", uses_passthrough=True, is_anthropic_format=True
-    )
-    mock_config = MagicMock(
+    mock_provider_config = MagicMock()
+    mock_provider_config.name = "anthropic"
+    mock_provider_config.uses_passthrough = True
+    mock_provider_config.is_anthropic_format = True
+    mock_config = _create_mock_config(
+        provider_config=mock_provider_config,
+        client=MagicMock(),
+        api_key=None,
+        has_middleware=False,
         log_request_metrics=False,
-        provider_manager=_create_mock_provider_manager(
-            provider_config=mock_provider_config,
-            client=MagicMock(),
-            api_key=None,
-            has_middleware=False,
-        ),
     )
 
     mock_model_manager = _create_mock_model_manager(
         provider="anthropic", model="claude-3-5-sonnet-20241022"
     )
+
     orchestrator = RequestOrchestrator(config=mock_config, model_manager=mock_model_manager)
 
     with (
@@ -259,21 +329,19 @@ async def test_orchestrator_client_disconnect_before_processing() -> None:
     mock_tracker.end_request = AsyncMock()
 
     # Create mock config with provider_manager
-    mock_provider_config = MagicMock(
-        name="openai", uses_passthrough=False, is_anthropic_format=False
-    )
-    mock_config = MagicMock(
+    mock_provider_config = MagicMock()
+    mock_provider_config.name = "openai"
+    mock_provider_config.uses_passthrough = False
+    mock_provider_config.is_anthropic_format = False
+    mock_config = _create_mock_config(
+        provider_config=mock_provider_config,
+        client=MagicMock(),
+        api_key="sk-prov-key",
+        has_middleware=False,
         log_request_metrics=True,
-        provider_manager=_create_mock_provider_manager(
-            provider_config=mock_provider_config,
-            client=MagicMock(),
-            api_key="sk-prov-key",
-            has_middleware=False,
-        ),
     )
 
     mock_model_manager = _create_mock_model_manager()
-    orchestrator = RequestOrchestrator(config=mock_config, model_manager=mock_model_manager)
 
     with (
         patch(
@@ -286,6 +354,10 @@ async def test_orchestrator_client_disconnect_before_processing() -> None:
             return_value=(1, 100, 0),
         ),
     ):
+        # Import RequestOrchestrator AFTER patches are applied to ensure proper patching
+        from src.api.orchestrator.request_orchestrator import RequestOrchestrator
+
+        orchestrator = RequestOrchestrator(config=mock_config, model_manager=mock_model_manager)
         mock_convert.return_value = {
             "model": "gpt-4o",
             "messages": [{"role": "user", "content": "Hello"}],
@@ -325,21 +397,21 @@ async def test_orchestrator_applies_middleware_preprocessing() -> None:
     mock_middleware_chain.process_request = AsyncMock(return_value=mock_processed_context)
 
     # Create mock config with provider_manager and middleware
-    mock_provider_config = MagicMock(
-        name="gemini", uses_passthrough=False, is_anthropic_format=False
-    )
-    mock_config = MagicMock(
+    mock_provider_config = MagicMock()
+    mock_provider_config.name = "gemini"
+    mock_provider_config.uses_passthrough = False
+    mock_provider_config.is_anthropic_format = False
+    mock_config = _create_mock_config(
+        provider_config=mock_provider_config,
+        client=MagicMock(),
+        api_key="gemini-key",
+        has_middleware=True,
+        middleware_chain=mock_middleware_chain,
         log_request_metrics=False,
-        provider_manager=_create_mock_provider_manager(
-            provider_config=mock_provider_config,
-            client=MagicMock(),
-            api_key="gemini-key",
-            has_middleware=True,
-            middleware_chain=mock_middleware_chain,
-        ),
     )
 
     mock_model_manager = _create_mock_model_manager(provider="gemini", model="gemini-2.0-flash")
+
     orchestrator = RequestOrchestrator(config=mock_config, model_manager=mock_model_manager)
 
     with (
@@ -381,20 +453,20 @@ async def test_orchestrator_no_middleware_when_not_configured() -> None:
     mock_http_request.is_disconnected = AsyncMock(return_value=False)
 
     # Create mock config with provider_manager (no middleware)
-    mock_provider_config = MagicMock(
-        name="openai", uses_passthrough=False, is_anthropic_format=False
-    )
-    mock_config = MagicMock(
+    mock_provider_config = MagicMock()
+    mock_provider_config.name = "openai"
+    mock_provider_config.uses_passthrough = False
+    mock_provider_config.is_anthropic_format = False
+    mock_config = _create_mock_config(
+        provider_config=mock_provider_config,
+        client=MagicMock(),
+        api_key="sk-prov-key",
+        has_middleware=False,
         log_request_metrics=False,
-        provider_manager=_create_mock_provider_manager(
-            provider_config=mock_provider_config,
-            client=MagicMock(),
-            api_key="sk-prov-key",
-            has_middleware=False,
-        ),
     )
 
     mock_model_manager = _create_mock_model_manager()
+
     orchestrator = RequestOrchestrator(config=mock_config, model_manager=mock_model_manager)
 
     with (
@@ -423,6 +495,7 @@ async def test_orchestrator_no_middleware_when_not_configured() -> None:
 @pytest.mark.unit
 def test_orchestrator_initialization() -> None:
     """Test RequestOrchestrator initialization."""
+
     mock_model_manager = _create_mock_model_manager()
     # Default: metrics enabled
     orchestrator = RequestOrchestrator(
@@ -455,20 +528,20 @@ async def test_orchestrator_context_contains_all_required_fields() -> None:
     start = time.time()
 
     # Create mock config with provider_manager
-    mock_provider_config = MagicMock(
-        name="openai", uses_passthrough=False, is_anthropic_format=False
-    )
-    mock_config = MagicMock(
+    mock_provider_config = MagicMock()
+    mock_provider_config.name = "openai"
+    mock_provider_config.uses_passthrough = False
+    mock_provider_config.is_anthropic_format = False
+    mock_config = _create_mock_config(
+        provider_config=mock_provider_config,
+        client=MagicMock(),
+        api_key="sk-test-key",
+        has_middleware=False,
         log_request_metrics=False,
-        provider_manager=_create_mock_provider_manager(
-            provider_config=mock_provider_config,
-            client=MagicMock(),
-            api_key="sk-test-key",
-            has_middleware=False,
-        ),
     )
 
     mock_model_manager = _create_mock_model_manager()
+
     orchestrator = RequestOrchestrator(config=mock_config, model_manager=mock_model_manager)
 
     with (
