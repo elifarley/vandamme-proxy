@@ -3,385 +3,398 @@
 <cite>
 **Referenced Files in This Document**
 - [src/main.py](file://src/main.py)
-- [src/api/middleware_runtime.py](file://src/api/middleware_runtime.py)
-- [src/core/config/runtime.py](file://src/core/config/runtime.py)
-- [src/core/config/accessors.py](file://src/core/config/accessors.py)
+- [src/core/dependencies.py](file://src/core/dependencies.py)
+- [src/core/protocols.py](file://src/core/protocols.py)
 - [src/core/config/config.py](file://src/core/config/config.py)
-- [src/core/metrics/runtime.py](file://src/core/metrics/runtime.py)
-- [src/api/middleware_integration.py](file://src/api/middleware_integration.py)
-- [src/core/metrics/tracker/tracker.py](file://src/core/metrics/tracker/tracker.py)
+- [src/core/model_manager.py](file://src/core/model_manager.py)
 - [src/core/provider_manager.py](file://src/core/provider_manager.py)
-- [src/middleware/base.py](file://src/middleware/base.py)
-- [src/api/services/metrics_orchestrator.py](file://src/api/services/metrics_orchestrator.py)
-- [src/models/cache.py](file://src/models/cache.py)
+- [src/api/middleware_runtime.py](file://src/api/middleware_runtime.py)
+- [src/core/config/accessors.py](file://src/core/config/accessors.py)
+- [src/api/services/alias_service.py](file://src/api/services/alias_service.py)
+- [src/cli/commands/server.py](file://src/cli/commands/server.py)
+- [src/cli/commands/test.py](file://src/cli/commands/test.py)
 </cite>
+
+## Update Summary
+**Changes Made**
+- Added comprehensive documentation for the new centralized dependency injection system
+- Documented protocol-based dependency inversion replacing circular imports
+- Updated architecture diagrams to reflect the new dependencies module pattern
+- Added new sections covering the dependencies module and protocol system
+- Updated troubleshooting guide to address new initialization requirements
 
 ## Table of Contents
 1. [Introduction](#introduction)
-2. [Project Structure](#project-structure)
-3. [Core Components](#core-components)
-4. [Architecture Overview](#architecture-overview)
-5. [Detailed Component Analysis](#detailed-component-analysis)
-6. [Dependency Analysis](#dependency-analysis)
-7. [Performance Considerations](#performance-considerations)
-8. [Troubleshooting Guide](#troubleshooting-guide)
-9. [Conclusion](#conclusion)
+2. [Centralized Dependency Management](#centralized-dependency-management)
+3. [Protocol-Based Dependency Inversion](#protocol-based-dependency-inversion)
+4. [Core Components](#core-components)
+5. [Architecture Overview](#architecture-overview)
+6. [Detailed Component Analysis](#detailed-component-analysis)
+7. [Initialization System](#initialization-system)
+8. [Dependency Analysis](#dependency-analysis)
+9. [Performance Considerations](#performance-considerations)
+10. [Troubleshooting Guide](#troubleshooting-guide)
+11. [Conclusion](#conclusion)
 
 ## Introduction
-This document explains the dependency injection system used by the application. The system centers on a process-local FastAPI app.state that holds shared services and managers, and on lightweight wiring helpers that expose them to endpoints and services without relying on global singletons. Configuration values are accessed via runtime accessors that safely resolve from request context or a fallback singleton. Metrics tracking and middleware processing are integrated through these patterns, enabling clean separation of concerns and testability.
+This document explains the new centralized dependency injection system that replaces the previous distributed initialization pattern. The system uses a dedicated dependencies module for centralized singleton initialization and protocol-based dependency inversion to eliminate circular imports while maintaining clean separation of concerns and testability.
 
-## Project Structure
-The dependency injection strategy is implemented across a few key areas:
-- Application bootstrap initializes app.state with core services and managers.
-- Runtime accessors provide controlled access to Config, RequestTracker, and MiddlewareProcessor.
-- Services and endpoints depend on these accessors and FastAPI’s dependency injection.
+## Centralized Dependency Management
+
+The new system introduces a centralized dependencies module that manages all application singletons with explicit initialization order, eliminating the hidden dependencies and circular import problems of the previous architecture.
 
 ```mermaid
 graph TB
-A["FastAPI app.state<br/>('app' in src/main.py)"] --> B["Config<br/>(src/core/config/config.py)"]
-A --> C["RequestTracker<br/>(src/core/metrics/tracker/tracker.py)"]
-A --> D["MiddlewareAwareRequestProcessor<br/>(src/api/middleware_integration.py)"]
-A --> E["ModelsDiskCache (optional)<br/>(src/models/cache.py)"]
-subgraph "Accessors"
-F["get_config<br/>(src/core/config/runtime.py)"]
-G["get_request_tracker<br/>(src/core/metrics/runtime.py)"]
-H["get_middleware_processor<br/>(src/api/middleware_runtime.py)"]
+A["initialize_app()<br/>(src/core/dependencies.py)"] --> B["Config<br/>(src/core/config/config.py)"]
+A --> C["ProviderManager<br/>(src/core/provider_manager.py)"]
+A --> D["AliasManager<br/>(src/core/alias_manager.py)"]
+A --> E["ModelManager<br/>(src/core/model_manager.py)"]
+A --> F["AliasService<br/>(src/api/services/alias_service.py)"]
+subgraph "Singleton Getters"
+G["get_config()"]
+H["get_provider_manager()"]
+I["get_alias_manager()"]
+J["get_model_manager()"]
+K["get_alias_service()"]
 end
-F --> B
-G --> C
-H --> D
+B --> G
+C --> H
+D --> I
+E --> J
+F --> K
 ```
 
 **Diagram sources**
-- [src/main.py](file://src/main.py#L22-L40)
-- [src/core/config/runtime.py](file://src/core/config/runtime.py#L19-L33)
-- [src/core/metrics/runtime.py](file://src/core/metrics/runtime.py#L20-L29)
-- [src/api/middleware_runtime.py](file://src/api/middleware_runtime.py#L22-L53)
-- [src/core/config/config.py](file://src/core/config/config.py#L38-L68)
-- [src/core/metrics/tracker/tracker.py](file://src/core/metrics/tracker/tracker.py#L42-L75)
-- [src/api/middleware_integration.py](file://src/api/middleware_integration.py#L26-L52)
-- [src/models/cache.py](file://src/models/cache.py#L17-L32)
+- [src/core/dependencies.py](file://src/core/dependencies.py#L42-L117)
+- [src/core/dependencies.py](file://src/core/dependencies.py#L120-L187)
 
 **Section sources**
-- [src/main.py](file://src/main.py#L22-L40)
+- [src/core/dependencies.py](file://src/core/dependencies.py#L1-L188)
+
+## Protocol-Based Dependency Inversion
+
+The system uses PEP 544 Protocol definitions to create clean abstractions that eliminate circular dependencies while maintaining type safety and testability.
+
+```mermaid
+classDiagram
+class ConfigProvider {
+<<Protocol>>
++max_tokens_limit : int
++min_tokens_limit : int
++request_timeout : int
++streaming_read_timeout : float
++validate_client_api_key(client_api_key : str) bool
++get_custom_headers() dict[str, str]
+}
+class ModelResolver {
+<<Protocol>>
++resolve_model(model : str) tuple[str, str]
+}
+class ProviderClientFactory {
+<<Protocol>>
++get_client(provider_name : str, client_api_key : str) Any
++get_provider_config(provider_name : str) Any
++get_next_provider_api_key(provider_name : str) str
++default_provider : str
+}
+class MiddlewareProcessor {
+<<Protocol>>
++preprocess_request(provider : str, request : Any, model : str, request_id : str, client_api_key : str) Any
+}
+class MetricsCollector {
+<<Protocol>>
++initialize_request_metrics(request_id : str, model : str, provider : str, resolved_model : str, is_streaming : bool) Any
++finalize_metrics(metrics : Any, response : Any, error : Exception) None
+}
+class Config {
++implements ConfigProvider
+}
+class ModelManager {
++implements ModelResolver
+}
+class ProviderManager {
++implements ProviderClientFactory
+}
+Config --|> ConfigProvider
+ModelManager --|> ModelResolver
+ProviderManager --|> ProviderClientFactory
+```
+
+**Diagram sources**
+- [src/core/protocols.py](file://src/core/protocols.py#L22-L169)
+- [src/core/config/config.py](file://src/core/config/config.py#L40-L56)
+- [src/core/model_manager.py](file://src/core/model_manager.py#L21-L46)
+- [src/core/provider_manager.py](file://src/core/provider_manager.py#L41-L75)
+
+**Section sources**
+- [src/core/protocols.py](file://src/core/protocols.py#L1-L169)
 
 ## Core Components
-- Process-local app.state: Holds Config, RequestTracker, MiddlewareAwareRequestProcessor, and optionally ModelsDiskCache.
-- Runtime accessors:
-  - get_config: Retrieves Config from request.app.state with validation.
-  - get_request_tracker: Retrieves RequestTracker from request.app.state with validation.
-  - get_middleware_processor: Retrieves MiddlewareAwareRequestProcessor from request.app.state with validation.
-- Accessor functions for configuration values: log_request_metrics, max_tokens_limit, models_cache_enabled, cache_dir, etc., which resolve from request context or a fallback singleton.
 
-Key behaviors:
-- Startup initializes app.state and registers routers and lifecycle hooks.
-- Lifecycle hooks initialize and cleanup middleware processor.
-- Accessors raise explicit errors if the expected object is missing or wrong type.
+### Centralized Dependencies Module
+- **initialize_app()**: Orchestrated initialization of all dependencies in the correct order
+- **Singleton getters**: Thread-safe accessors for each dependency with runtime validation
+- **Module-level storage**: Private variables that hold the initialized singletons
+
+### Protocol Definitions
+- **ConfigProvider**: Configuration access interface for all components
+- **ModelResolver**: Model name resolution abstraction
+- **ProviderClientFactory**: Provider client creation interface
+- **MiddlewareProcessor**: Request preprocessing abstraction
+- **MetricsCollector**: Metrics collection interface
+
+### Backward Compatibility Layer
+- Config class delegates manager access to dependencies module
+- Maintains existing API while enabling new initialization pattern
 
 **Section sources**
-- [src/main.py](file://src/main.py#L22-L56)
-- [src/core/config/runtime.py](file://src/core/config/runtime.py#L19-L33)
-- [src/core/metrics/runtime.py](file://src/core/metrics/runtime.py#L20-L29)
-- [src/api/middleware_runtime.py](file://src/api/middleware_runtime.py#L22-L53)
-- [src/core/config/accessors.py](file://src/core/config/accessors.py#L25-L63)
+- [src/core/dependencies.py](file://src/core/dependencies.py#L42-L187)
+- [src/core/protocols.py](file://src/core/protocols.py#L22-L169)
+- [src/core/config/config.py](file://src/core/config/config.py#L216-L249)
 
 ## Architecture Overview
-The system uses FastAPI’s dependency injection and a process-local state container to deliver shared services to endpoints and services. Configuration values are accessed through accessor functions that resolve from request context or a fallback singleton, avoiding import-time coupling.
+
+The new architecture eliminates import-time coupling and circular dependencies through explicit initialization and protocol-based abstractions.
 
 ```mermaid
 sequenceDiagram
-participant Client as "Client"
-participant API as "FastAPI Endpoint"
-participant AccessorCfg as "get_config"
-participant AccessorTrk as "get_request_tracker"
-participant AccessorMW as "get_middleware_processor"
-participant Config as "Config"
-participant Tracker as "RequestTracker"
-participant MWProc as "MiddlewareAwareRequestProcessor"
-Client->>API : HTTP request
-API->>AccessorCfg : Depends(get_config)
-AccessorCfg->>Config : request.app.state.config
-AccessorCfg-->>API : Config
-API->>AccessorTrk : Depends(get_request_tracker)
-AccessorTrk->>Tracker : request.app.state.request_tracker
-AccessorTrk-->>API : RequestTracker
-API->>AccessorMW : Depends(get_middleware_processor)
-AccessorMW->>MWProc : request.app.state.middleware_processor
-AccessorMW-->>API : MiddlewareAwareRequestProcessor
-API-->>Client : Response (uses services)
+participant App as "Application Startup"
+participant Dep as "dependencies.initialize_app()"
+participant Config as "Config Singleton"
+participant PM as "ProviderManager"
+participant AM as "AliasManager"
+participant MM as "ModelManager"
+participant AS as "AliasService"
+App->>Dep : initialize_app()
+Dep->>Config : Create Config()
+Dep->>PM : Create ProviderManager(Config)
+Dep->>AM : Create AliasManager()
+Dep->>MM : Create ModelManager(Config)
+Dep->>AS : Create AliasService(AM, PM)
+Dep-->>App : All dependencies initialized
+participant Client as "Component Accessing Managers"
+Client->>Config : Access provider_manager property
+Config->>Dep : get_provider_manager()
+Dep-->>Client : ProviderManager instance
 ```
 
 **Diagram sources**
-- [src/api/middleware_runtime.py](file://src/api/middleware_runtime.py#L22-L53)
-- [src/core/config/runtime.py](file://src/core/config/runtime.py#L19-L33)
-- [src/core/metrics/runtime.py](file://src/core/metrics/runtime.py#L20-L29)
-- [src/main.py](file://src/main.py#L22-L30)
+- [src/core/dependencies.py](file://src/core/dependencies.py#L42-L117)
+- [src/core/config/config.py](file://src/core/config/config.py#L216-L249)
+
+**Section sources**
+- [src/core/dependencies.py](file://src/core/dependencies.py#L42-L117)
+- [src/core/config/config.py](file://src/core/config/config.py#L216-L249)
 
 ## Detailed Component Analysis
 
-### FastAPI app.state Initialization
-- Creates FastAPI app and stores:
-  - Config: eagerly created at startup.
-  - RequestTracker: created via factory.
-  - MiddlewareAwareRequestProcessor: created and later initialized on startup.
-  - ModelsDiskCache: conditionally created if enabled and not in tests.
-- Registers routers and lifecycle hooks for middleware initialization and cleanup.
+### Dependencies Module Implementation
+
+The dependencies module provides a controlled initialization pattern that eliminates circular imports and ensures proper dependency ordering.
 
 ```mermaid
 flowchart TD
-Start(["Startup"]) --> InitApp["Create FastAPI app"]
-InitApp --> SetState["Set app.state.config<br/>Set app.state.request_tracker<br/>Set app.state.middleware_processor"]
-SetState --> MaybeCache{"models_cache_enabled()<br/>and not PYTEST_CURRENT_TEST?"}
-MaybeCache --> |Yes| CreateCache["Create ModelsDiskCache"]
-MaybeCache --> |No| SkipCache["Skip cache"]
-CreateCache --> IncludeRouters["Include API and metrics routers"]
-SkipCache --> IncludeRouters
-IncludeRouters --> StartupHook["on_event('startup'): initialize middleware_processor"]
-StartupHook --> Ready(["Server Ready"])
+Start(["initialize_app() called"]) --> Check{"Already initialized?"}
+Check --> |Yes| Warn["Log warning and return"]
+Check --> |No| InitConfig["Create Config()"]
+InitConfig --> InitPM["Create ProviderManager with MiddlewareConfig"]
+InitPM --> InitAM["Create AliasManager"]
+InitAM --> InitMM["Create ModelManager(Config)"]
+InitMM --> InitAS["Create AliasService(AliasManager, ProviderManager)"]
+InitAS --> Success["Log success and return"]
 ```
 
 **Diagram sources**
-- [src/main.py](file://src/main.py#L22-L56)
-- [src/main.py](file://src/main.py#L31-L40)
+- [src/core/dependencies.py](file://src/core/dependencies.py#L42-L117)
 
 **Section sources**
-- [src/main.py](file://src/main.py#L22-L56)
-- [src/main.py](file://src/main.py#L31-L40)
+- [src/core/dependencies.py](file://src/core/dependencies.py#L42-L117)
 
-### Runtime Accessors for Config
-- get_config: Returns Config from request.app.state with validation and raises if missing or wrong type.
-- Accessor functions (e.g., log_request_metrics, max_tokens_limit, models_cache_enabled) resolve Config from request context or a fallback singleton, enabling reuse in CLI/tests.
+### Protocol Implementation Examples
 
-```mermaid
-flowchart TD
-A["Caller"] --> B["get_config(request)"]
-B --> C{"Has request.app.state.config?"}
-C --> |Yes| D["Return Config"]
-C --> |No| E["Raise RuntimeError"]
-B --> F["Accessor function (e.g., log_request_metrics)"]
-F --> G{"In request context?"}
-G --> |Yes| H["Get Config from request.app.state"]
-G --> |No| I["Fallback to _get_global_fallback()"]
-```
-
-**Diagram sources**
-- [src/core/config/runtime.py](file://src/core/config/runtime.py#L19-L33)
-- [src/core/config/accessors.py](file://src/core/config/accessors.py#L25-L63)
-
-**Section sources**
-- [src/core/config/runtime.py](file://src/core/config/runtime.py#L19-L33)
-- [src/core/config/accessors.py](file://src/core/config/accessors.py#L69-L163)
-
-### Runtime Accessors for RequestTracker and MiddlewareProcessor
-- get_request_tracker: Returns RequestTracker from request.app.state with validation.
-- get_middleware_processor: Returns MiddlewareAwareRequestProcessor from request.app.state with validation.
+Components implement protocols rather than importing concrete classes, enabling clean dependency inversion.
 
 ```mermaid
 classDiagram
-class RequestTracker {
-+start_request(...)
-+end_request(...)
-+get_active_requests_snapshot()
-+wait_for_active_requests_change(...)
-+update_last_accessed(...)
+class ModelManager {
+-config : ConfigProvider
+-provider_manager : ProviderManager
+-alias_manager : AliasManager
++resolve_model(model : str) tuple[str, str]
 }
-class MiddlewareAwareRequestProcessor {
-+initialize()
-+cleanup()
-+process_request(...)
-+process_response(...)
-+process_stream_chunk(...)
-+finalize_stream(...)
+class ProviderManager {
+-_default_provider : str
+-_clients : dict
+-_configs : dict
++get_client(provider_name : str, client_api_key : str) Any
++get_provider_config(provider_name : str) Any
++default_provider : str
 }
-class Accessors {
-+get_request_tracker(request)
-+get_middleware_processor(request)
+class Config {
++implements ConfigProvider
++provider_manager : ProviderManager
++alias_manager : AliasManager
++alias_service : AliasService
 }
-Accessors --> RequestTracker : "returns"
-Accessors --> MiddlewareAwareRequestProcessor : "returns"
+ModelManager --> ConfigProvider : "depends on"
+ProviderManager --> ProviderClientFactory : "implements"
+Config --> ProviderManager : "delegates to"
+Config --> AliasManager : "delegates to"
+Config --> AliasService : "delegates to"
 ```
 
 **Diagram sources**
-- [src/core/metrics/runtime.py](file://src/core/metrics/runtime.py#L20-L29)
-- [src/api/middleware_runtime.py](file://src/api/middleware_runtime.py#L22-L53)
-- [src/core/metrics/tracker/tracker.py](file://src/core/metrics/tracker/tracker.py#L42-L75)
-- [src/api/middleware_integration.py](file://src/api/middleware_integration.py#L26-L52)
+- [src/core/model_manager.py](file://src/core/model_manager.py#L21-L46)
+- [src/core/provider_manager.py](file://src/core/provider_manager.py#L41-L75)
+- [src/core/config/config.py](file://src/core/config/config.py#L216-L249)
 
 **Section sources**
-- [src/core/metrics/runtime.py](file://src/core/metrics/runtime.py#L20-L29)
-- [src/api/middleware_runtime.py](file://src/api/middleware_runtime.py#L22-L53)
+- [src/core/model_manager.py](file://src/core/model_manager.py#L21-L46)
+- [src/core/provider_manager.py](file://src/core/provider_manager.py#L41-L75)
+- [src/core/config/config.py](file://src/core/config/config.py#L216-L249)
 
-### Middleware Integration Layer
-- MiddlewareAwareRequestProcessor composes a MiddlewareChain and exposes methods to process requests, responses, and streaming chunks.
-- Provides a streaming wrapper that parses SSE and feeds chunks to middleware.
+### Backward Compatibility Implementation
+
+The Config class maintains backward compatibility by delegating manager access to the dependencies module while implementing the ConfigProvider protocol.
 
 ```mermaid
 sequenceDiagram
-participant Endpoint as "API Endpoint"
-participant Proc as "MiddlewareAwareRequestProcessor"
-participant Chain as "MiddlewareChain"
-participant MW as "Middleware"
-participant Upstream as "Provider"
-Endpoint->>Proc : process_request(request, provider, request_id)
-Proc->>Chain : process_request(RequestContext)
-Chain->>MW : before_request(ctx)
-MW-->>Chain : RequestContext
-Chain-->>Proc : RequestContext
-Proc-->>Endpoint : RequestContext
-Endpoint->>Upstream : Send request
-Upstream-->>Endpoint : Response
-Endpoint->>Proc : process_response(response, request_context)
-Proc->>Chain : process_response(ResponseContext)
-Chain-->>Proc : ResponseContext
-Proc-->>Endpoint : ResponseContext.response
+participant LegacyCode as "Legacy Code"
+participant Config as "Config class"
+participant Dep as "dependencies module"
+participant PM as "ProviderManager"
+LegacyCode->>Config : cfg.provider_manager
+Config->>Dep : get_provider_manager()
+Dep->>PM : Return singleton
+PM-->>Dep : ProviderManager instance
+Dep-->>Config : ProviderManager instance
+Config-->>LegacyCode : ProviderManager instance
 ```
 
 **Diagram sources**
-- [src/api/middleware_integration.py](file://src/api/middleware_integration.py#L53-L124)
-- [src/middleware/base.py](file://src/middleware/base.py#L191-L241)
-- [src/middleware/base.py](file://src/middleware/base.py#L254-L341)
+- [src/core/config/config.py](file://src/core/config/config.py#L216-L249)
 
 **Section sources**
-- [src/api/middleware_integration.py](file://src/api/middleware_integration.py#L26-L184)
-- [src/middleware/base.py](file://src/middleware/base.py#L191-L398)
+- [src/core/config/config.py](file://src/core/config/config.py#L216-L249)
 
-### Metrics Orchestration and Dual-Path Pattern
-- MetricsOrchestrator encapsulates the dual-path logic (metrics enabled/disabled) and provides:
-  - initialize_request_metrics: resolves provider/model, starts tracking, updates last accessed.
-  - update_provider_resolution: updates provider/model after resolution.
-  - finalize_on_timeout/on_error/success: consistent finalization.
-- Uses get_request_tracker to access RequestTracker.
+### CLI Integration Pattern
+
+CLI commands now follow the same initialization pattern as the main application.
 
 ```mermaid
 flowchart TD
-Start(["initialize_request_metrics"]) --> Check{"log_request_metrics?"}
-Check --> |No| ReturnNone["Return MetricsContext(is_enabled=False)"]
-Check --> |Yes| GetTracker["get_request_tracker(request)"]
-GetTracker --> Resolve["ModelManager.resolve_model(model)"]
-Resolve --> StartReq["tracker.start_request(...)"]
-StartReq --> UpdateLA["tracker.update_last_accessed(...)"]
-UpdateLA --> Done(["Return MetricsContext(is_enabled=True)"])
+CLI["CLI Command"] --> Init["initialize_app()"]
+Init --> GetCfg["get_config()"]
+GetCfg --> UseMgrs["Access managers via Config delegation"]
+UseMgrs --> Results["Display results"]
 ```
 
 **Diagram sources**
-- [src/api/services/metrics_orchestrator.py](file://src/api/services/metrics_orchestrator.py#L117-L189)
-- [src/core/metrics/runtime.py](file://src/core/metrics/runtime.py#L20-L29)
-- [src/core/model_manager.py](file://src/core/model_manager.py#L17-L90)
+- [src/cli/commands/server.py](file://src/cli/commands/server.py#L28-L32)
+- [src/cli/commands/test.py](file://src/cli/commands/test.py#L18-L20)
 
 **Section sources**
-- [src/api/services/metrics_orchestrator.py](file://src/api/services/metrics_orchestrator.py#L90-L259)
+- [src/cli/commands/server.py](file://src/cli/commands/server.py#L28-L32)
+- [src/cli/commands/test.py](file://src/cli/commands/test.py#L18-L20)
 
-### Provider Management and Middleware Wiring
-- ProviderManager loads provider configurations and initializes middleware chain with injected middleware settings.
-- Uses injected middleware config to avoid circular dependencies with the global Config singleton.
+## Initialization System
 
-```mermaid
-classDiagram
-class ProviderManager {
--default_provider : str
--_configs : dict
--middleware_chain : MiddlewareChain
-+load_provider_configs()
-+initialize_middleware()
-+get_client(provider)
-}
-class MiddlewareChain {
-+add(middleware)
-+initialize()
-+cleanup()
-+process_request(ctx)
-+process_response(ctx)
-+process_stream_chunk(ctx)
-}
-ProviderManager --> MiddlewareChain : "composes"
-```
+The new initialization system ensures all dependencies are created in the correct order and can be accessed consistently across the application.
 
-**Diagram sources**
-- [src/core/provider_manager.py](file://src/core/provider_manager.py#L30-L61)
-- [src/core/provider_manager.py](file://src/core/provider_manager.py#L124-L147)
-- [src/middleware/base.py](file://src/middleware/base.py#L191-L241)
+### Initialization Order Requirements
+1. **Config**: No dependencies, loads all configuration modules
+2. **ProviderManager**: Depends on Config for middleware configuration
+3. **AliasManager**: No external dependencies
+4. **ModelManager**: Depends on Config, ProviderManager, and AliasManager
+5. **AliasService**: Depends on AliasManager and ProviderManager
+
+### Runtime Access Patterns
+- **FastAPI app.state**: Stores RequestTracker and MiddlewareProcessor
+- **Dependencies module**: Stores and provides access to core singletons
+- **Config delegation**: Manager properties delegate to dependencies module
+- **Context propagation**: Config values accessible via ContextVar in requests
 
 **Section sources**
-- [src/core/provider_manager.py](file://src/core/provider_manager.py#L30-L61)
-- [src/core/provider_manager.py](file://src/core/provider_manager.py#L124-L147)
-- [src/middleware/base.py](file://src/middleware/base.py#L191-L241)
-
-### Models Cache
-- ModelsDiskCache is conditionally attached to app.state and used to cache provider model lists.
-- Provides APIs to read/write raw upstream responses keyed by provider/base_url/headers.
-
-```mermaid
-flowchart TD
-Start(["Startup"]) --> Check{"models_cache_enabled()<br/>and not PYTEST?"}
-Check --> |Yes| Create["Create ModelsDiskCache(cache_dir, ttl)"]
-Check --> |No| Skip["Skip cache"]
-Create --> Attach["Attach to app.state.models_cache"]
-Skip --> End(["Done"])
-Attach --> End
-```
-
-**Diagram sources**
-- [src/main.py](file://src/main.py#L31-L40)
-- [src/models/cache.py](file://src/models/cache.py#L17-L32)
-
-**Section sources**
-- [src/main.py](file://src/main.py#L31-L40)
-- [src/models/cache.py](file://src/models/cache.py#L17-L32)
+- [src/core/dependencies.py](file://src/core/dependencies.py#L48-L53)
+- [src/main.py](file://src/main.py#L29-L46)
+- [src/core/config/accessors.py](file://src/core/config/accessors.py#L35-L48)
 
 ## Dependency Analysis
-- Coupling:
-  - Endpoints depend on accessors rather than global singletons, reducing import-time coupling.
-  - Accessors depend on request.app.state, which is populated at startup.
-- Cohesion:
-  - Accessor modules isolate wiring logic from business logic.
-  - Middleware and metrics orchestration are cohesive units with clear responsibilities.
-- External dependencies:
-  - FastAPI for dependency injection and app.state.
-  - asyncio for concurrency in RequestTracker and middleware chain.
+
+### Circular Import Elimination
+- **Before**: Config imported ProviderManager, ProviderManager imported Config
+- **After**: Both depend on Protocol interfaces; dependencies module handles instantiation
+
+### Coupling Reduction
+- **End-to-end**: Components depend on Protocol interfaces, not concrete implementations
+- **Initialization**: All dependencies created in single location with explicit order
+- **Backward compatibility**: Existing code continues to work with delegation pattern
+
+### Cohesion Improvements
+- **Single responsibility**: Dependencies module manages all singleton lifecycle
+- **Protocol isolation**: Each protocol defines a single responsibility boundary
+- **Testing benefits**: Easy to mock protocols for unit tests
 
 ```mermaid
 graph TB
-Accessors["Accessors<br/>(runtime, accessors)"] --> AppState["app.state"]
-AppState --> Config["Config"]
-AppState --> Tracker["RequestTracker"]
-AppState --> MWProc["MiddlewareAwareRequestProcessor"]
-Endpoints["API Endpoints"] --> Accessors
-Endpoints --> Config
-Endpoints --> Tracker
-Endpoints --> MWProc
+Protocol["Protocol Interfaces<br/>(src/core/protocols.py)"] --> Components["Implementation Components"]
+Components --> Dependencies["Dependencies Module<br/>(src/core/dependencies.py)"]
+Dependencies --> App["Application<br/>(src/main.py)"]
+App --> FastAPI["FastAPI app.state"]
+App --> CLI["CLI Commands<br/>(src/cli/commands/*.py)"]
 ```
 
 **Diagram sources**
-- [src/core/config/runtime.py](file://src/core/config/runtime.py#L19-L33)
-- [src/core/metrics/runtime.py](file://src/core/metrics/runtime.py#L20-L29)
-- [src/api/middleware_runtime.py](file://src/api/middleware_runtime.py#L22-L53)
-- [src/main.py](file://src/main.py#L22-L30)
+- [src/core/protocols.py](file://src/core/protocols.py#L1-L169)
+- [src/core/dependencies.py](file://src/core/dependencies.py#L1-L188)
+- [src/main.py](file://src/main.py#L1-L175)
 
 **Section sources**
-- [src/core/config/runtime.py](file://src/core/config/runtime.py#L19-L33)
-- [src/core/metrics/runtime.py](file://src/core/metrics/runtime.py#L20-L29)
-- [src/api/middleware_runtime.py](file://src/api/middleware_runtime.py#L22-L53)
-- [src/main.py](file://src/main.py#L22-L30)
+- [src/core/protocols.py](file://src/core/protocols.py#L1-L169)
+- [src/core/dependencies.py](file://src/core/dependencies.py#L1-L188)
+- [src/main.py](file://src/main.py#L1-L175)
 
 ## Performance Considerations
-- Accessors are lightweight and avoid heavy imports; they rely on getattr and type checks.
-- RequestTracker uses locks and conditions to coordinate SSE updates efficiently.
-- Middleware chain initialization happens once and is reused; streaming middleware wraps upstream streams with minimal overhead.
-- Conditional cache creation avoids unnecessary disk IO when disabled.
+
+### Initialization Performance
+- **Single initialization**: Dependencies created once per process, not per request
+- **Lazy protocol imports**: TYPE_CHECKING guards prevent import-time overhead
+- **Context propagation**: O(1) config access via ContextVar eliminates stack inspection
+
+### Runtime Performance
+- **Protocol dispatch**: Minimal overhead compared to concrete class imports
+- **Singleton access**: Direct module-level variable access for dependencies
+- **Memory efficiency**: Centralized storage prevents duplicate instances
+
+### Testing Benefits
+- **Mock protocols**: Easy to substitute test doubles for protocol implementations
+- **Isolated components**: Components can be tested independently of others
+- **Deterministic behavior**: Controlled initialization ensures predictable test runs
 
 ## Troubleshooting Guide
-Common issues and remedies:
-- Accessor raises RuntimeError: Ensure app.state is populated (startup ran) and the expected object is present.
-- Accessor raises TypeError: Ensure the object stored on app.state is of the expected type.
-- Middleware processor not initialized: Verify startup lifecycle hook executed; the processor is initialized on app startup and cleaned up on shutdown.
-- Metrics not appearing: Confirm log_request_metrics is enabled; otherwise, MetricsOrchestrator returns a disabled context.
+
+### Common Initialization Issues
+- **RuntimeError: Dependencies not initialized**: Call `initialize_app()` before accessing dependencies
+- **AttributeError: 'Config' object has no attribute 'provider_manager'**: Missing delegation pattern
+- **ImportError: cannot import name 'ProviderManager'**: Circular import prevented by protocol-based design
+
+### Debugging Protocol Issues
+- **Mypy errors**: Ensure protocol implementations match interface definitions
+- **Runtime type checking**: Use `isinstance()` checks for protocol-conforming objects
+- **Missing attributes**: Verify TYPE_CHECKING guards for conditional imports
+
+### Migration from Old Pattern
+- **Find all `from src.core.config import Config` imports**: Replace with dependency access
+- **Locate direct manager instantiations**: Convert to dependency delegation
+- **Update CLI commands**: Add `initialize_app()` calls before config access
 
 **Section sources**
-- [src/api/middleware_runtime.py](file://src/api/middleware_runtime.py#L45-L53)
-- [src/core/config/runtime.py](file://src/core/config/runtime.py#L27-L33)
-- [src/core/metrics/runtime.py](file://src/core/metrics/runtime.py#L23-L29)
-- [src/main.py](file://src/main.py#L45-L56)
-- [src/api/services/metrics_orchestrator.py](file://src/api/services/metrics_orchestrator.py#L117-L140)
+- [src/core/dependencies.py](file://src/core/dependencies.py#L129-L131)
+- [src/core/config/config.py](file://src/core/config/config.py#L224-L227)
+- [src/cli/commands/server.py](file://src/cli/commands/server.py#L28-L32)
 
 ## Conclusion
-The dependency injection system relies on FastAPI’s app.state and small, focused wiring helpers to deliver shared services to endpoints and services. This approach eliminates global singletons, reduces import-time coupling, and supports lifecycle-managed components like middleware processors and metrics trackers. The dual-path pattern in metrics orchestration ensures robust behavior whether metrics are enabled or not, and accessor functions enable consistent configuration access across request and non-request contexts.
+
+The new dependency injection system represents a fundamental architectural improvement that eliminates circular imports, reduces complexity, and improves maintainability. The centralized dependencies module with protocol-based dependency inversion provides a clean foundation for future development while maintaining backward compatibility. This system enables better testing, clearer separation of concerns, and more predictable initialization patterns across all application entry points.
+
+The protocol interfaces ensure that components depend on abstractions rather than concrete implementations, making the codebase more modular and easier to extend. The centralized initialization pattern guarantees proper dependency ordering and eliminates the hidden dependencies that caused issues in the previous architecture.

@@ -120,6 +120,9 @@ docstring-code-line-length = "dynamic"
 [tool.hatch.version]
 source = "vcs"
 
+[tool.hatch.metadata]
+allow-direct-references = true
+
 [tool.hatch.build.hooks.vcs]
 version-file = "src/_version.py"
 

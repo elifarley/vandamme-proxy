@@ -358,9 +358,21 @@ class HealthCheckService:
         try:
             for provider_name in self._config.provider_manager.list_providers():
                 provider_config = self._config.provider_manager.get_provider_config(provider_name)
+
+                # Determine auth mode indicator
+                auth_mode = "unknown"
+                if provider_config:
+                    if provider_config.uses_oauth:
+                        auth_mode = "oauth"
+                    elif provider_config.uses_passthrough:
+                        auth_mode = "passthrough"
+                    else:
+                        auth_mode = "api_key"
+
                 providers[provider_name] = {
                     "api_format": (provider_config.api_format if provider_config else "unknown"),
                     "base_url": provider_config.base_url if provider_config else None,
+                    "auth_mode": auth_mode,
                     "api_key_hash": (
                         f"sha256:{self._config.provider_manager.get_api_key_hash(provider_config.api_key)}"
                         if provider_config and provider_config.api_key

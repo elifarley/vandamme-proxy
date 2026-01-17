@@ -1,19 +1,32 @@
 # CLI Tool Reference
 
 <cite>
-**Referenced Files in This Document**   
+**Referenced Files in This Document**
 - [src/cli/main.py](file://src/cli/main.py)
 - [src/cli/commands/server.py](file://src/cli/commands/server.py)
 - [src/cli/commands/config.py](file://src/cli/commands/config.py)
 - [src/cli/commands/health.py](file://src/cli/commands/health.py)
 - [src/cli/commands/models.py](file://src/cli/commands/models.py)
+- [src/cli/commands/oauth.py](file://src/cli/commands/oauth.py)
 - [src/cli/commands/test.py](file://src/cli/commands/test.py)
 - [src/cli/commands/wrap.py](file://src/cli/commands/wrap.py)
 - [src/cli/wrap/proxy_manager.py](file://src/cli/wrap/proxy_manager.py)
 - [src/cli/wrap/wrappers.py](file://src/cli/wrap/wrappers.py)
 - [src/cli/presenters/aliases.py](file://src/cli/presenters/aliases.py)
 - [src/core/config.py](file://src/core/config.py)
+- [src/core/oauth/__init__.py](file://src/core/oauth/__init__.py)
+- [src/core/oauth/oauth.py](file://src/core/oauth/oauth.py)
+- [src/core/oauth_client_mixin.py](file://src/core/oauth_client_mixin.py)
+- [docs/oauth-guide.md](file://docs/oauth-guide.md)
 </cite>
+
+## Update Summary
+**Changes Made**
+- Added comprehensive OAuth command documentation with login, status, and logout functionality
+- Updated command structure diagram to include OAuth commands
+- Added OAuth authentication flow integration details
+- Updated CLI architecture to reflect new OAuth command registration
+- Enhanced troubleshooting section with OAuth-specific guidance
 
 ## Table of Contents
 1. [Introduction](#introduction)
@@ -22,13 +35,14 @@
 4. [Configuration Management](#configuration-management)
 5. [Health Checks](#health-checks)
 6. [Model Discovery](#model-discovery)
-7. [Testing Utilities](#testing-utilities)
-8. [Wrap Command](#wrap-command)
-9. [CLI Architecture](#cli-architecture)
-10. [Troubleshooting](#troubleshooting)
+7. [OAuth Authentication](#oauth-authentication)
+8. [Testing Utilities](#testing-utilities)
+9. [Wrap Command](#wrap-command)
+10. [CLI Architecture](#cli-architecture)
+11. [Troubleshooting](#troubleshooting)
 
 ## Introduction
-The Vandamme Proxy CLI (vdm) provides comprehensive command-line tools for managing the proxy server, inspecting configuration, performing health checks, discovering models, and testing connectivity. The CLI is designed to be intuitive and powerful, offering both simple commands for common tasks and advanced options for detailed server administration. This document serves as a complete reference for developers and operators who manage the proxy through the command line.
+The Vandamme Proxy CLI (vdm) provides comprehensive command-line tools for managing the proxy server, inspecting configuration, performing health checks, discovering models, authenticating with OAuth providers, and testing connectivity. The CLI is designed to be intuitive and powerful, offering both simple commands for common tasks and advanced options for detailed server administration. This document serves as a complete reference for developers and operators who manage the proxy through the command line.
 
 ## Command Structure
 The vdm CLI follows a hierarchical command structure with subcommands organized by functionality. The main command is `vdm`, with subcommands grouped into logical categories:
@@ -39,6 +53,7 @@ vdm[vdm] --> server[server]
 vdm --> config[config]
 vdm --> health[health]
 vdm --> models[models]
+vdm --> oauth[oauth]
 vdm --> test[test]
 vdm --> wrap[wrap]
 vdm --> version[version]
@@ -53,6 +68,9 @@ config --> setup[setup]
 health --> server[server]
 health --> upstream[upstream]
 models --> top[top]
+oauth --> login[login]
+oauth --> status[status]
+oauth --> logout[logout]
 test --> connection[connection]
 test --> providers[providers]
 style vdm fill:#f9f,stroke:#333
@@ -62,7 +80,7 @@ style vdm fill:#f9f,stroke:#333
 - [src/cli/main.py](file://src/cli/main.py#L13-L28)
 
 **Section sources**
-- [src/cli/main.py](file://src/cli/main.py#L1-L112)
+- [src/cli/main.py](file://src/cli/main.py#L1-L114)
 
 ## Server Management
 The server command group provides tools for starting, stopping, and managing the proxy server instance.
@@ -238,6 +256,95 @@ The output includes a table of models and suggested aliases that can be used to 
 **Section sources**
 - [src/cli/commands/models.py](file://src/cli/commands/models.py#L1-L88)
 
+## OAuth Authentication
+The oauth command group provides comprehensive OAuth authentication management for providers that support OAuth 2.0 with PKCE flow.
+
+### OAuth Login
+The `oauth login` command initiates OAuth authentication with a specified provider:
+
+```bash
+vdm oauth login chatgpt
+```
+
+This command performs the complete OAuth 2.0 + PKCE flow:
+1. Creates provider-specific storage directory: `~/.vandamme/oauth/{provider}/`
+2. Starts a local callback server for OAuth redirection
+3. Opens a browser window for authentication
+4. Handles token exchange and secure storage
+5. Displays authentication success with account information
+
+**Important Dependencies**: OAuth functionality requires the `oauth` package. Install it with:
+```bash
+pip install oauth
+```
+
+### OAuth Status
+The `oauth status` command checks authentication status for a provider:
+
+```bash
+vdm oauth status chatgpt
+```
+
+This command displays:
+- Current authentication status (authenticated/not authenticated)
+- Account ID associated with the token
+- Token expiration timestamp
+- Last refresh timestamp
+- Storage path location
+- File permissions verification
+
+### OAuth Logout
+The `oauth logout` command removes stored OAuth tokens:
+
+```bash
+vdm oauth logout chatgpt
+```
+
+This command:
+1. Removes stored authentication data from `~/.vandamme/oauth/{provider}/auth.json`
+2. Clears any cached tokens
+3. Confirms successful logout
+
+### OAuth Storage and Security
+OAuth tokens are stored securely with the following characteristics:
+- **Location**: `~/.vandamme/oauth/{provider}/auth.json`
+- **Permissions**: `0600` (read/write for owner only)
+- **Format**: JSON containing access_token, refresh_token, id_token, account_id, expires_at, last_refresh
+- **Isolation**: Each provider has separate storage directory
+
+### OAuth Flow Architecture
+```mermaid
+sequenceDiagram
+participant User as "User"
+participant CLI as "vdm oauth"
+participant OAuthFlow as "OAuthFlow"
+participant Browser as "Browser"
+participant Provider as "Provider API"
+User->>CLI : vdm oauth login chatgpt
+CLI->>OAuthFlow : Initialize OAuthFlow
+OAuthFlow->>OAuthFlow : Start local callback server
+OAuthFlow->>Browser : Open auth URL
+Browser->>Provider : User authenticates
+Provider-->>Browser : Redirect with authorization code
+Browser->>OAuthFlow : POST callback with code
+OAuthFlow->>Provider : Exchange code for tokens
+Provider-->>OAuthFlow : Return access/refresh tokens
+OAuthFlow->>OAuthFlow : Store tokens securely
+OAuthFlow-->>CLI : Authentication complete
+CLI-->>User : Success message with account info
+```
+
+**Diagram sources**
+- [src/cli/commands/oauth.py](file://src/cli/commands/oauth.py#L14-L87)
+- [src/core/oauth/oauth.py](file://src/core/oauth/oauth.py#L57-L158)
+
+**Section sources**
+- [src/cli/commands/oauth.py](file://src/cli/commands/oauth.py#L1-L246)
+- [src/core/oauth/__init__.py](file://src/core/oauth/__init__.py#L1-L115)
+- [src/core/oauth/oauth.py](file://src/core/oauth/oauth.py#L1-L182)
+- [src/core/oauth_client_mixin.py](file://src/core/oauth_client_mixin.py#L1-L70)
+- [docs/oauth-guide.md](file://docs/oauth-guide.md#L1-L439)
+
 ## Testing Utilities
 The test command group provides diagnostic tools for verifying configuration and connectivity.
 
@@ -374,6 +481,12 @@ class ModelsCommands {
 +app : Typer
 +top_models()
 }
+class OAuthCommands {
++app : Typer
++login()
++status()
++logout()
+}
 class TestCommands {
 +app : Typer
 +connection()
@@ -383,6 +496,7 @@ TyperApp "1" *-- "n" ServerCommands : contains
 TyperApp "1" *-- "n" ConfigCommands : contains
 TyperApp "1" *-- "n" HealthCommands : contains
 TyperApp "1" *-- "n" ModelsCommands : contains
+TyperApp "1" *-- "n" OAuthCommands : contains
 TyperApp "1" *-- "n" TestCommands : contains
 class WrapCommand {
 +wrap(ctx, tool, port, host, dry_run)
@@ -396,7 +510,7 @@ TyperApp "1" -- "1" WrapCommand : contains
 - [src/cli/main.py](file://src/cli/main.py#L13-L28)
 
 **Section sources**
-- [src/cli/main.py](file://src/cli/main.py#L1-L112)
+- [src/cli/main.py](file://src/cli/main.py#L1-L114)
 
 ### Configuration Integration
 The CLI integrates with the core configuration system to access runtime settings:
@@ -429,9 +543,15 @@ class HealthCommands {
 +server(json_output, host, port)
 +upstream(json_output)
 }
+class OAuthCommands {
++login(provider)
++status(provider)
++logout(provider)
+}
 ConfigCommands --> Config : reads
 HealthCommands --> Config : reads
 ServerCommands --> Config : reads
+OAuthCommands --> Config : reads
 class Presenter {
 +present_summary(summary)
 }
@@ -459,13 +579,23 @@ This section provides guidance for common issues encountered when using the CLI.
 - **Connection errors**: Verify the proxy server is running and accessible at the specified host and port
 - **API key errors**: Check that required API keys are set in environment variables
 - **Permission issues**: Ensure you have appropriate permissions to write configuration files
+- **OAuth import errors**: Install the `oauth` package for OAuth functionality: `pip install oauth`
+
+### OAuth-Specific Troubleshooting
+- **Authentication fails**: Check browser availability and try manual authentication flow
+- **Token expired**: Use `vdm oauth status` to check token validity and re-authenticate if needed
+- **Provider not found**: Verify AUTH_MODE is set correctly and provider is configured
+- **File permission errors**: Fix permissions with `chmod 0600 ~/.vandamme/oauth/{provider}/auth.json`
 
 ### Debugging Tips
 - Use the `--verbose` flag to enable debug-level logging
 - Check the `config env` output to verify required environment variables
 - Use `test connection` and `test providers` to diagnose configuration issues
 - For wrap command issues, use `--dry-run` to see what would be executed
+- Enable OAuth debug logging with `LOG_LEVEL=DEBUG vdm server start`
 
 **Section sources**
 - [src/cli/main.py](file://src/cli/main.py#L94-L111)
 - [src/cli/commands/test.py](file://src/cli/commands/test.py#L15-L127)
+- [src/cli/commands/oauth.py](file://src/cli/commands/oauth.py#L68-L87)
+- [docs/oauth-guide.md](file://docs/oauth-guide.md#L222-L295)

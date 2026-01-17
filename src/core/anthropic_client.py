@@ -21,6 +21,7 @@ from src.core.config.accessors import (
     streaming_read_timeout,
 )
 from src.core.logging import ConversationLogger
+from src.core.oauth_client_mixin import OAuthClientMixin
 
 conversation_logger = ConversationLogger.get_logger()
 logger = logging.getLogger(__name__)
@@ -28,7 +29,7 @@ logger = logging.getLogger(__name__)
 NextApiKey = Callable[[set[str]], Awaitable[str]]
 
 
-class AnthropicClient:
+class AnthropicClient(OAuthClientMixin):
     """Client for Anthropic-compatible APIs with passthrough mode."""
 
     _streaming_read_timeout: float | None
@@ -36,17 +37,21 @@ class AnthropicClient:
 
     def __init__(
         self,
-        api_key: str | None,  # Can be None for passthrough providers
+        api_key: str | None,  # Can be None for passthrough/OAuth providers
         base_url: str,
         timeout: int = 90,
         custom_headers: dict[str, str] | None = None,
         config: Config | None = None,
+        oauth_token_manager: Any | None = None,  # TokenManager for OAuth providers
     ) -> None:
         """Initialize Anthropic client."""
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.custom_headers = custom_headers or {}
         self.default_api_key = api_key
+
+        # Store OAuth token manager for OAuth providers
+        self._oauth_token_manager = oauth_token_manager
 
         # Get streaming timeout config (None means no read timeout for SSE)
         _config = config or Config()
@@ -92,17 +97,23 @@ class AnthropicClient:
         Returns:
             An httpx.AsyncClient configured with appropriate timeouts.
         """
-        # Use a cache key that includes the streaming mode
-        cache_key = f"{api_key}_streaming" if for_streaming else api_key
+        # For OAuth mode, use a special cache key since API key is dynamically fetched
+        cache_base = "oauth" if self._oauth_token_manager else api_key
+        cache_key = f"{cache_base}_streaming" if for_streaming else cache_base
 
         if cache_key not in self._client_cache:
             # Build headers for this specific API key
             headers = {
-                "x-api-key": api_key,
                 "content-type": "application/json",
                 "anthropic-version": "2023-06-01",
                 **self.custom_headers,
             }
+
+            # For OAuth mode, inject OAuth-specific headers instead of x-api-key
+            if self._oauth_token_manager:
+                self._inject_oauth_headers(headers)
+            else:
+                headers["x-api-key"] = api_key
 
             # Create HTTP client with appropriate timeout
             self._client_cache[cache_key] = httpx.AsyncClient(

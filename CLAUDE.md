@@ -278,6 +278,25 @@ Model Aliases:
 - `{PROVIDER}_ALIAS_{NAME}` - Provider-specific model alias (e.g., `POE_ALIAS_HAIKU=gpt-4o-mini`)
 - Takes precedence over TOML configuration files
 
+### OAuth Authentication
+
+Vandamme Proxy supports OAuth 2.0 authentication for providers like ChatGPT,
+allowing you to use your ChatGPT Plus/Pro subscription instead of API key billing.
+
+OAuth Configuration:
+- `{PROVIDER}_AUTH_MODE` - Authentication mode: "api_key" (default), "passthrough", or "oauth"
+- Alternatively, use `{PROVIDER}_API_KEY=!OAUTH` sentinel value
+
+OAuth CLI Commands:
+- `vdm oauth login <provider>` - Authenticate with a provider using OAuth
+- `vdm oauth status <provider>` - Check OAuth authentication status
+- `vdm oauth logout <provider>` - Remove stored OAuth tokens
+
+Token Storage:
+- OAuth tokens are stored in `~/.vandamme/oauth/{provider}/auth.json`
+- File permissions are set to 0600 (read/write for owner only)
+- Tokens are automatically refreshed when expired
+
 Examples:
 ```bash
 # OpenAI provider (default format) - single key
@@ -308,6 +327,10 @@ AZURE_API_VERSION=2024-02-15-preview
 # Model Aliases (override TOML defaults)
 POE_ALIAS_HAIKU=my-custom-haiku-model
 OPENAI_ALIAS_FAST=gpt-4o
+
+# ChatGPT provider with OAuth authentication
+CHATGPT_AUTH_MODE=oauth
+CHATGPT_BASE_URL=https://api.openai.com/v1
 ```
 
 Security (Proxy Authentication):
@@ -418,6 +441,54 @@ VERTEX_API_KEY=your-vertex-key
 VERTEX_BASE_URL=https://generativelanguage.googleapis.com/v1beta
 VERTEX_API_FORMAT=anthropic
 VDM_DEFAULT_PROVIDER=vertex
+```
+
+### Using OAuth Authentication
+
+OAuth authentication allows you to use your ChatGPT Plus/Pro subscription
+instead of purchasing API keys.
+
+```bash
+# 1. Configure ChatGPT provider for OAuth
+export CHATGPT_AUTH_MODE=oauth
+export CHATGPT_BASE_URL=https://api.openai.com/v1
+export VDM_DEFAULT_PROVIDER=chatgpt
+
+# 2. Authenticate with ChatGPT (opens browser)
+vdm oauth login chatgpt
+
+# 3. Check authentication status
+vdm oauth status chatgpt
+
+# 4. Start the proxy
+vdm server start
+
+# 5. Use with Claude Code CLI
+ANTHROPIC_BASE_URL=http://localhost:8082 claude "Hello, world!"
+```
+
+**OAuth vs API Key Authentication:**
+
+| Feature | OAuth | API Key |
+|---------|-------|---------|
+| Billing | ChatGPT subscription | Per-usage billing |
+| Setup | Browser auth flow | Copy/paste key |
+| Token refresh | Automatic | Manual |
+| Rate limits | Subscription tier | API tier |
+| Use case | Personal/development | Production |
+
+**Troubleshooting OAuth:**
+
+```bash
+# If authentication fails, clear tokens and retry
+vdm oauth logout chatgpt
+vdm oauth login chatgpt
+
+# Check stored tokens location
+ls -la ~/.vandamme/oauth/chatgpt/
+
+# Verify file permissions (should be 0600)
+stat ~/.vandamme/oauth/chatgpt/auth.json
 ```
 
 ### Using Model Aliases

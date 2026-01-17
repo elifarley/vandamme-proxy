@@ -5,7 +5,12 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
-from src.core.provider_config import PASSTHROUGH_SENTINEL, ProviderConfig
+from src.core.provider_config import (
+    OAUTH_SENTINEL,
+    PASSTHROUGH_SENTINEL,
+    AuthMode,
+    ProviderConfig,
+)
 
 
 @dataclass
@@ -168,6 +173,25 @@ class ProviderConfigLoader:
         if api_format not in ("openai", "anthropic"):
             api_format = "openai"
 
+        # Detect OAuth mode (priority order: env var > sentinel > TOML)
+        auth_mode = AuthMode.API_KEY
+        # 1. Check explicit AUTH_MODE environment variable
+        env_auth_mode = os.environ.get(f"{provider_upper}_AUTH_MODE", "").lower()
+        if env_auth_mode == "oauth":
+            auth_mode = AuthMode.OAUTH
+        elif env_auth_mode == "passthrough":
+            auth_mode = AuthMode.PASSTHROUGH
+        # 2. Check for !OAUTH sentinel in api_key
+        elif api_key == OAUTH_SENTINEL or toml_config.get("auth-mode", "").lower() == "oauth":
+            auth_mode = AuthMode.OAUTH
+        elif toml_config.get("auth-mode", "").lower() == "passthrough":
+            auth_mode = AuthMode.PASSTHROUGH
+
+        # For OAuth mode, set empty API key (will use tokens instead)
+        if auth_mode == AuthMode.OAUTH:
+            api_key = ""
+            api_keys = None
+
         # Other settings
         timeout = int(os.environ.get("REQUEST_TIMEOUT", toml_config.get("timeout", "90")))
         max_retries = int(os.environ.get("MAX_RETRIES", toml_config.get("max-retries", "2")))
@@ -184,6 +208,7 @@ class ProviderConfigLoader:
             custom_headers=self.get_custom_headers(provider_upper),
             api_format=api_format,
             tool_name_sanitization=bool(toml_config.get("tool-name-sanitization", False)),
+            auth_mode=auth_mode,
         )
 
     def load_provider_with_result(self, provider_name: str) -> ProviderLoadResult | None:

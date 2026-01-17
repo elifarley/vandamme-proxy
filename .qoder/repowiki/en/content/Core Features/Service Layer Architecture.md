@@ -16,7 +16,18 @@
 - [src/api/services/metrics_orchestrator.py](file://src/api/services/metrics_orchestrator.py)
 - [src/api/orchestrator/request_orchestrator.py](file://src/api/orchestrator/request_orchestrator.py)
 - [src/api/endpoints.py](file://src/api/endpoints.py)
+- [src/api/models/endpoint_requests.py](file://src/api/models/endpoint_requests.py)
+- [src/api/models/endpoint_responses.py](file://src/api/models/endpoint_responses.py)
 </cite>
+
+## Update Summary
+**Changes Made**
+- Added comprehensive Data Transfer Object (DTO) pattern with typed request/response models
+- Enhanced streaming handlers with improved error handling and metrics integration
+- Improved request builder patterns with ClaudeMessagesRequest support
+- Expanded error handling with centralized ErrorResponseBuilder and comprehensive error classification
+- Strengthened metrics orchestration with MetricsContext and structured metrics lifecycle management
+- Enhanced provider context resolution with structured ProviderContext dataclass
 
 ## Table of Contents
 1. [Introduction](#introduction)
@@ -24,22 +35,30 @@
 3. [Core Components](#core-components)
 4. [Architecture Overview](#architecture-overview)
 5. [Detailed Component Analysis](#detailed-component-analysis)
-6. [Dependency Analysis](#dependency-analysis)
-7. [Performance Considerations](#performance-considerations)
-8. [Troubleshooting Guide](#troubleshooting-guide)
-9. [Conclusion](#conclusion)
+6. [Data Transfer Object Pattern](#data-transfer-object-pattern)
+7. [Enhanced Streaming Architecture](#enhanced-streaming-architecture)
+8. [Comprehensive Error Handling](#comprehensive-error-handling)
+9. [Metrics Orchestration](#metrics-orchestration)
+10. [Dependency Analysis](#dependency-analysis)
+11. [Performance Considerations](#performance-considerations)
+12. [Troubleshooting Guide](#troubleshooting-guide)
+13. [Conclusion](#conclusion)
 
 ## Introduction
-This document explains the Service Layer Architecture of the proxy, focusing on how business logic is encapsulated into cohesive, testable services. The architecture separates endpoint orchestration from provider-specific handling, request conversion, metrics, error handling, and streaming. It leverages strategy patterns for format-specific handlers and a robust metrics orchestration system to ensure consistent behavior across endpoints.
+This document explains the Service Layer Architecture of the proxy, focusing on how business logic is encapsulated into cohesive, testable services with modern Python patterns. The architecture has undergone a major refactoring featuring comprehensive Data Transfer Objects, enhanced streaming handlers, improved request builder patterns, and integrated error handling throughout the service layer. The design emphasizes type safety, structured data flow, and consistent behavior across endpoints while maintaining separation of concerns between orchestration, conversion, metrics, error handling, and streaming.
 
 ## Project Structure
-The service layer resides primarily under src/api/services and integrates with src/api/orchestrator, src/api/context, and conversion utilities. Endpoints delegate to services for business logic, while services coordinate with providers, caches, and metrics.
+The service layer now features a robust architecture with dedicated DTOs, enhanced streaming capabilities, and comprehensive error handling. The structure centers around typed request/response models, strategy pattern implementations, and integrated cross-cutting concerns.
 
 ```mermaid
 graph TB
 subgraph "Endpoints"
 E1["/v1/chat/completions<br/>src/api/endpoints.py"]
 E2["Other endpoints<br/>src/api/endpoints.py"]
+end
+subgraph "DTO Layer"
+DTO1["Endpoint Requests<br/>src/api/models/endpoint_requests.py"]
+DTO2["Endpoint Responses<br/>src/api/models/endpoint_responses.py"]
 end
 subgraph "Orchestration"
 O1["RequestOrchestrator<br/>src/api/orchestrator/request_orchestrator.py"]
@@ -58,6 +77,7 @@ S10["RequestBuilder<br/>src/api/services/request_builder.py"]
 S11["AliasService<br/>src/api/services/alias_service.py"]
 S12["MetricsOrchestrator<br/>src/api/services/metrics_orchestrator.py"]
 end
+E1 --> DTO1
 E1 --> O1
 E1 --> S1
 E1 --> S12
@@ -74,6 +94,8 @@ E2 --> S11
 **Diagram sources**
 - [src/api/endpoints.py](file://src/api/endpoints.py#L117-L200)
 - [src/api/orchestrator/request_orchestrator.py](file://src/api/orchestrator/request_orchestrator.py#L27-L178)
+- [src/api/models/endpoint_requests.py](file://src/api/models/endpoint_requests.py#L12-L116)
+- [src/api/models/endpoint_responses.py](file://src/api/models/endpoint_responses.py#L13-L42)
 - [src/api/services/chat_completions_handlers.py](file://src/api/services/chat_completions_handlers.py#L17-L246)
 - [src/api/services/endpoint_services.py](file://src/api/services/endpoint_services.py#L94-L800)
 - [src/api/services/streaming_handlers.py](file://src/api/services/streaming_handlers.py#L35-L225)
@@ -81,14 +103,16 @@ E2 --> S11
 - [src/api/services/key_rotation.py](file://src/api/services/key_rotation.py#L14-L88)
 - [src/api/services/metrics_helper.py](file://src/api/services/metrics_helper.py#L14-L78)
 - [src/api/services/error_handling.py](file://src/api/services/error_handling.py#L19-L299)
-- [src/api/services/streaming.py](file://src/api/services/streaming.py#L19-L243)
-- [src/api/services/provider_context.py](file://src/api/services/provider_context.py#L15-L72)
-- [src/api/services/request_builder.py](file://src/api/services/request_builder.py#L15-L41)
+- [src/api/services/streaming.py](file://src/api/services/streaming.py#L19-L248)
+- [src/api/services/provider_context.py](file://src/api/services/provider_context.py#L15-L69)
+- [src/api/services/request_builder.py](file://src/api/services/request_builder.py#L15-L39)
 - [src/api/services/alias_service.py](file://src/api/services/alias_service.py#L65-L211)
-- [src/api/services/metrics_orchestrator.py](file://src/api/services/metrics_orchestrator.py#L36-L285)
+- [src/api/services/metrics_orchestrator.py](file://src/api/services/metrics_orchestrator.py#L36-L283)
 
 **Section sources**
 - [src/api/endpoints.py](file://src/api/endpoints.py#L117-L200)
+- [src/api/models/endpoint_requests.py](file://src/api/models/endpoint_requests.py#L12-L116)
+- [src/api/models/endpoint_responses.py](file://src/api/models/endpoint_responses.py#L13-L42)
 - [src/api/services/chat_completions_handlers.py](file://src/api/services/chat_completions_handlers.py#L17-L246)
 - [src/api/services/endpoint_services.py](file://src/api/services/endpoint_services.py#L94-L800)
 - [src/api/services/streaming_handlers.py](file://src/api/services/streaming_handlers.py#L35-L225)
@@ -96,56 +120,52 @@ E2 --> S11
 - [src/api/services/key_rotation.py](file://src/api/services/key_rotation.py#L14-L88)
 - [src/api/services/metrics_helper.py](file://src/api/services/metrics_helper.py#L14-L78)
 - [src/api/services/error_handling.py](file://src/api/services/error_handling.py#L19-L299)
-- [src/api/services/streaming.py](file://src/api/services/streaming.py#L19-L243)
-- [src/api/services/provider_context.py](file://src/api/services/provider_context.py#L15-L72)
-- [src/api/services/request_builder.py](file://src/api/services/request_builder.py#L15-L41)
+- [src/api/services/streaming.py](file://src/api/services/streaming.py#L19-L248)
+- [src/api/services/provider_context.py](file://src/api/services/provider_context.py#L15-L69)
+- [src/api/services/request_builder.py](file://src/api/services/request_builder.py#L15-L39)
 - [src/api/services/alias_service.py](file://src/api/services/alias_service.py#L65-L211)
-- [src/api/services/metrics_orchestrator.py](file://src/api/services/metrics_orchestrator.py#L36-L285)
+- [src/api/services/metrics_orchestrator.py](file://src/api/services/metrics_orchestrator.py#L36-L283)
 - [src/api/orchestrator/request_orchestrator.py](file://src/api/orchestrator/request_orchestrator.py#L27-L178)
 
 ## Core Components
-- Strategy-based Handlers
-  - ChatCompletionsHandlers: Encapsulates OpenAI and Anthropic format handling for /v1/chat/completions.
-  - StreamingHandlers: Encapsulates streaming logic for OpenAI and Anthropic formats.
-  - NonStreamingHandlers: Encapsulates non-streaming logic for OpenAI and Anthropic formats.
-- Endpoint Services
-  - ModelsListService, HealthCheckService, TokenCountService, AliasesListService, TestConnectionService, TopModelsEndpointService: Business logic for respective endpoints with structured results and error handling.
-- Orchestration and Context
-  - RequestOrchestrator: Centralizes request initialization, metrics, conversion, authentication, and middleware preprocessing.
-  - ProviderContext: Resolves provider, model, and authentication context.
-  - RequestBuilder: Builds provider-specific request dicts for passthrough scenarios.
-- Utilities
-  - KeyRotation: Manages provider API key rotation and passthrough selection.
-  - MetricsHelper: Populates request metrics consistently.
-  - ErrorHandling: Standardized error builders and streaming error finalization.
-  - Streaming: SSE headers, streaming response composition, and error wrapping.
-  - MetricsOrchestrator: Centralized metrics lifecycle management.
+The service layer now features several key architectural improvements:
+
+### Enhanced Strategy Pattern Implementation
+- **ChatCompletionsHandlers**: Abstract base class with concrete implementations for Anthropic and OpenAI formats
+- **StreamingHandlers**: Comprehensive streaming logic with error handling and metrics integration
+- **NonStreamingHandlers**: Robust non-streaming processing with middleware support and error detection
+
+### Data Transfer Object Pattern
+- **Typed Request DTOs**: Structured request parameters with FastAPI dependency injection support
+- **Response DTOs**: Consistent response structures with automatic conversion to FastAPI responses
+- **ProviderContext**: Structured provider resolution context with type safety
+
+### Integrated Cross-Cutting Concerns
+- **MetricsOrchestrator**: Centralized metrics lifecycle management with structured context
+- **ErrorResponseBuilder**: Comprehensive error response construction with classification
+- **Enhanced KeyRotation**: Dynamic API key management with rotation support
+- **Improved Streaming**: Advanced SSE error handling with standardized event formatting
 
 **Section sources**
 - [src/api/services/chat_completions_handlers.py](file://src/api/services/chat_completions_handlers.py#L17-L246)
 - [src/api/services/streaming_handlers.py](file://src/api/services/streaming_handlers.py#L35-L225)
 - [src/api/services/non_streaming_handlers.py](file://src/api/services/non_streaming_handlers.py#L30-L270)
 - [src/api/services/endpoint_services.py](file://src/api/services/endpoint_services.py#L94-L800)
-- [src/api/orchestrator/request_orchestrator.py](file://src/api/orchestrator/request_orchestrator.py#L27-L178)
-- [src/api/services/provider_context.py](file://src/api/services/provider_context.py#L15-L72)
-- [src/api/services/request_builder.py](file://src/api/services/request_builder.py#L15-L41)
+- [src/api/services/provider_context.py](file://src/api/services/provider_context.py#L15-L69)
+- [src/api/services/request_builder.py](file://src/api/services/request_builder.py#L15-L39)
 - [src/api/services/key_rotation.py](file://src/api/services/key_rotation.py#L14-L88)
 - [src/api/services/metrics_helper.py](file://src/api/services/metrics_helper.py#L14-L78)
 - [src/api/services/error_handling.py](file://src/api/services/error_handling.py#L19-L299)
-- [src/api/services/streaming.py](file://src/api/services/streaming.py#L19-L243)
-- [src/api/services/metrics_orchestrator.py](file://src/api/services/metrics_orchestrator.py#L36-L285)
+- [src/api/services/streaming.py](file://src/api/services/streaming.py#L19-L248)
+- [src/api/services/metrics_orchestrator.py](file://src/api/services/metrics_orchestrator.py#L36-L283)
 
 ## Architecture Overview
-The service layer follows a layered design:
-- Endpoints depend on services for business logic.
-- Services depend on orchestrators, converters, and provider managers.
-- Strategy patterns decouple format-specific logic (OpenAI vs Anthropic).
-- MetricsOrchestrator ensures consistent metrics lifecycle across endpoints.
-- ErrorHandling and Streaming utilities standardize error and streaming behavior.
+The refactored service layer follows a modern layered design with comprehensive type safety and structured data flow:
 
 ```mermaid
 graph TB
-EP["Endpoints<br/>src/api/endpoints.py"] --> ORCH["RequestOrchestrator<br/>src/api/orchestrator/request_orchestrator.py"]
+EP["Endpoints<br/>src/api/endpoints.py"] --> DTO["DTO Layer<br/>src/api/models/"]
+DTO --> ORCH["RequestOrchestrator<br/>src/api/orchestrator/request_orchestrator.py"]
 ORCH --> PC["ProviderContext<br/>src/api/services/provider_context.py"]
 ORCH --> RB["RequestBuilder<br/>src/api/services/request_builder.py"]
 ORCH --> MH["MetricsHelper<br/>src/api/services/metrics_helper.py"]
@@ -160,48 +180,47 @@ NSH --> EH["ErrorHandling<br/>src/api/services/error_handling.py"]
 CH --> EH
 SH --> EH
 ES --> EH
+ES --> RESP["Response DTOs<br/>src/api/models/endpoint_responses.py"]
 ```
 
 **Diagram sources**
 - [src/api/endpoints.py](file://src/api/endpoints.py#L117-L200)
+- [src/api/models/endpoint_requests.py](file://src/api/models/endpoint_requests.py#L12-L116)
+- [src/api/models/endpoint_responses.py](file://src/api/models/endpoint_responses.py#L13-L42)
 - [src/api/orchestrator/request_orchestrator.py](file://src/api/orchestrator/request_orchestrator.py#L27-L178)
-- [src/api/services/provider_context.py](file://src/api/services/provider_context.py#L15-L72)
-- [src/api/services/request_builder.py](file://src/api/services/request_builder.py#L15-L41)
+- [src/api/services/provider_context.py](file://src/api/services/provider_context.py#L15-L69)
+- [src/api/services/request_builder.py](file://src/api/services/request_builder.py#L15-L39)
 - [src/api/services/metrics_helper.py](file://src/api/services/metrics_helper.py#L14-L78)
 - [src/api/services/key_rotation.py](file://src/api/services/key_rotation.py#L14-L88)
 - [src/api/services/chat_completions_handlers.py](file://src/api/services/chat_completions_handlers.py#L17-L246)
 - [src/api/services/streaming_handlers.py](file://src/api/services/streaming_handlers.py#L35-L225)
 - [src/api/services/non_streaming_handlers.py](file://src/api/services/non_streaming_handlers.py#L30-L270)
-- [src/api/services/streaming.py](file://src/api/services/streaming.py#L19-L243)
+- [src/api/services/streaming.py](file://src/api/services/streaming.py#L19-L248)
 - [src/api/services/error_handling.py](file://src/api/services/error_handling.py#L19-L299)
 - [src/api/services/endpoint_services.py](file://src/api/services/endpoint_services.py#L94-L800)
 
 ## Detailed Component Analysis
 
-### Strategy Pattern: Chat Completions Handlers
-- Purpose: Eliminate duplication between OpenAI and Anthropic formats in /v1/chat/completions.
-- Classes:
-  - ChatCompletionsHandler (abstract): Defines the handle interface.
-  - AnthropicChatCompletionsHandler: Converts OpenAI to Anthropic, streams SSE, converts back to OpenAI format.
-  - OpenAIChatCompletionsHandler: Passthrough OpenAI format, streams SSE directly.
-- Factory: get_chat_completions_handler selects handler based on provider configuration.
+### Strategy Pattern: Enhanced Chat Completions Handlers
+The chat completions handlers now feature improved type safety and structured parameter passing:
 
 ```mermaid
 classDiagram
 class ChatCompletionsHandler {
-+handle(openai_request, resolved_model, provider_name, provider_config, provider_api_key, client_api_key, config, openai_client, request_id, http_request, is_metrics_enabled, metrics, tracker)
+<<abstract>>
++handle(openai_request : dict, resolved_model : str, provider_name : str, provider_config : Any, provider_api_key : str, client_api_key : str, config : Any, openai_client : Any, request_id : str, http_request : Any, is_metrics_enabled : bool, metrics : Any, tracker : Any) JSONResponse|StreamingResponse
 }
 class AnthropicChatCompletionsHandler {
-+handle(...)
++handle(...) JSONResponse|StreamingResponse
 }
 class OpenAIChatCompletionsHandler {
-+handle(...)
++handle(...) JSONResponse|StreamingResponse
 }
 class Factory {
-+get_chat_completions_handler(provider_config) ChatCompletionsHandler
++get_chat_completions_handler(provider_config : Any) ChatCompletionsHandler
 }
-AnthropicChatCompletionsHandler --|> ChatCompletionsHandler
-OpenAIChatCompletionsHandler --|> ChatCompletionsHandler
+ChatCompletionsHandler <|-- AnthropicChatCompletionsHandler
+ChatCompletionsHandler <|-- OpenAIChatCompletionsHandler
 ```
 
 **Diagram sources**
@@ -210,30 +229,26 @@ OpenAIChatCompletionsHandler --|> ChatCompletionsHandler
 **Section sources**
 - [src/api/services/chat_completions_handlers.py](file://src/api/services/chat_completions_handlers.py#L17-L246)
 
-### Strategy Pattern: Streaming Handlers
-- Purpose: Encapsulate streaming logic for OpenAI and Anthropic formats.
-- Classes:
-  - StreamingHandler (abstract): Defines handle_with_context.
-  - AnthropicStreamingHandler: Passthrough to Anthropic; applies error handling and metrics finalization.
-  - OpenAIStreamingHandler: Converts OpenAI stream to Claude format; supports middleware wrapping; applies error handling and metrics finalization.
-- Factory: get_streaming_handler selects handler based on provider configuration.
+### Strategy Pattern: Enhanced Streaming Handlers
+The streaming handlers now incorporate comprehensive error handling and metrics integration:
 
 ```mermaid
 classDiagram
 class StreamingHandler {
-+handle_with_context(context) StreamingResponse|JSONResponse
+<<abstract>>
++handle_with_context(context : ApiRequestContext) StreamingResponse|JSONResponse
 }
 class AnthropicStreamingHandler {
-+handle_with_context(context)
++handle_with_context(context) StreamingResponse|JSONResponse
 }
 class OpenAIStreamingHandler {
-+handle_with_context(context)
++handle_with_context(context) StreamingResponse|JSONResponse
 }
 class Factory {
-+get_streaming_handler(config, provider_config) StreamingHandler
++get_streaming_handler(config : Any, provider_config : Any) StreamingHandler
 }
-AnthropicStreamingHandler --|> StreamingHandler
-OpenAIStreamingHandler --|> StreamingHandler
+StreamingHandler <|-- AnthropicStreamingHandler
+StreamingHandler <|-- OpenAIStreamingHandler
 ```
 
 **Diagram sources**
@@ -242,31 +257,27 @@ OpenAIStreamingHandler --|> StreamingHandler
 **Section sources**
 - [src/api/services/streaming_handlers.py](file://src/api/services/streaming_handlers.py#L35-L225)
 
-### Strategy Pattern: Non-Streaming Handlers
-- Purpose: Encapsulate non-streaming logic for OpenAI and Anthropic formats.
-- Classes:
-  - NonStreamingHandler (abstract): Defines handle_with_context.
-  - AnthropicNonStreamingHandler: Passthrough to Anthropic; updates metrics; supports middleware post-processing.
-  - OpenAINonStreamingHandler: Calls OpenAI, validates error responses, extracts usage and tool call counts, converts to Claude format, logs success.
-- Factory: get_non_streaming_handler selects handler based on provider configuration.
+### Strategy Pattern: Enhanced Non-Streaming Handlers
+The non-streaming handlers now feature improved error detection and middleware support:
 
 ```mermaid
 classDiagram
 class NonStreamingHandler {
-+handle_with_context(context) JSONResponse
+<<abstract>>
++handle_with_context(context : ApiRequestContext) JSONResponse
 }
 class AnthropicNonStreamingHandler {
-+handle_with_context(context)
++handle_with_context(context) JSONResponse
 }
 class OpenAINonStreamingHandler {
-+handle_with_context(context)
--_is_error_response(response) bool
++handle_with_context(context) JSONResponse
+- _is_error_response(response : dict) bool
 }
 class Factory {
-+get_non_streaming_handler(config, provider_config) NonStreamingHandler
++get_non_streaming_handler(config : Any, provider_config : Any) NonStreamingHandler
 }
-AnthropicNonStreamingHandler --|> NonStreamingHandler
-OpenAINonStreamingHandler --|> NonStreamingHandler
+NonStreamingHandler <|-- AnthropicNonStreamingHandler
+NonStreamingHandler <|-- OpenAINonStreamingHandler
 ```
 
 **Diagram sources**
@@ -275,18 +286,14 @@ OpenAINonStreamingHandler --|> NonStreamingHandler
 **Section sources**
 - [src/api/services/non_streaming_handlers.py](file://src/api/services/non_streaming_handlers.py#L30-L270)
 
-### Endpoint Services: Business Logic Abstraction
-- ModelsListService: Provider resolution, caching, format conversion, error handling.
-- HealthCheckService: Gathers provider info and returns health YAML; graceful degradation.
-- TokenCountService: Attempts provider-specific token counting; falls back to character-based estimation.
-- AliasesListService: Retrieves active aliases and overlays suggested aliases from top-models.
-- TestConnectionService: Validates connectivity to default provider with minimal request.
-- TopModelsEndpointService: Fetches curated models and transforms to API response format.
+### Endpoint Services: Enhanced Business Logic
+The endpoint services now utilize structured DTOs and comprehensive result types:
 
 ```mermaid
 flowchart TD
-Start(["Execute Endpoint"]) --> ChooseSvc{"Which endpoint?"}
-ChooseSvc --> |Models| M["ModelsListService.execute(...)"]
+Start(["Execute Endpoint"]) --> DTO["Parse DTO Parameters"]
+DTO --> ChooseSvc{"Which endpoint?"}
+ChooseSvc --> |Models| M["ModelsListService.execute_with_request(dto)"]
 ChooseSvc --> |Health| H["HealthCheckService.execute()"]
 ChooseSvc --> |Tokens| T["TokenCountService.execute(...)"]
 ChooseSvc --> |Aliases| A["AliasesListService.execute()"]
@@ -298,161 +305,296 @@ T --> TRes["TokenCountResult"]
 A --> ARes["AliasesListResult"]
 TC --> TCRes["TestConnectionResult"]
 TM --> TMRes["TopModelsEndpointResult"]
+MRes --> MResp["to_response()"]
+HRes --> HResp["to_response()"]
+TRes --> TResp["to_response()"]
+ARes --> AResp["to_response()"]
+TCRes --> TCResp["to_response()"]
+TMRes --> TMResp["to_response()"]
 ```
 
 **Diagram sources**
 - [src/api/services/endpoint_services.py](file://src/api/services/endpoint_services.py#L94-L800)
+- [src/api/models/endpoint_requests.py](file://src/api/models/endpoint_requests.py#L12-L116)
+- [src/api/models/endpoint_responses.py](file://src/api/models/endpoint_responses.py#L13-L42)
 
 **Section sources**
 - [src/api/services/endpoint_services.py](file://src/api/services/endpoint_services.py#L94-L800)
+- [src/api/models/endpoint_requests.py](file://src/api/models/endpoint_requests.py#L12-L116)
+- [src/api/models/endpoint_responses.py](file://src/api/models/endpoint_responses.py#L13-L42)
 
-### Orchestration and Context
-- RequestOrchestrator: Generates request ID, initializes metrics/tracker, resolves provider/model, converts request, validates authentication, prepares client, applies middleware, checks client disconnect, and builds RequestContext.
-- ProviderContext: Resolves provider/model, enforces passthrough requirements, selects API key for non-passthrough providers.
-- RequestBuilder: Builds Anthropic passthrough request with resolved model and provider marker.
+## Data Transfer Object Pattern
+The service layer now implements a comprehensive DTO pattern for type-safe data exchange:
+
+### Request DTOs
+- **ModelsListRequest**: Encapsulates all model listing parameters with FastAPI dependency injection
+- **TopModelsRequest**: Structured parameters for curated model retrieval
+- Automatic validation and type conversion through dataclasses
+
+### Response DTOs  
+- **ModelsListResponse**: Structured model listing responses with optional headers
+- **TopModelsResponse**: Consistent response format for top models endpoint
+- Automatic conversion to FastAPI Response objects
+
+```mermaid
+classDiagram
+class ModelsListRequest {
+<<dataclass>>
++provider : str|None
++format_requested : str|None
++refresh : bool
++provider_header : str|None
++anthropic_version : str|None
++from_fastapi() ModelsListRequest
+}
+class TopModelsRequest {
+<<dataclass>>
++limit : int
++refresh : bool
++provider : str|None
++include_cache_info : bool
++from_fastapi() TopModelsRequest
+}
+class ModelsListResponse {
+<<dataclass>>
++status : int
++content : dict
++headers : dict|None
++to_response() Response
+}
+class TopModelsResponse {
+<<dataclass>>
++status : int
++content : dict
++to_response() Response
+}
+```
+
+**Diagram sources**
+- [src/api/models/endpoint_requests.py](file://src/api/models/endpoint_requests.py#L12-L116)
+- [src/api/models/endpoint_responses.py](file://src/api/models/endpoint_responses.py#L13-L42)
+
+**Section sources**
+- [src/api/models/endpoint_requests.py](file://src/api/models/endpoint_requests.py#L12-L116)
+- [src/api/models/endpoint_responses.py](file://src/api/models/endpoint_responses.py#L13-L42)
+
+## Enhanced Streaming Architecture
+The streaming architecture now features comprehensive error handling and metrics integration:
+
+### Streaming Error Handling
+- **with_sse_error_handler**: Graceful error handling with standardized SSE events
+- **with_streaming_metrics_finalizer**: Automatic metrics cleanup on stream completion
+- **with_streaming_error_handling**: Combined error handling and metrics finalization
+
+### SSE Event Formatting
+- Standardized error events compatible with OpenAI streaming format
+- Support for timeout, HTTP error, and generic streaming errors
+- Automatic [DONE] marker emission for clean stream termination
 
 ```mermaid
 sequenceDiagram
 participant Client as "Client"
-participant Router as "FastAPI Router"
-participant Orchestrator as "RequestOrchestrator"
-participant ProviderCtx as "ProviderContext"
-participant Builder as "RequestBuilder"
-participant Handler as "ChatCompletionsHandler"
-Client->>Router : POST /v1/chat/completions
-Router->>Orchestrator : prepare_request_context(...)
-Orchestrator->>ProviderCtx : resolve_provider_context(...)
-ProviderCtx-->>Orchestrator : ProviderContext
-Orchestrator->>Builder : build_anthropic_passthrough_request(...)
-Builder-->>Orchestrator : (resolved_model, request_dict)
-Orchestrator->>Handler : get_chat_completions_handler(provider_config)
-Handler-->>Router : JSONResponse or StreamingResponse
-Router-->>Client : Response
+participant Handler as "StreamingHandler"
+participant Error as "with_sse_error_handler"
+participant Metrics as "with_streaming_metrics_finalizer"
+Client->>Handler : Stream Request
+Handler->>Error : Wrap stream
+Error->>Metrics : Wrap with metrics
+Metrics-->>Client : Stream chunks
+Note over Error : On exception
+Error->>Client : SSE error event
+Error->>Client : [DONE] marker
+Error->>Metrics : Finalize metrics
 ```
 
 **Diagram sources**
-- [src/api/orchestrator/request_orchestrator.py](file://src/api/orchestrator/request_orchestrator.py#L27-L178)
-- [src/api/services/provider_context.py](file://src/api/services/provider_context.py#L15-L72)
-- [src/api/services/request_builder.py](file://src/api/services/request_builder.py#L15-L41)
-- [src/api/services/chat_completions_handlers.py](file://src/api/services/chat_completions_handlers.py#L234-L246)
-- [src/api/endpoints.py](file://src/api/endpoints.py#L117-L200)
+- [src/api/services/streaming.py](file://src/api/services/streaming.py#L108-L248)
+- [src/api/services/streaming_handlers.py](file://src/api/services/streaming_handlers.py#L35-L225)
 
 **Section sources**
-- [src/api/orchestrator/request_orchestrator.py](file://src/api/orchestrator/request_orchestrator.py#L27-L178)
-- [src/api/services/provider_context.py](file://src/api/services/provider_context.py#L15-L72)
-- [src/api/services/request_builder.py](file://src/api/services/request_builder.py#L15-L41)
-- [src/api/services/chat_completions_handlers.py](file://src/api/services/chat_completions_handlers.py#L234-L246)
-- [src/api/endpoints.py](file://src/api/endpoints.py#L117-L200)
+- [src/api/services/streaming.py](file://src/api/services/streaming.py#L19-L248)
+- [src/api/services/streaming_handlers.py](file://src/api/services/streaming_handlers.py#L35-L225)
 
-### Utilities and Cross-Cutting Concerns
-- KeyRotation: Creates next-key function for rotation; builds api_key and next_api_key params for upstream calls.
-- MetricsHelper: Counts tool calls and populates message count, request size, and tool counts for logging.
-- ErrorHandling: Centralized builders for consistent error responses; streaming error finalization and classification.
-- Streaming: SSE headers, streaming response composition, and error wrapping with standardized events and [DONE].
-- MetricsOrchestrator: Initializes and finalizes metrics consistently; updates provider resolution; handles timeout and error finalization.
+## Comprehensive Error Handling
+The error handling system now provides centralized, type-safe error response construction:
+
+### ErrorResponseBuilder
+- **Standardized Error Format**: Consistent error response structure across all endpoints
+- **Comprehensive Error Types**: Support for not_found, invalid_parameter, unauthorized, forbidden, upstream_error, internal_error, service_unavailable
+- **Automatic Classification**: Error type detection and appropriate HTTP status codes
+
+### Enhanced Streaming Error Handling
+- **finalize_metrics_on_streaming_error**: Metrics cleanup on streaming failures
+- **build_streaming_error_response**: Standardized error response for streaming contexts
+- **Error Type Classification**: Upstream timeout, HTTP error, and generic streaming errors
 
 ```mermaid
-flowchart TD
-A["Incoming Stream"] --> B["with_sse_error_handler"]
-B --> C{"Exception?"}
-C --> |ReadTimeout/Timeout| D["Emit SSE error + [DONE]"]
-C --> |HTTP Error| D
-C --> |Other Error| D
-C --> |No| E["Yield chunks"]
-D --> F["with_streaming_metrics_finalizer"]
-E --> F
-F --> G["End of stream"]
+classDiagram
+class ErrorResponseBuilder {
+<<dataclass>>
++not_found(resource : str, identifier : str) JSONResponse
++invalid_parameter(name : str, reason : str, value : Any|None) JSONResponse
++unauthorized(message : str) JSONResponse
++forbidden(message : str) JSONResponse
++upstream_error(exception : Exception, context : str|None) JSONResponse
++internal_error(message : str, error_type : str, details : Any|None) JSONResponse
++service_unavailable(message : str) JSONResponse
+}
+class StreamingErrorHandling {
++finalize_metrics_on_streaming_error(metrics : Any, error : str, tracker : Any, request_id : str) None
++build_streaming_error_response(exception : Exception, openai_client : Any, metrics : Any, tracker : Any, request_id : str) JSONResponse
+}
+ErrorResponseBuilder <|-- StreamingErrorHandling
 ```
 
 **Diagram sources**
-- [src/api/services/streaming.py](file://src/api/services/streaming.py#L105-L195)
-- [src/api/services/streaming.py](file://src/api/services/streaming.py#L197-L243)
+- [src/api/services/error_handling.py](file://src/api/services/error_handling.py#L19-L299)
 
 **Section sources**
-- [src/api/services/key_rotation.py](file://src/api/services/key_rotation.py#L14-L88)
-- [src/api/services/metrics_helper.py](file://src/api/services/metrics_helper.py#L14-L78)
 - [src/api/services/error_handling.py](file://src/api/services/error_handling.py#L19-L299)
-- [src/api/services/streaming.py](file://src/api/services/streaming.py#L19-L243)
-- [src/api/services/metrics_orchestrator.py](file://src/api/services/metrics_orchestrator.py#L36-L285)
+
+## Metrics Orchestration
+The metrics orchestration system now provides comprehensive lifecycle management:
+
+### MetricsContext
+- **Structured Context**: Type-safe metrics context with optional metrics objects
+- **Provider Resolution Tracking**: Automatic provider and model resolution updates
+- **Last Accessed Timestamps**: Provider/model access time tracking
+
+### Enhanced Metrics Lifecycle
+- **initialize_request_metrics**: Complete metrics initialization with model resolution
+- **update_provider_resolution**: Provider context updates after resolution
+- **finalize_on_timeout**: Timeout-specific metrics cleanup
+- **finalize_on_error**: Error-specific metrics cleanup
+- **finalize_success**: Success metrics cleanup
+
+```mermaid
+classDiagram
+class MetricsContext {
+<<dataclass>>
++request_id : str
++tracker : RequestTracker|None
++metrics : RequestMetrics|None
++is_enabled : bool
++update_provider_context(provider_name : str, resolved_model : str) None
++update_last_accessed(provider_name : str, model : str, timestamp : str) None
++finalize_on_timeout() None
++finalize_on_error(error_message : str, error_type : ErrorType) None
++finalize_success() None
+}
+class MetricsOrchestrator {
+<<class>>
++__init__(config : Config) None
++is_enabled() bool
++initialize_request_metrics(request_id : str, http_request : Request, model : str, is_streaming : bool, model_manager : ModelManager) MetricsContext
++update_provider_resolution(ctx : MetricsContext, provider_name : str, resolved_model : str) None
++finalize_on_timeout(ctx : MetricsContext) None
++finalize_on_error(ctx : MetricsContext, error_message : str, error_type : ErrorType) None
++finalize_success(ctx : MetricsContext) None
+}
+MetricsContext <.. MetricsOrchestrator
+```
+
+**Diagram sources**
+- [src/api/services/metrics_orchestrator.py](file://src/api/services/metrics_orchestrator.py#L34-L283)
+
+**Section sources**
+- [src/api/services/metrics_orchestrator.py](file://src/api/services/metrics_orchestrator.py#L34-L283)
 
 ## Dependency Analysis
-- Cohesion and Separation of Concerns
-  - Handlers are cohesive around a single responsibility (format-specific processing).
-  - Services encapsulate endpoint logic independently of FastAPI, improving testability.
-  - Utilities are small, focused, and reusable across handlers and services.
-- Coupling
-  - Handlers depend on shared utilities (key rotation, streaming, error handling).
-  - Services depend on configuration, provider manager, and conversion modules.
-  - Endpoints depend on services and orchestrators; they remain thin.
-- Potential Circular Dependencies
-  - AliasService coordinates between AliasManager and ProviderManager to avoid circular imports.
-  - RequestOrchestrator centralizes initialization to prevent duplication across endpoints.
+The refactored service layer maintains clean separation of concerns while adding comprehensive type safety:
+
+### Cohesion and Separation of Concerns
+- **DTO Layer**: Clean separation of request/response data from business logic
+- **Strategy Pattern**: Cohesive format-specific processing with clear interfaces
+- **Cross-Cutting Concerns**: Integrated error handling, metrics, and streaming utilities
+- **Service Layer**: Independent endpoint logic with structured result types
+
+### Enhanced Coupling Management
+- **DTO Integration**: Services consume typed DTOs instead of raw FastAPI dependencies
+- **Context Objects**: Structured context passing reduces parameter duplication
+- **Factory Patterns**: Centralized handler creation with type-safe configuration
+- **Metrics Orchestration**: Unified metrics lifecycle management across all services
 
 ```mermaid
 graph TB
-EP["Endpoints"] --> SVC["Services"]
+EP["Endpoints"] --> DTO["DTO Layer"]
+DTO --> SVC["Services"]
 SVC --> UTIL["Utilities"]
 SVC --> ORCH["Orchestrator"]
 ORCH --> UTIL
 SVC --> HAND["Handlers"]
 HAND --> UTIL
+SVC --> METRICS["MetricsOrchestrator"]
+METRICS --> UTIL
 ```
 
 **Diagram sources**
 - [src/api/endpoints.py](file://src/api/endpoints.py#L117-L200)
+- [src/api/models/endpoint_requests.py](file://src/api/models/endpoint_requests.py#L12-L116)
+- [src/api/models/endpoint_responses.py](file://src/api/models/endpoint_responses.py#L13-L42)
 - [src/api/services/endpoint_services.py](file://src/api/services/endpoint_services.py#L94-L800)
 - [src/api/services/streaming_handlers.py](file://src/api/services/streaming_handlers.py#L35-L225)
 - [src/api/services/non_streaming_handlers.py](file://src/api/services/non_streaming_handlers.py#L30-L270)
 - [src/api/services/chat_completions_handlers.py](file://src/api/services/chat_completions_handlers.py#L17-L246)
-- [src/api/services/streaming.py](file://src/api/services/streaming.py#L19-L243)
+- [src/api/services/streaming.py](file://src/api/services/streaming.py#L19-L248)
 - [src/api/services/error_handling.py](file://src/api/services/error_handling.py#L19-L299)
 - [src/api/orchestrator/request_orchestrator.py](file://src/api/orchestrator/request_orchestrator.py#L27-L178)
+- [src/api/services/metrics_orchestrator.py](file://src/api/services/metrics_orchestrator.py#L34-L283)
 
 **Section sources**
-- [src/api/services/alias_service.py](file://src/api/services/alias_service.py#L65-L211)
+- [src/api/models/endpoint_requests.py](file://src/api/models/endpoint_requests.py#L12-L116)
+- [src/api/models/endpoint_responses.py](file://src/api/models/endpoint_responses.py#L13-L42)
 - [src/api/services/endpoint_services.py](file://src/api/services/endpoint_services.py#L94-L800)
 - [src/api/services/streaming_handlers.py](file://src/api/services/streaming_handlers.py#L35-L225)
 - [src/api/services/non_streaming_handlers.py](file://src/api/services/non_streaming_handlers.py#L30-L270)
 - [src/api/services/chat_completions_handlers.py](file://src/api/services/chat_completions_handlers.py#L17-L246)
-- [src/api/services/streaming.py](file://src/api/services/streaming.py#L19-L243)
+- [src/api/services/streaming.py](file://src/api/services/streaming.py#L19-L248)
 - [src/api/services/error_handling.py](file://src/api/services/error_handling.py#L19-L299)
 - [src/api/orchestrator/request_orchestrator.py](file://src/api/orchestrator/request_orchestrator.py#L27-L178)
+- [src/api/services/metrics_orchestrator.py](file://src/api/services/metrics_orchestrator.py#L34-L283)
 
 ## Performance Considerations
-- Streaming Efficiency
-  - SSE error handling and metrics finalization are composed to minimize overhead and ensure cleanup.
-  - Error events are emitted as OpenAI-style SSE to keep clients informed without re-encoding entire payloads.
-- Metrics Overhead
-  - MetricsOrchestrator centralizes initialization and finalization to avoid duplication and reduce branching logic.
-  - MetricsHelper computes counts and sizes efficiently without heavy transformations.
-- Provider Key Rotation
-  - KeyRotation avoids unnecessary key fetching by using dynamic provider config and exclusion sets.
-- Caching and Conversion
-  - EndpointServices implement cache-first strategies with fallback to stale cache on upstream failures to improve latency and resilience.
+The refactored architecture maintains performance while adding comprehensive error handling and metrics:
 
-[No sources needed since this section provides general guidance]
+### Streaming Efficiency Improvements
+- **Combined Error Handling**: Single composition of error handling and metrics finalization
+- **Structured SSE Events**: Efficient error event formatting with standardized JSON payload
+- **Automatic Cleanup**: Finally blocks ensure metrics finalization regardless of stream outcome
+
+### Type Safety Benefits
+- **Compile-time Validation**: Dataclasses provide static type checking
+- **Reduced Runtime Errors**: Structured DTOs eliminate parameter parsing errors
+- **Better IDE Support**: Enhanced autocompletion and error detection
+
+### Metrics Overhead Reduction
+- **Centralized Lifecycle**: Single orchestrator manages metrics across all endpoints
+- **Optional Metrics**: Graceful degradation when metrics are disabled
+- **Structured Context**: Type-safe metrics operations prevent runtime errors
 
 ## Troubleshooting Guide
-- Streaming Failures
-  - Use with_sse_error_handler to emit standardized error events and [DONE] markers.
-  - finalize_metrics_on_streaming_error ensures metrics are recorded and tracker is ended.
-- Non-Streaming Errors
-  - OpenAINonStreamingHandler validates error responses and raises HTTPException with structured details.
-  - ErrorResponseBuilder provides consistent error responses across endpoints.
-- Timeout Handling
-  - MetricsOrchestrator.finalize_on_timeout records timeout errors and ends the request.
-  - Endpoints map timeout exceptions to HTTP 504 for upstream timeouts.
-- Logging and Diagnostics
-  - log_traceback centralizes traceback logging for debugging.
-  - ConversationLogger captures request-scoped logs for diagnostics.
+The enhanced error handling provides comprehensive troubleshooting capabilities:
+
+### Streaming Error Resolution
+- **SSE Error Events**: Standardized error events with proper JSON formatting
+- **Metrics Cleanup**: Automatic metrics finalization on streaming failures
+- **Error Classification**: Upstream timeout, HTTP error, and generic streaming errors
+
+### Comprehensive Error Response
+- **ErrorResponseBuilder**: Consistent error response format across all endpoints
+- **Error Type Detection**: Automatic classification of error types and HTTP status codes
+- **Traceback Logging**: Centralized traceback logging for debugging
+
+### Metrics and Diagnostics
+- **MetricsContext**: Structured metrics context with optional metrics objects
+- **Provider Resolution Tracking**: Automatic provider and model resolution updates
+- **Conversation Logging**: Enhanced logging with request-scoped context
 
 **Section sources**
-- [src/api/services/streaming.py](file://src/api/services/streaming.py#L105-L195)
-- [src/api/services/streaming.py](file://src/api/services/streaming.py#L224-L243)
+- [src/api/services/streaming.py](file://src/api/services/streaming.py#L108-L248)
 - [src/api/services/error_handling.py](file://src/api/services/error_handling.py#L19-L299)
-- [src/api/services/non_streaming_handlers.py](file://src/api/services/non_streaming_handlers.py#L164-L179)
-- [src/api/services/metrics_orchestrator.py](file://src/api/services/metrics_orchestrator.py#L222-L230)
-- [src/api/endpoints.py](file://src/api/endpoints.py#L39-L78)
+- [src/api/services/metrics_orchestrator.py](file://src/api/services/metrics_orchestrator.py#L34-L283)
+- [src/api/services/non_streaming_handlers.py](file://src/api/services/non_streaming_handlers.py#L250-L270)
 
 ## Conclusion
-The Service Layer Architecture cleanly separates endpoint orchestration from business logic, enabling testability, maintainability, and scalability. Strategy patterns isolate format-specific concerns, while cross-cutting utilities standardize metrics, error handling, and streaming. This design supports multiple providers and formats with minimal duplication and consistent behavior.
+The refactored Service Layer Architecture represents a significant advancement in maintainability, type safety, and comprehensive error handling. The introduction of Data Transfer Objects, enhanced streaming handlers, improved request builder patterns, and integrated error handling creates a robust foundation for scalable API development. The architecture maintains clean separation of concerns while providing structured data flow, comprehensive metrics orchestration, and consistent error handling across all service layer components. This design supports multiple providers and formats with minimal duplication, enhanced type safety, and standardized behavior patterns.

@@ -1,9 +1,18 @@
 """Client factory for creating and caching API client instances."""
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Union
 
 from src.core.client import OpenAIClient
 from src.core.provider_config import ProviderConfig
+
+# Type ignore for local oauth module which doesn't have py.typed marker
+try:
+    from src.core.oauth.storage import FileSystemAuthStorage  # type: ignore[import-untyped]
+    from src.core.oauth.tokens import TokenManager  # type: ignore[import-untyped]
+except ImportError:
+    TokenManager = None  # type: ignore[assignment, misc]
+    FileSystemAuthStorage = None  # type: ignore[assignment, misc]
 
 if TYPE_CHECKING:
     from src.core.anthropic_client import AnthropicClient
@@ -41,6 +50,22 @@ class ClientFactory:
             # For passthrough providers, pass None as API key
             api_key_for_init = None if config.uses_passthrough else config.api_key
 
+            # For OAuth providers, create TokenManager with per-provider storage
+            oauth_token_manager = None
+            if config.uses_oauth:
+                if TokenManager is None or FileSystemAuthStorage is None:
+                    raise ImportError(
+                        "oauth is required for OAuth providers. "
+                        "Please ensure the dependency is installed."
+                    )
+                # Create per-provider storage path: ~/.vandamme/oauth/{provider}/
+                storage_path = Path.home() / ".vandamme" / "oauth" / config.name
+                storage = FileSystemAuthStorage(base_path=storage_path)
+                oauth_token_manager = TokenManager(
+                    storage=storage,
+                    raise_on_refresh_failure=False,
+                )
+
             if config.is_anthropic_format:
                 from src.core.anthropic_client import AnthropicClient
 
@@ -49,6 +74,7 @@ class ClientFactory:
                     base_url=config.base_url,
                     timeout=config.timeout,
                     custom_headers=config.custom_headers,
+                    oauth_token_manager=oauth_token_manager,
                 )
             else:
                 self._clients[cache_key] = OpenAIClient(
@@ -57,6 +83,7 @@ class ClientFactory:
                     timeout=config.timeout,
                     api_version=config.api_version,
                     custom_headers=config.custom_headers,
+                    oauth_token_manager=oauth_token_manager,
                 )
 
         return self._clients[cache_key]

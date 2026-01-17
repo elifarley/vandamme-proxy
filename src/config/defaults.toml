@@ -7,6 +7,18 @@
 # Can be overridden by VDM_DEFAULT_PROVIDER environment variable
 default-provider = "poe"
 
+# ChatGPT provider defaults (OAuth authentication)
+[chatgpt]
+base-url = "https://api.openai.com/v1"
+api-format = "openai"
+auth-mode = "oauth"
+timeout = 90
+max-retries = 2
+[chatgpt.aliases]
+haiku = "gpt-4o-mini"
+sonnet = "gpt-4o"
+opus = "gpt-4-turbo"
+
 # TODO - Fallback aliases, in case an alias isn't defined at the provider level
 [defaults.aliases]
 per-message = "poe:per-message"

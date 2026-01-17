@@ -13,6 +13,7 @@ from openai._exceptions import APIError, AuthenticationError, BadRequestError, R
 from src.core.config.accessors import log_request_metrics
 from src.core.error_types import ErrorType
 from src.core.logging import ConversationLogger
+from src.core.oauth_client_mixin import OAuthClientMixin
 
 conversation_logger = ConversationLogger.get_logger()
 logger = logging.getLogger(__name__)
@@ -29,24 +30,28 @@ def _is_key_rotation_error(exc: HTTPException) -> bool:
     return "insufficient_quota" in detail
 
 
-class OpenAIClient:
+class OpenAIClient(OAuthClientMixin):
     """Async OpenAI client with cancellation support and per-request API key capability."""
 
     def __init__(
         self,
-        api_key: str | None,  # Can be None for passthrough providers
+        api_key: str | None,  # Can be None for passthrough/OAuth providers
         base_url: str,
         timeout: int = 90,
         api_version: str | None = None,
         custom_headers: dict[str, str] | None = None,
+        oauth_token_manager: Any | None = None,  # TokenManager for OAuth providers
     ):
         self.base_url = base_url
         self.custom_headers = custom_headers or {}
         self.api_version = api_version
         self.timeout = timeout
 
-        # Store default API key but allow None for passthrough
+        # Store default API key but allow None for passthrough/OAuth
         self.default_api_key = api_key
+
+        # Store OAuth token manager for OAuth providers
+        self._oauth_token_manager = oauth_token_manager
 
         # Don't initialize the client yet - we'll create it per request
         # This allows us to use different API keys per request
@@ -55,8 +60,11 @@ class OpenAIClient:
 
     def _get_client(self, api_key: str) -> AsyncOpenAI | AsyncAzureOpenAI:
         """Get or create a client for the specific API key"""
+        # For OAuth mode, use a special cache key since API key is dynamically fetched
+        cache_key = "oauth" if self._oauth_token_manager else api_key
+
         # Use cache to avoid recreating clients for the same API key
-        if api_key not in self._client_cache:
+        if cache_key not in self._client_cache:
             # Prepare default headers
             default_headers = {
                 "Content-Type": "application/json",
@@ -66,24 +74,28 @@ class OpenAIClient:
             # Merge custom headers with default headers
             all_headers = {**default_headers, **self.custom_headers}
 
+            # For OAuth mode, inject OAuth-specific headers
+            if self._oauth_token_manager:
+                self._inject_oauth_headers(all_headers)
+
             # Detect if using Azure and instantiate the appropriate client
             if self.api_version:
-                self._client_cache[api_key] = AsyncAzureOpenAI(
-                    api_key=api_key,
+                self._client_cache[cache_key] = AsyncAzureOpenAI(
+                    api_key=api_key,  # May be None for OAuth
                     azure_endpoint=self.base_url,
                     api_version=self.api_version,
                     timeout=self.timeout,
                     default_headers=all_headers,
                 )
             else:
-                self._client_cache[api_key] = AsyncOpenAI(
-                    api_key=api_key,
+                self._client_cache[cache_key] = AsyncOpenAI(
+                    api_key=api_key,  # May be None for OAuth
                     base_url=self.base_url,
                     timeout=self.timeout,
                     default_headers=all_headers,
                 )
 
-        return self._client_cache[api_key]
+        return self._client_cache[cache_key]
 
     async def create_chat_completion(
         self,

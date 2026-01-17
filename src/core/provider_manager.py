@@ -13,18 +13,37 @@ import hashlib
 import logging
 import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Union
 
 from src.core.client import OpenAIClient
 from src.core.protocols import ProviderClientFactory
-from src.core.provider_config import PASSTHROUGH_SENTINEL, ProviderConfig
+
+# Type ignore for local oauth module which doesn't have py.typed marker
+try:
+    from src.core.oauth.storage import FileSystemAuthStorage  # type: ignore[import-untyped]
+    from src.core.oauth.tokens import TokenManager  # type: ignore[import-untyped]
+except ImportError:
+    TokenManager = None  # type: ignore[assignment, misc]
+    FileSystemAuthStorage = None  # type: ignore[assignment, misc]
+
+from src.core.provider_config import (
+    OAUTH_SENTINEL,
+    PASSTHROUGH_SENTINEL,
+    AuthMode,
+    ProviderConfig,
+)
 from src.middleware import MiddlewareChain, ThoughtSignatureMiddleware
 
 if TYPE_CHECKING:
+    from src.core.alias_config import AliasConfigLoader
     from src.core.anthropic_client import AnthropicClient
     from src.core.config.middleware import MiddlewareConfig
 
 logger = logging.getLogger(__name__)
+
+# Lazy-loaded singleton for AliasConfigLoader (Phase 5)
+_alias_config_loader: "AliasConfigLoader | None" = None
 
 
 @dataclass
@@ -86,9 +105,11 @@ class ProviderManager(ProviderClientFactory):
     @staticmethod
     def get_api_key_hash(api_key: str) -> str:
         """Return first 8 chars of sha256 hash"""
-        # Special handling for passthrough sentinel
+        # Special handling for passthrough and OAuth sentinels
         if api_key == PASSTHROUGH_SENTINEL:
             return "PASSTHRU"
+        if api_key == OAUTH_SENTINEL:
+            return "OAUTH"
         return hashlib.sha256(api_key.encode()).hexdigest()[:8]
 
     def _select_default_from_available(self) -> None:
@@ -122,6 +143,104 @@ class ProviderManager(ProviderClientFactory):
                 f"Hint: If {provider_upper}_API_KEY is set in your shell, make sure to export it: "
                 f"'export {provider_upper}_API_KEY'"
             )
+
+    # ==================== Phase 1: OAuth Token Manager ====================
+
+    def _create_oauth_token_manager(self, provider_name: str) -> Any | None:
+        """Create TokenManager for OAuth providers.
+
+        Args:
+            provider_name: Name of the provider (e.g., "chatgpt", "openai")
+
+        Returns:
+            TokenManager instance if OAuth dependencies are available, None otherwise.
+
+        Raises:
+            ImportError: If oauth dependencies are not installed.
+        """
+        if TokenManager is None or FileSystemAuthStorage is None:
+            raise ImportError(
+                "oauth is required for OAuth providers. Please ensure the dependency is installed."
+            )
+        storage_path = Path.home() / ".vandamme" / "oauth" / provider_name
+        storage = FileSystemAuthStorage(base_path=storage_path)
+        return TokenManager(storage=storage, raise_on_refresh_failure=False)
+
+    # ==================== Phase 5: AliasConfigLoader Singleton ====================
+
+    def _get_alias_config_loader(self) -> "AliasConfigLoader":
+        """Get or create the singleton AliasConfigLoader instance.
+
+        Returns:
+            The shared AliasConfigLoader instance.
+        """
+        global _alias_config_loader
+        if _alias_config_loader is None:
+            from src.core.alias_config import AliasConfigLoader
+
+            _alias_config_loader = AliasConfigLoader()
+        return _alias_config_loader
+
+    # ==================== Phase 4: Provider Name Normalization ====================
+
+    @staticmethod
+    def _normalize_provider_name(provider_name: str) -> str:
+        """Normalize provider name to lowercase for consistent handling.
+
+        Args:
+            provider_name: The provider name to normalize.
+
+        Returns:
+            The normalized (lowercase) provider name.
+        """
+        return provider_name.lower()
+
+    # ==================== Phase 2: Auth Mode Detection Helper ====================
+
+    def _detect_auth_mode(
+        self,
+        provider_name: str,
+        toml_config: dict[str, Any],
+    ) -> AuthMode:
+        """Detect authentication mode (env var > sentinel > TOML).
+
+        Priority order:
+        1. Explicit {PROVIDER}_AUTH_MODE environment variable
+        2. Sentinel values in API key (!OAUTH or !PASSTHRU)
+        3. TOML configuration auth-mode setting
+
+        Args:
+            provider_name: Name of the provider.
+            toml_config: Provider configuration from TOML files.
+
+        Returns:
+            The detected AuthMode (API_KEY, OAUTH, or PASSTHROUGH).
+        """
+        provider_upper = provider_name.upper()
+        auth_mode = AuthMode.API_KEY
+
+        # 1. Check explicit AUTH_MODE environment variable
+        env_auth_mode = os.environ.get(f"{provider_upper}_AUTH_MODE", "").lower()
+        if env_auth_mode == "oauth":
+            return AuthMode.OAUTH
+        elif env_auth_mode == "passthrough":
+            return AuthMode.PASSTHROUGH
+
+        # 2. Check for sentinel values in API key
+        raw_api_key = os.environ.get(f"{provider_upper}_API_KEY") or toml_config.get("api-key", "")
+        if raw_api_key == OAUTH_SENTINEL:
+            return AuthMode.OAUTH
+        elif raw_api_key == PASSTHROUGH_SENTINEL:
+            return AuthMode.PASSTHROUGH
+
+        # 3. Check TOML configuration auth-mode setting
+        toml_auth_mode = toml_config.get("auth-mode", "").lower()
+        if toml_auth_mode == "oauth":
+            return AuthMode.OAUTH
+        elif toml_auth_mode == "passthrough":
+            return AuthMode.PASSTHROUGH
+
+        return auth_mode
 
     def load_provider_configs(self) -> None:
         """Load all provider configurations from environment variables"""
@@ -195,23 +314,32 @@ class ProviderManager(ProviderClientFactory):
             # Final fallback to hardcoded default
             if not base_url:
                 base_url = "https://api.openai.com/v1"
+        else:
+            # Still need to load TOML for auth-mode detection
+            toml_config = self._load_provider_toml_config(self.default_provider)
+
+        # Phase 2: Use centralized auth mode detection
+        auth_mode = self._detect_auth_mode(self.default_provider, toml_config)
 
         if not api_key:
-            # Only warn if this was explicitly configured by the user
-            if self.default_provider_source != "system":
-                logger.warning(
-                    f"Configured default provider '{self.default_provider}' API key not found. "
-                    f"Set {provider_prefix}API_KEY to use it as default. "
-                    "Will use another provider if available."
-                )
-            else:
-                # This is just a system default, no warning needed
-                logger.debug(
-                    f"System default provider '{self.default_provider}' not configured. "
-                    "Will use another provider if available."
-                )
-            # Don't create a config for the default provider if no API key
-            return
+            # For OAuth mode, empty API key is allowed
+            if auth_mode != AuthMode.OAUTH:
+                # Only warn if this was explicitly configured by the user
+                if self.default_provider_source != "system":
+                    logger.warning(
+                        f"Configured default provider '{self.default_provider}' API key not found. "
+                        f"Set {provider_prefix}API_KEY to use it as default. "
+                        "Will use another provider if available."
+                    )
+                else:
+                    # This is just a system default, no warning needed
+                    logger.debug(
+                        f"System default provider '{self.default_provider}' not configured. "
+                        "Will use another provider if available."
+                    )
+                # Don't create a config for the default provider if no API key
+                return
+            api_key = ""  # OAuth mode uses empty API key
 
         # Support multiple static keys, whitespace-separated.
         api_keys = api_key.split()
@@ -237,24 +365,62 @@ class ProviderManager(ProviderClientFactory):
                     "tool-name-sanitization", False
                 )
             ),
+            auth_mode=auth_mode,
         )
 
         self._configs[self.default_provider] = config
 
     def _load_additional_providers(self) -> None:
-        """Load additional provider configurations from environment variables"""
-        # Scan for all provider environment variables
-        for env_key, _env_value in os.environ.items():
-            # Look for PROVIDER_API_KEY pattern
-            if env_key.endswith("_API_KEY") and not env_key.startswith("CUSTOM_"):
-                # Extract provider name (everything before _API_KEY)
-                provider_name = env_key[:-8].lower()  # Remove "_API_KEY" suffix
+        """Load additional provider configurations from environment variables and TOML"""
+        # Track which providers we've already attempted to load
+        loaded_providers = set()
 
-                # Skip if this is the default provider we already loaded
+        # Phase 3: Improved error handling with specific exception types
+        # First: Discover providers from TOML configuration
+        try:
+            loader = self._get_alias_config_loader()
+            config = loader.load_config()
+            toml_providers = config.get("providers", {})
+
+            for provider_name, provider_config in toml_providers.items():
+                # Skip if this is the default provider (already loaded)
                 if provider_name == self.default_provider:
                     continue
 
-                # Load provider configuration
+                # Load provider if:
+                # 1. It has OAuth auth-mode (no API key needed)
+                # 2. It has an api-key in TOML config
+                # 3. It has a PROVIDER_API_KEY env var
+                auth_mode = provider_config.get("auth-mode", "").lower()
+                has_toml_api_key = bool(provider_config.get("api-key"))
+                has_env_api_key = bool(os.environ.get(f"{provider_name.upper()}_API_KEY"))
+
+                if auth_mode in ("oauth", "passthrough") or has_toml_api_key or has_env_api_key:
+                    self._load_provider_config_with_result(provider_name)
+                    loaded_providers.add(provider_name)
+        except ImportError as e:
+            logger.warning(
+                f"TOML configuration loading not available: {e}. "
+                "Only environment variables will be used for provider discovery."
+            )
+        except OSError as e:
+            logger.error(
+                f"Cannot read TOML configuration files: {e}. Check file permissions and paths."
+            )
+        except Exception as e:
+            logger.error(
+                f"Failed to load TOML configuration: {e}. "
+                "Falling back to environment variable scanning."
+            )
+
+        # Second: Scan environment for any additional providers (backward compatibility)
+        for env_key, _env_value in os.environ.items():
+            if env_key.endswith("_API_KEY") and not env_key.startswith("CUSTOM_"):
+                # Phase 4: Use normalization helper
+                provider_name = self._normalize_provider_name(env_key[:-8])
+                # Skip if this is the default provider or already loaded from TOML
+                if provider_name == self.default_provider or provider_name in loaded_providers:
+                    continue
                 self._load_provider_config_with_result(provider_name)
 
     def _load_provider_toml_config(self, provider_name: str) -> dict[str, Any]:
@@ -266,16 +432,22 @@ class ProviderManager(ProviderClientFactory):
         Returns:
             Provider configuration dictionary from TOML
         """
+        # Phase 3: Improved error handling
+        # Phase 5: Use singleton AliasConfigLoader
         try:
-            from src.core.alias_config import AliasConfigLoader
-
-            loader = AliasConfigLoader()
+            loader = self._get_alias_config_loader()
             return loader.get_provider_config(provider_name)
         except ImportError:
-            logger.debug(f"AliasConfigLoader not available for provider '{provider_name}'")
+            logger.debug(
+                f"AliasConfigLoader not available for provider '{provider_name}'. "
+                "TOML configuration will be skipped."
+            )
+            return {}
+        except OSError as e:
+            logger.warning(f"Cannot read TOML configuration for provider '{provider_name}': {e}")
             return {}
         except Exception as e:
-            logger.debug(f"Failed to load TOML config for provider '{provider_name}': {e}")
+            logger.warning(f"Failed to load TOML config for provider '{provider_name}': {e}")
             return {}
 
     def _load_provider_config_with_result(self, provider_name: str) -> None:
@@ -285,23 +457,37 @@ class ProviderManager(ProviderClientFactory):
         # First, try to load from TOML configuration
         toml_config = self._load_provider_toml_config(provider_name)
 
-        # Then override with environment variables
-        raw_api_key = os.environ.get(f"{provider_upper}_API_KEY") or toml_config.get("api-key")
-        if not raw_api_key:
-            # Skip entirely if no API key in either source
-            return
+        # Phase 2: Use centralized auth mode detection
+        auth_mode = self._detect_auth_mode(provider_name, toml_config)
+
+        # For OAuth mode, we don't require an API key
+        if auth_mode == AuthMode.OAUTH:
+            raw_api_key = ""  # OAuth uses tokens, not API keys
+        else:
+            raw_api_key = os.environ.get(f"{provider_upper}_API_KEY") or toml_config.get(
+                "api-key", ""
+            )
+            if not raw_api_key:
+                # Skip entirely if no API key and not OAuth mode
+                return
 
         # Support multiple static keys, whitespace-separated.
         # Example: OPENAI_API_KEY="key1 key2 key3"
-        api_keys = raw_api_key.split()
-        if len(api_keys) == 0:
-            return
-        if len(api_keys) > 1 and PASSTHROUGH_SENTINEL in api_keys:
-            raise ValueError(
-                f"Provider '{provider_name}' has mixed configuration: "
-                f"'!PASSTHRU' cannot be combined with static keys"
-            )
-        api_key = api_keys[0]
+        # For OAuth mode, we don't need an API key (tokens are managed separately)
+        if auth_mode != AuthMode.OAUTH:
+            api_keys = raw_api_key.split()
+            if len(api_keys) == 0:
+                return
+            if len(api_keys) > 1 and PASSTHROUGH_SENTINEL in api_keys:
+                raise ValueError(
+                    f"Provider '{provider_name}' has mixed configuration: "
+                    f"'!PASSTHRU' cannot be combined with static keys"
+                )
+            api_key = api_keys[0]
+        else:
+            # OAuth mode: no API key needed, use empty string as placeholder
+            api_key = ""
+            api_keys = None
 
         # Load base URL with precedence: env > TOML > default
         base_url = os.environ.get(f"{provider_upper}_BASE_URL") or toml_config.get("base-url")
@@ -339,11 +525,11 @@ class ProviderManager(ProviderClientFactory):
         )
         self._load_results.append(result)
 
-        # Create the config
+        # Create the config with auth_mode properly set
         config = ProviderConfig(
             name=provider_name,
             api_key=api_key,
-            api_keys=api_keys if len(api_keys) > 1 else None,
+            api_keys=api_keys if api_keys is not None and len(api_keys) > 1 else None,
             base_url=base_url,
             api_version=os.environ.get(f"{provider_upper}_API_VERSION")
             or toml_config.get("api-version"),
@@ -352,6 +538,7 @@ class ProviderManager(ProviderClientFactory):
             custom_headers=self._get_provider_custom_headers(provider_upper),
             api_format=api_format,
             tool_name_sanitization=bool(toml_config.get("tool-name-sanitization", False)),
+            auth_mode=auth_mode,  # Properly set the auth_mode
         )
 
         self._configs[provider_name] = config
@@ -363,13 +550,20 @@ class ProviderManager(ProviderClientFactory):
         # Load from TOML first
         toml_config = self._load_provider_toml_config(provider_name)
 
-        # API key is required (from env or TOML)
-        raw_api_key = os.environ.get(f"{provider_upper}_API_KEY") or toml_config.get("api-key")
-        if not raw_api_key:
-            raise ValueError(
-                f"API key not found for provider '{provider_name}'. "
-                f"Please set {provider_upper}_API_KEY environment variable."
-            )
+        # Phase 2: Use centralized auth mode detection
+        auth_mode = self._detect_auth_mode(provider_name, toml_config)
+
+        # For OAuth mode, API key is not required
+        if auth_mode != AuthMode.OAUTH:
+            # API key is required (from env or TOML)
+            raw_api_key = os.environ.get(f"{provider_upper}_API_KEY") or toml_config.get("api-key")
+            if not raw_api_key:
+                raise ValueError(
+                    f"API key not found for provider '{provider_name}'. "
+                    f"Please set {provider_upper}_API_KEY environment variable."
+                )
+        else:
+            raw_api_key = ""
 
         api_keys = raw_api_key.split()
         if len(api_keys) == 0:
@@ -415,6 +609,7 @@ class ProviderManager(ProviderClientFactory):
             custom_headers=self._get_provider_custom_headers(provider_upper),
             api_format=api_format,
             tool_name_sanitization=bool(toml_config.get("tool-name-sanitization", False)),
+            auth_mode=auth_mode,  # Phase 2: Add auth_mode to ProviderConfig
         )
 
         self._configs[provider_name] = config
@@ -484,8 +679,15 @@ class ProviderManager(ProviderClientFactory):
         # Return cached client or create new one
         if cache_key not in self._clients:
             # Create appropriate client based on API format
-            # For passthrough providers, pass None as API key
-            api_key_for_init = None if config.uses_passthrough else config.api_key
+            # For passthrough or OAuth providers, pass None as API key
+            api_key_for_init = (
+                None if config.uses_passthrough or config.uses_oauth else config.api_key
+            )
+
+            # Phase 1: Create TokenManager for OAuth providers
+            oauth_token_manager = None
+            if config.uses_oauth:
+                oauth_token_manager = self._create_oauth_token_manager(config.name)
 
             if config.is_anthropic_format:
                 # Import here to avoid circular imports
@@ -496,6 +698,7 @@ class ProviderManager(ProviderClientFactory):
                     base_url=config.base_url,
                     timeout=config.timeout,
                     custom_headers=config.custom_headers,
+                    oauth_token_manager=oauth_token_manager,  # Phase 1: Add OAuth support
                 )
             else:
                 self._clients[cache_key] = OpenAIClient(
@@ -504,6 +707,7 @@ class ProviderManager(ProviderClientFactory):
                     timeout=config.timeout,
                     api_version=config.api_version,
                     custom_headers=config.custom_headers,
+                    oauth_token_manager=oauth_token_manager,  # Phase 1: Add OAuth support
                 )
 
         return self._clients[cache_key]
@@ -511,7 +715,7 @@ class ProviderManager(ProviderClientFactory):
     async def get_next_provider_api_key(self, provider_name: str) -> str:
         """Return the next provider API key using process-global round-robin.
 
-        Only valid for providers configured with static keys (not passthrough).
+        Only valid for providers configured with static keys (not passthrough, not OAuth).
         """
         if not self._loaded:
             self.load_provider_configs()
@@ -519,9 +723,10 @@ class ProviderManager(ProviderClientFactory):
         config = self._configs.get(provider_name)
         if config is None:
             raise ValueError(f"Provider '{provider_name}' not configured")
-        if config.uses_passthrough:
+        if config.uses_passthrough or config.uses_oauth:
             raise ValueError(
-                f"Provider '{provider_name}' is configured for passthrough and has no static keys"
+                f"Provider '{provider_name}' uses {config.auth_mode} "
+                f"authentication and has no static keys"
             )
 
         keys = config.get_api_keys()
@@ -580,19 +785,24 @@ class ProviderManager(ProviderClientFactory):
             is_default = result.name == self.default_provider
             default_indicator = "  * " if is_default else "    "
 
+            # Check if this provider uses OAuth authentication
+            provider_config = self._configs.get(result.name)
+            is_oauth = provider_config and provider_config.uses_oauth
+            oauth_indicator = "  🔐" if is_oauth else ""
+
             if result.status == "success":
                 if is_default:
                     # Build format string for default provider (with color)
                     format_str = (
                         f"   ✅ {result.api_key_hash:<10}{default_indicator}"
-                        f"\033[92m{result.name:<12}\033[0m {result.base_url}"
+                        f"\033[92m{result.name:<12}\033[0m {result.base_url}{oauth_indicator}"
                     )
                     print(format_str)
                 else:
                     # Build format string for other providers
                     format_str = (
                         f"   ✅ {result.api_key_hash:<10}{default_indicator}"
-                        f"{result.name:<12} {result.base_url}"
+                        f"{result.name:<12} {result.base_url}{oauth_indicator}"
                     )
                     print(format_str)
                 success_count += 1
@@ -601,19 +811,20 @@ class ProviderManager(ProviderClientFactory):
                     # Build format string for partial default provider
                     format_str = (
                         f"   ⚠️ {result.api_key_hash:<10}{default_indicator}"
-                        f"\033[92m{result.name:<12}\033[0m {result.message}"
+                        f"\033[92m{result.name:<12}\033[0m {result.message}{oauth_indicator}"
                     )
                     print(format_str)
                 else:
                     # Build format string for partial other providers
                     format_str = (
                         f"   ⚠️ {result.api_key_hash:<10}{default_indicator}"
-                        f"{result.name:<12} {result.message}"
+                        f"{result.name:<12} {result.message}{oauth_indicator}"
                     )
                     print(format_str)
 
         print(f"\n{success_count} provider{'s' if success_count != 1 else ''} ready for requests")
         print("  * = default provider")
+        print("  🔐 = OAuth authentication")
 
     def get_load_results(self) -> list[ProviderLoadResult]:
         """Get the load results for all providers"""

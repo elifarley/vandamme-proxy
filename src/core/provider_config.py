@@ -1,7 +1,24 @@
 from dataclasses import dataclass, field
+from enum import Enum
 
 # Sentinel value for API key passthrough
 PASSTHROUGH_SENTINEL = "!PASSTHRU"
+
+# Sentinel value for OAuth authentication
+OAUTH_SENTINEL = "!OAUTH"
+
+
+class AuthMode(str, Enum):
+    """Authentication mode for a provider.
+
+    API_KEY: Traditional API key authentication
+    PASSTHROUGH: Client API key passthrough mode
+    OAUTH: OAuth 2.0 authentication (e.g., ChatGPT account)
+    """
+
+    API_KEY = "api_key"
+    PASSTHROUGH = "passthrough"
+    OAUTH = "oauth"
 
 
 @dataclass
@@ -19,6 +36,7 @@ class ProviderConfig:
     custom_headers: dict[str, str] = field(default_factory=dict)
     api_format: str = "openai"  # "openai" or "anthropic"
     tool_name_sanitization: bool = False
+    auth_mode: str = AuthMode.API_KEY  # Authentication mode: api_key, passthrough, or oauth
 
     @property
     def is_azure(self) -> bool:
@@ -37,6 +55,11 @@ class ProviderConfig:
             # Mixed passthrough + real keys is ambiguous; reject in __post_init__.
             return False
         return self.api_key == PASSTHROUGH_SENTINEL
+
+    @property
+    def uses_oauth(self) -> bool:
+        """Check if this provider uses OAuth authentication"""
+        return self.auth_mode == AuthMode.OAUTH
 
     def get_api_keys(self) -> list[str]:
         """Return the configured provider API keys (static mode only).
@@ -70,8 +93,6 @@ class ProviderConfig:
         """Validate configuration after initialization"""
         if not self.name:
             raise ValueError("Provider name is required")
-        if not self.api_key:
-            raise ValueError(f"API key is required for provider '{self.name}'")
         if not self.base_url:
             raise ValueError(f"Base URL is required for provider '{self.name}'")
         if self.api_format not in ["openai", "anthropic"]:
@@ -79,6 +100,14 @@ class ProviderConfig:
                 f"Invalid API format '{self.api_format}' for provider '{self.name}'. "
                 "Must be 'openai' or 'anthropic'"
             )
+
+        # Detect OAuth sentinel value in api_key
+        if self.api_key == OAUTH_SENTINEL:
+            self.auth_mode = AuthMode.OAUTH
+
+        # For OAuth mode, allow empty API key
+        if self.auth_mode != AuthMode.OAUTH and not self.api_key:
+            raise ValueError(f"API key is required for provider '{self.name}'")
 
         if self.api_keys is not None:
             if len(self.api_keys) == 0:
@@ -92,10 +121,15 @@ class ProviderConfig:
                     f"Provider '{self.name}' has mixed configuration: "
                     f"'!PASSTHRU' cannot be combined with static keys"
                 )
+            if any(k == OAUTH_SENTINEL for k in self.api_keys):
+                raise ValueError(
+                    f"Provider '{self.name}' has mixed configuration: "
+                    f"'!OAUTH' cannot be combined with static keys"
+                )
             # Normalize api_key for backward compatibility/logging.
             self.api_key = self.api_keys[0]
 
-        # Skip API key format validation for passthrough providers
-        if not self.uses_passthrough and self.api_format == "openai":
+        # Skip API key format validation for passthrough and OAuth providers
+        if not self.uses_passthrough and not self.uses_oauth and self.api_format == "openai":
             # Existing validation for OpenAI keys (can be extended based on requirements)
             pass
